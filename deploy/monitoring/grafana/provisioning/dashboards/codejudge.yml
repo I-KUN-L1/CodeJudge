@@ -1,0 +1,16 @@
+# Grafana 仪表盘自动装配：扫描挂载进来的 /var/lib/grafana/dashboards 目录。
+# allowUiUpdates: false —— 强制「以仓库里的 JSON 为准」，
+# 避免有人在 UI 上改完忘了导出，下次重启又被覆盖（改之前先改 JSON 再挂载）。
+apiVersion: 1
+
+providers:
+  - name: 'CodeJudge'
+    orgId: 1
+    folder: 'CodeJudge'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

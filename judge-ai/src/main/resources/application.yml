@@ -1,0 +1,169 @@
+server:
+  port: 9087
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      # 统一 application 标签：Grafana 用 `application` 做多服务切换/聚合。
+      # 不设的话只能按 instance(host:port) 聚合，端口一变面板全废。
+      application: ${spring.application.name}
+    distribution:
+      # 直方图：让 Prometheus 能用 histogram_quantile() 算 P95/P99 延迟。
+      # 不开只能拿到 _count/_sum/_max（平均值会掩盖长尾），"延迟" 面板就失去意义。
+      # 对 SSE 尤其重要：/ai/review/stream 是长连接，平均耗时会被秒级连接拉平。
+      percentiles-histogram:
+        http.server.requests: true
+
+spring:
+  config:
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:../.env[.properties]
+  application:
+    name: judge-ai
+  main:
+    # ⚠️ 必须显式声明，不能依赖类路径推断。
+    # knife4j → springdoc-openapi-starter-webmvc-ui → spring-webmvc 会把 DispatcherServlet
+    # 带进类路径，而 Spring Boot 的 deduceFromClasspath() 在 DispatcherHandler 与 DispatcherServlet
+    # **同时存在**时判定为 SERVLET（Tomcat 200 工作线程会被 SSE 长连接占满）。
+    # 显式声明后直接采用响应式 Netty，与 pom.xml 顶部的说明一致。
+    web-application-type: reactive
+  threads:
+    virtual:
+      enabled: true
+  # RAG 向量库：PostgreSQL + pgvector（judge_ai 是 6 个库里唯一的 PG，其余 5 个是 MySQL）
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/judge_ai}
+    username: ${POSTGRES_USERNAME:postgres}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # 点评是「低频 + 长耗时（LLM 数秒~数十秒）」的负载，连接池不需要大；
+      # 关键是别让向量检索把连接长期占住，故收紧空闲回收。
+      maximum-pool-size: 8
+      minimum-idle: 2
+      idle-timeout: 60000
+      # PG 不可用时**不阻塞启动**：RAG 检索失败会降级为「无参考资料」的点评，
+      # 而不是让整个服务起不来（P5 验收要求「LLM 未配置/依赖不可用时不报 500」）。
+      initialization-fail-timeout: -1
+      # 5s 快速失败。默认 30s 太长：PG 宕机时「知识库检索」这类同步端点会把请求
+      # 挂住半分钟再报错，用户侧表现为「页面卡死」，比直接失败更糟。
+      # 点评主链路的 RAG 检索本就有 try/catch 降级，缩短超时只影响失败速度，不影响功能。
+      connection-timeout: 5000
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        enabled: ${NACOS_ENABLED:false}
+      config:
+        enabled: ${NACOS_CONFIG_ENABLED:false}
+    # 关闭 Nacos 时经 SimpleDiscoveryClient 静态实例直连。
+    # ⚠️ 两条缺一不可（漏配只在运行期炸，不在启动期）：
+    #   judge-submission → 拉取提交/判题上下文（点评的输入侧，评论没有代码就无从谈起）
+    #   judge-problem    → 拉取题目标题/难度（Prompt 里的题目信息；不含任何用例，防止答案外流）
+    discovery:
+      client:
+        simple:
+          instances:
+            judge-submission:
+              - uri: ${SVC_SUBMISSION_URI:http://localhost:9084}
+            judge-problem:
+              - uri: ${SVC_PROBLEM_URI:http://localhost:9083}
+  codec:
+    # 上游 LLM 单次响应体可能较大（含推理链），放宽内存上限避免 DataBufferLimitException
+    max-in-memory-size: 10MB
+
+# RocketMQ：只消费不生产（ai_review 的 REQUESTED Tag）。
+# 不配 producer-group → 不装配生产者（空 group 会让 DefaultMQProducer 启动即报错）。
+# ⚠️ 仅在 cj.review.mq-enabled=true 时才会注册 MqHandler，消费者才会真正建立连接；
+#    否则 RocketMQConsumerContainer 发现无处理器后直接跳过启动（不连接 broker）。
+#    这样「可选增强项」不会变成服务启动的强依赖。
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:localhost:9877}
+  consumer-group: cj_ai_review_consumer
+
+# ============================================================================
+# AI 点评配置
+# ============================================================================
+cj:
+  llm:
+    # OpenAI 兼容端点。默认对接智谱清言：POST {base-url}/{chat-path}
+    #   → https://open.bigmodel.cn/api/paas/v4/chat/completions
+    base-url: ${CJ_LLM_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+    chat-path: ${CJ_LLM_CHAT_PATH:chat/completions}
+    api-key: ${CJ_LLM_API_KEY:}
+    model: ${CJ_LLM_MODEL:glm-4.5-air}
+    temperature: ${CJ_LLM_TEMPERATURE:0.8}
+    top-p: ${CJ_LLM_TOP_P:0.95}
+    max-tokens: ${CJ_LLM_MAX_TOKENS:1024}
+    # 未配置 Key 时保持 false：点评走**结构化降级**（RAG 命中照常返回），绝不抛 500
+    enabled: ${CJ_LLM_ENABLED:false}
+    # 向量化路径必须与上面的 base-url 配套（两者拼接成完整地址）：
+    #   智谱  base-url 已含版本段 /api/paas/v4 → embedding-path=embeddings
+    #   OpenAI base-url 不含版本段 api.openai.com → embedding-path=v1/embeddings
+    # 配错会拼出 /v4/v1/embeddings 这类 404 地址，Embedding 恒定失败并**静默降级为伪向量**，
+    # 检索退化成按哈希排序、毫无语义 —— 这属于「功能看着没报错、实际已失效」的最坏形态，
+    # 因此 EmbeddingService 对降级打 ERROR 日志（只打一次，避免刷屏淹没真正的问题）。
+    embedding-path: ${CJ_LLM_EMBEDDING_PATH:embeddings}
+    embedding-model: ${CJ_LLM_EMBEDDING_MODEL:embedding-3}
+    # 维度必须等于 pgvector 列 knowledge_chunk.embedding / ai_review.embedding 的维度（1024）。
+    # 智谱 embedding-3 合法维度为 256/512/1024/2048；pgvector 的 HNSW 上限 2000 维 → 取交集 1024。
+    embedding-dimension: ${CJ_LLM_EMBEDDING_DIMENSION:1024}
+
+  rag:
+    # 文本切片窗口（近似 token）：题面/题解片段通常短于 500，实际多为单块
+    chunk-size: 500
+    chunk-overlap: 50
+    # 知识片段召回条数
+    top-k: 4
+    # 历史点评召回条数（与知识分开计数，避免历史点评挤掉题目知识）
+    history-top-k: 3
+    # 相似度阈值：低于该值视为「未命中」，宁可不注入也不硬凑（抑制幻觉）
+    min-score: 0.0
+    # SSE 心跳间隔（秒），0 关闭。异步模型首 token 可能等待较久，默认 15s 保活
+    heartbeat-seconds: 15
+    # 断线重连可回放的事件条数
+    replay-count: 200
+    # 同时活跃的 SSE 连接上限；超限返回降级提示而非无限堆积长连接（0=不限制）
+    max-concurrent-streams: ${CJ_RAG_MAX_STREAMS:200}
+    # 单次点评检索的题目知识/历史点评是否启用（排障开关）
+    history-enabled: ${CJ_RAG_HISTORY_ENABLED:true}
+
+  review:
+    # 是否允许 AI 输出完整可提交题解。
+    # 默认 false：点评平台的核心价值是「讲清错在哪、怎么想」，直接给可提交代码会把
+    # 练习场变成答案库（学员只需 submit 一次 WA 再让 AI 补全）。开启后 Prompt 改为给完整解法。
+    allow-full-solution: ${CJ_REVIEW_ALLOW_FULL_SOLUTION:false}
+    # AST 之外的代码长度上限（与 submission.code 的 32KB 对齐，防止 Prompt 被超长代码撑爆）
+    max-code-length: 32768
+    # 逐用例结果注入 Prompt 的条数上限（只给前 N 条，附带总数，避免长表格淹没有效信息）
+    max-case-samples: 8
+    # 点评落库时的模型输出上限（PG TEXT 无上限，此处仅防异常大响应）
+    max-content-length: 65535
+    # MQ 异步预生成开关：订阅 ai_review#REQUESTED，在后台提前生成点评并落库。
+    # 默认 false —— 点评主路径（SSE 实时生成）不依赖 MQ，增强项不应成为启动前提。
+    mq-enabled: ${CJ_REVIEW_MQ_ENABLED:false}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: false  # 响应式栈下 knife4j/swagger-ui 静态资源不注册，仅保留 /v3/api-docs 契约
+
+logging:
+  level:
+    com.codejudge.ai: info
+    # LLM 调用观测：想看请求体/流式 chunk 时调到 debug
+    org.springframework.web.reactive.function.client.ExchangeFunctions: warn

@@ -1,0 +1,5 @@
+com.codejudge.common.autoconfigure.CodeJudgeCommonAutoConfiguration
+com.codejudge.common.autoconfigure.RocketMqAutoConfiguration
+com.codejudge.common.autoconfigure.FeignRDecoderAutoConfiguration
+com.codejudge.common.jackson.CodeJudgeJacksonAutoConfiguration
+com.codejudge.common.ws.WsPushAutoConfiguration

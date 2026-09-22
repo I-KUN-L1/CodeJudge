@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.codejudge</groupId>
+        <artifactId>codejudge</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>judge-ai</artifactId>
+    <name>judge-ai</name>
+    <description>AI 服务：LLM 代码点评、pgvector 知识/历史点评向量检索、SSE 流式返回</description>
+
+    <!--
+      ============================================================================
+      为什么 judge-ai 是**纯 WebFlux（Netty）**服务，而不是和其它 7 个服务一样的 Servlet
+      ============================================================================
+      1. 复用底座 zx-aigc 的 SSE 实现（LlmClient 返回 Flux、ChatService 返回
+         Flux<ServerSentEvent<ChatEventVO>>）要求响应式栈 —— ServerSentEvent 的
+         序列化由 WebFlux 的 ServerSentEventHttpMessageWriter 负责，Servlet 栈根本没有这个写处理器。
+      2. judge-common 在 P1 就已按「双栈」加固过（ServletCommonExceptionAdvice /
+         WrapperResponseBodyAdvice / MvcConfig 全部带 @ConditionalOnWebApplication(SERVLET)），
+         注释里直接点名 judge-ai，说明这是既定设计。
+
+      ⚠️ 光「排除 spring-boot-starter-web」**不足以**落到响应式栈：
+         knife4j-openapi3-jakarta-spring-boot-starter → springdoc-openapi-starter-webmvc-ui
+         → spring-webmvc（DispatcherServlet）仍会进入类路径（已实测：judge-contest 成品 jar 中
+         同时存在 spring-webmvc-6.1.14.jar 与 springdoc-openapi-starter-webmvc-*.jar）。
+         Spring Boot 的 WebApplicationType.deduceFromClasspath() 判定规则是
+         「DispatcherHandler 在 且 DispatcherServlet 不在 → REACTIVE，否则看 Servlet 指示类」，
+         两者同时存在时会落到 SERVLET。
+         因此 application.yml 里**显式**声明 `spring.main.web-application-type: reactive`，
+         直接跳过类路径推断，不依赖「谁恰好没被传递进来」这种脆弱前提。
+         实测影响面有限：springdoc-webmvc 的自动配置本身带 @ConditionalOnWebApplication(SERVLET)
+         （已反编译确认），在响应式应用里不生效；knife4j 的自动配置只引用 org.springdoc.core.*
+         （未引用任何 webmvc 类），因此不会导致启动失败 —— 代价仅是 judge-ai 不对外提供
+         /doc.html 界面（注解与 OpenAPI 契约仍保留，网关本来也不聚合各服务文档）。
+      ============================================================================
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>com.codejudge</groupId>
+            <artifactId>judge-common</artifactId>
+            <version>${project.version}</version>
+            <exclusions>
+                <!-- 排除 Servlet 容器（Tomcat），避免它把 WebApplicationType 拉回 SERVLET -->
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.codejudge</groupId>
+            <artifactId>judge-api</artifactId>
+            <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- 响应式 Web 栈：WebClient（调 LLM）+ Reactive Netty（承载 SSE 长连接） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- RAG 向量库：PostgreSQL + pgvector（经 JdbcTemplate 直连 vector 列，非 Spring AI VectorStore） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.pgvector</groupId>
+            <artifactId>pgvector</artifactId>
+        </dependency>
+
+        <!-- ChatMemory（会话记忆）与 SSE 断线重连事件缓冲 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- 拉取题目摘要（ProblemClient）与提交/判题上下文（SubmissionClient） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+
+        <!--
+          RocketMQ：**只消费不生产**（订阅 ai_review 的 REQUESTED 做异步预生成）。
+          不配置 rocketmq.producer-group → RocketMqAutoConfiguration 不装配生产者
+          （空 group 会让 DefaultMQProducer 启动直接报 "the specified group is blank"）。
+          ⚠️ 显式声明而非依赖 judge-common 的传递依赖：本模块直接 import
+             org.apache.rocketmq.common.message.MessageExt，直接使用的类必须直接声明依赖，
+             否则一旦 judge-common 调整依赖范围就会在编译期炸。
+          ⚠️ 消费者是否启用由 cj.review.mq-enabled 控制（默认 false），见 AiReviewMqConsumer。
+        -->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-client</artifactId>
+        </dependency>
+
+        <!-- SSE 事件序列与降级路径的单测断言 -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>judge-ai</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.codejudge.ai.AiApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

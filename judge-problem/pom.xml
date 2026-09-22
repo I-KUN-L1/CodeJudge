@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.codejudge</groupId>
+        <artifactId>codejudge</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>judge-problem</artifactId>
+    <name>judge-problem</name>
+    <description>题目服务：题目/题面版本/测试用例/标签 CRUD 与可见性隔离</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.codejudge</groupId>
+            <artifactId>judge-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- P3：内部端点 /internal/problems/{id}/judge-info 的返回 DTO 定义在 judge-api -->
+        <dependency>
+            <groupId>com.codejudge</groupId>
+            <artifactId>judge-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <!--
+          说明（有意的依赖裁剪）：
+          本模块 P2 阶段不使用 Redis，也不对外发起 Feign 调用，故**不引入**
+          data-redis / openfeign —— 未使用的依赖会带来无谓的启动期健康检查项
+          与版本风险（judge-common 移除 Redisson 即是同类处置）。
+          P4 引入 judge:problem:hot 热门题榜时再补 data-redis。
+        -->
+    </dependencies>
+
+    <build>
+        <finalName>judge-problem</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.codejudge.problem.ProblemApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
