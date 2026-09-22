@@ -410,8 +410,12 @@ export CJ_P3_ADMIN_PASS=<密码>
 - [ ] ✋ 判题沙箱：评估 `CJ_SANDBOX_RUNTIME=runsc`（gVisor），生产不建议仅用 runc
       ｜ 校验：自动 D2
 - [ ] ✋ 数据卷备份与回滚预案（MySQL / PG / Redis / MinIO），生产前演练一次
-- [ ] ⚙ `NACOS_ENABLED=true`（如需服务发现）或维持静态实例并同步 `GW_*_URI` / `SVC_*_URI`
+- [ ] ⚙ **服务发现：维持 `NACOS_ENABLED=false`**，同步维护 `GW_*_URI` / `SVC_*_URI`
       ｜ 校验：自动 A2（网关对外可达即说明路由表生效）
+      —— 选型论证与推翻条件见 `docs/ADR-001-服务发现选型.md`
+      ⚠️ **不要照搬「生产置 `NACOS_ENABLED=true`」这句旧写法**：`docker-compose.yml` 内
+      **没有 Nacos 容器**，且该切换路径**从未被实测验证**（ADR §6.2 技术债 D2）。
+      真要启用须先补部署 Nacos，并显式清空 `simple.instances`（防双 DiscoveryClient 共存）。
 
 ### 7.5 功能走查
 
