@@ -347,33 +347,34 @@ export CJ_P3_ADMIN_PASS=<密码>
 > 图例：`[x]` 已在当前环境实测通过 ｜ `[ ]` 未通过或需人工处置
 > ｜ ⚙ = 脚本可自动判定 ｜ ✋ = 必须人工（脚本给了具体做法）
 >
-> **最近一次自检：2026-09-21，PASS 11 / WARN 6 / FAIL 2 / MANUAL 6**
-> （两条 FAIL 见下方第 6、7 项）
+> **最近一次自检：2026-09-21（终版），FAIL 2 / MANUAL 6 / PASS 12 / WARN 5**
+> （两条 FAIL：**B4** Grafana 默认密码未更换、**F1** Alertmanager 路由全指向 `null`）
 >
 > **2026-09-22 追加复验（可复现，与 preflight 互补）**：
 > `promtool check rules` → **11 条规则 SUCCESS**；`promtool check config` → **SUCCESS**；
 > `amtool check-config`（校验的是**生效中**的 `rendered-alertmanager.yml`，不是镜像自带那份）
 > → **SUCCESS，4 个 receiver 已定义、全部路由指向 `null`** —— 确认第 3 项处于「机制就绪、缺真实凭据」。
-> 另：`scripts/check-hardcoded-defaults.py` → **FAIL 0 / WARN 2**。
+> 另：`scripts/check-hardcoded-defaults.py` → **FAIL 0 / WARN 2**（与下方 E3 同源，见 §7.1 第 2 条）。
 >
 > ⚠️ preflight 的原始输出落在本机 `logs/`，而 **`logs/` 已 gitignore、不入库** ——
 > 换台机器或重新 clone 后没有这份记录，按上方命令自行复跑即可（自检本身不读凭据明文）。
 > 本次 preflight **未复跑**：后端 8 个服务当时处于停止状态，跑出来的 FAIL 无参考价值，
-> 故沿用 09-21 的读数；下次启动服务后请重跑并更新本行。
+> 故沿用 09-21 终版读数；下次启动服务后请重跑并更新本行。
 
 ### 7.1 凭据与密钥
 
 - [ ] ✋ `.env` 中所有 `必须修改` 项已改；`CJ_JWT_SECRET` 用强随机值
       —— `python scripts/rotate-credentials.py --rotate`（预演）→ `--rotate --write`（落盘）
-- [ ] ✋ **两处"代码内兜底密码"必须被环境变量覆盖**（2026-09-22 首提交预演时静态扫描发现）
-      ｜ 校验：`python scripts/check-hardcoded-defaults.py`
-      - `CJ_ADMIN_BOOTSTRAP_INIT_PASSWORD` —— 首个管理员引导密码。
-        `judge-auth` 的 `AdminBootstrapService` 用 `@Value("${cj.admin-bootstrap.init-password:123456}")`
-        兜底为 **`123456`**：**未覆盖时首个管理员的口令就是 123456，且不会报任何错**。
-      - `CJ_USER_DEFAULT_PASSWORD` —— 新建/重置用户时的兜底口令。
-        `judge-user` 的 `UserService` 用常量 `FALLBACK_DEFAULT_PASSWORD` 兜底。
-      > 这两处是**引导态**的合理设计（本地开发要免配置），但**生产必须显式覆盖**。
-      > 二者都不在前端可改，且在"开号即用"的路径上，属**静默失效**家族 —— 上线前请逐条确认。
+- [ ] ✋ **两处"兜底弱口令"必须确认已被生产值覆盖**
+      ｜ 校验：自动 **E3**（当前 WARN）+ `python scripts/check-hardcoded-defaults.py`
+      - `CJ_ADMIN_INIT_PASSWORD` —— 首个管理员引导口令。
+        Spring 键为 `cj.admin-bootstrap.init-password`，`AdminBootstrapService` 的
+        `@Value("${cj.admin-bootstrap.init-password:123456}")` 兜底为 **`123456`**。
+      - `CJ_USER_DEFAULT_PASSWORD` —— 新建/重置用户口令。
+        Spring 键同名，`UserService` 用常量 `FALLBACK_DEFAULT_PASSWORD` 兜底。
+      > E3 查的是 **`.env.example` 模板**，`check-hardcoded-defaults.py` 查的是**源码兜底默认值** ——
+      > 两层都过才算数：把模板里的弱值删掉并不会让源码的 `123456` 消失。
+      > 二者都属**静默失效**家族（不覆盖也能正常启动、不报任何错），请逐条确认。
 - [x] ⚙ 数据库密码不使用默认值；`.env` **未提交到仓库** ｜ 校验：自动 E1 / E2
 - [ ] ⚙ `GRAFANA_ADMIN_PASSWORD` 覆盖默认值（**当前未通过**）｜ 校验：自动 B4
       —— 实测默认凭据仍可登录 3001，即 `.env` 未覆盖、走的是 compose 默认值
@@ -387,8 +388,9 @@ export CJ_P3_ADMIN_PASS=<密码>
 - [x] ⚙ 确认 `/actuator/**` **未**经网关暴露 ｜ 校验：自动 B1 / B1b
       （下游管理端点直连仍可达，生产请用网络策略限制为内网/管理网）
 - [x] ⚙ CORS 不回显任意来源 ｜ 校验：自动 B2
-- [ ] ⚙ 确认网关登录限流为**生产默认值**（未带 `GW_LOGIN_RATE_*`）｜ 校验：自动 C1
-      —— 压测期间会临时放宽，上线前务必用默认值重启网关
+- [x] ⚙ 确认网关登录限流为**生产默认值**（未带 `GW_LOGIN_RATE_*`）｜ 校验：自动 C1
+      —— 09-21 终版实测 PASS：12 次瞬时登录 → **5×200 + 7×429**（即默认令牌桶 2 req/s / 突发 5 已恢复）。
+      ⚠️ 每次压测放宽后都必须走这一步恢复，别只看 `C1` 曾经绿过。
 - [ ] ✋ 开启 HTTPS；`judge-ai` 的 SSE 需确认反向代理不缓冲（`proxy_buffering off`）
 
 ### 7.3 通知与容量

@@ -34,7 +34,7 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 
 ---
 
-## 3. 绝不违反的硬约束（13 条速查）
+## 3. 绝不违反的硬约束（16 条速查）
 
 1. **包名** `com.zhixing.*` → `com.codejudge.*`（⚠️ 底座根包是 `com.zhixing`，**不是** `com.zx`）；groupId 同为 `com.codejudge`。
 2. **服务名** `zx-*` → `judge-*`，`spring.application.name` 同步。
@@ -167,7 +167,12 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 
 **至此六阶段全部交付，不再有新功能阶段。** 后续只剩上线前准备。
 
-#### 上线前 6 项 —— 处置状态（更新于 2026-09-21）
+> **预检终态（2026-09-21，`scripts/preflight-check.py`）：FAIL 2 / MANUAL 6 / PASS 12 / WARN 5**
+> —— 两条 FAIL 是 **B4** Grafana 默认密码未换、**F1** Alertmanager 路由全指向 `null`，
+> 二者分别由第 4 项与第 3 项处置。**2026-09-22 未复跑**（后端服务处于停止状态），
+> 改为补做可复现的配置校验：promtool 规则/配置 SUCCESS、amtool 生效配置 SUCCESS。
+
+#### 上线前 6 项 —— 处置状态（更新于 2026-09-22）
 
 | # | 事项 | 状态 | 说明 |
 |---|---|---|---|
@@ -181,11 +186,15 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 > ⚠️ **另有四项本轮新发现（2026-09-21 / 09-22），建议上线前处理**：
 > 1. **仓库零提交** —— `git log` 显示 `master` 分支**没有任何 commit**。`docs/` 作为持久化载体的前提是入 git，目前并不成立，且没有回滚点。→ 2026-09-22 已创建首个提交（430 文件）。
 > 2. **`.gitignore` 已补两轮** —— ① `perf-test/results/`、`perf-test/csv/`（否则 `git add .` 会带进数十 MB 的 `.jtl` 与**含明文压测账号密码**的 `users.csv`）；② `judge-web/coverage/`（vitest 覆盖率 HTML，56 个文件，首提交预演时发现遗漏）。
-> 3. **两处「代码内兜底口令」必须被环境变量覆盖**（2026-09-22 静态扫描发现，属**静默失效**家族）：
->    - `CJ_ADMIN_BOOTSTRAP_INIT_PASSWORD` —— `AdminBootstrapService` 的 `@Value` 兜底为 **`123456`**：
->      **未覆盖时首个管理员的口令就是 123456，不报任何错**。
+> 3. **两处「兜底弱口令」的检查从"只查模板"补到"也查源码"** —— 属**静默失效**家族：
+>    - `CJ_ADMIN_INIT_PASSWORD`（Spring 键 `cj.admin-bootstrap.init-password`）——
+>      `AdminBootstrapService` 的 `@Value` 兜底为 **`123456`**：未覆盖时首个管理员口令就是 123456，不报任何错。
 >    - `CJ_USER_DEFAULT_PASSWORD` —— `UserService` 用常量 `FALLBACK_DEFAULT_PASSWORD` 兜底。
->    已固化为 `scripts/check-hardcoded-defaults.py`（只读源码，不碰 `.env`；FAIL=0 / WARN=2）。
+>
+>    ⚠️ **如实说明**：这两条 preflight **E3 早已标为 WARN**（它查的是 `.env.example` 模板），
+>    本次**不是新发现**；新增的是①把检查下沉到**源码兜底默认值**这一层（改模板删弱值不会让源码的
+>    `123456` 消失）——`scripts/check-hardcoded-defaults.py`（只读源码、不碰 `.env`，FAIL=0 / WARN=2）；
+>    ②把 E3 明写进 `DEPLOYMENT.md` §7.1 的**可勾选清单**（此前 §7 只列了 E1/E2，E3 无对应条目）。
 > 4. **`scripts/rotate-credentials.py` 与 `.env` 在本机安全策略下无法被 AI 读取**
 >    —— 授权提示超时（`SENSITIVE_APPROVAL=TIMED_OUT`）。**第 4 项须由你本人执行**，命令见 §5.6。
 
