@@ -1,0 +1,162 @@
+server:
+  port: 9080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      # 统一 application 标签：Grafana 用 `application` 做多服务切换/聚合。
+      # 不设的话只能按 instance(host:port) 聚合，端口一变面板全废。
+      application: ${spring.application.name}
+    distribution:
+      # 直方图：让 Prometheus 能用 histogram_quantile() 算 P95/P99 延迟。
+      # 不开只能拿到 _count/_sum/_max（平均值会掩盖长尾），"延迟" 面板就失去意义。
+      percentiles-histogram:
+        http.server.requests: true
+
+spring:
+  config:
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:../.env[.properties]
+  application:
+    name: judge-gateway
+  threads:
+    virtual:
+      enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD:}
+  cloud:
+    nacos:
+      discovery:
+        # 关闭 Nacos 时靠各服务下方的 static simple.instances 直连；生产置 NACOS_ENABLED=true 并指向注册中心
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        enabled: ${NACOS_ENABLED:false}
+      config:
+        enabled: ${NACOS_CONFIG_ENABLED:false}
+    gateway:
+      httpclient:
+        # 连接超时 2s：下游服务未监听/网络不可达时快速失败
+        connect-timeout: 2000
+        # 响应超时 30s：普通 JSON 接口的兜底阈值（SSE 流式路由单独放宽，见 judge-ai 路由 metadata）
+        response-timeout: 30s
+        pool:
+          type: elastic
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            # 明确允许的前端来源（开发态）；生产同源部署无需跨域，
+            # 生产通过 CORS_ALLOWED_ORIGINS 覆盖（逗号分隔多个来源，
+            # 例：CORS_ALLOWED_ORIGINS=https://judge.example.com）。
+            #
+            # ⚠ 必须同时覆盖 localhost 与 127.0.0.1，且端口用 [*] 通配 —— 否则会出现
+            #   「页面打得开、一操作就失败」的隐蔽故障：
+            #   浏览器对同源 GET 不发送 Origin，但同源 POST/PUT/DELETE 一律携带 Origin。
+            #   若白名单只有 http://localhost:5174，当用户以 http://127.0.0.1:5174 打开前端时，
+            #   页面浏览（GET）正常，而所有写操作（登录、提交代码、报名竞赛、AI 点评…）
+            #   都会被 CORS 判定为非法来源，返回 403 Forbidden（空响应体 + Vary: Origin），
+            #   前端只能看到「连接中断，请重试」，极难定位。
+            #   端口通配则避免 dev server 换端口（5174/5175/自动递增）后再次漏配。
+            # 不使用 "*"：本项与 allow-credentials=true 组合时浏览器会拒绝，且等于放弃跨域控制。
+            allowedOriginPatterns: ${CORS_ALLOWED_ORIGINS:http://localhost:[*],http://127.0.0.1:[*]}
+            allowed-methods: "*"
+            allowed-headers: "*"
+            # 前端 axios withCredentials=true，需允许凭据
+            allow-credentials: true
+      routes:
+        # ============ 登录限流（须位于 judge-auth 路由之前，仅拦截登录 POST） ============
+        # 防爆破：同一 IP 对登录接口高频尝试时，令牌桶耗尽即 429。
+        # key 由 LoginRateLimitKeyResolver 生成（IP + userId 双维度，未登录按 IP）。
+        #
+        # ⚠️ 两个参数走环境变量，**默认值保持生产安全水位（2 req/s，突发 5）**。
+        #    本地压测必须显式放宽，否则 key = rate:login:127.0.0.1:anon 是**单一令牌桶**：
+        #    · 账号池播种（seed-users.py 连续登录 120 次）会被 429 打断；
+        #    · JMeter 登录线程组无论开多少线程，实测吞吐都被压在 2 req/s，
+        #      登录 P95 与整体吞吐门槛必然不达标。
+        #    压测放宽带法（仅限本地/压测环境，生产严禁）：
+        #      GW_LOGIN_RATE_REPLENISH=500 GW_LOGIN_RATE_BURST=1000 启动 judge-gateway
+        - id: login-rate-limit
+          uri: ${GW_AUTH_URI:http://localhost:9081}
+          predicates:
+            - Path=/accounts/login
+            - Method=POST
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@loginRateLimitKeyResolver}"
+                redis-rate-limiter.replenishRate: ${GW_LOGIN_RATE_REPLENISH:2}
+                redis-rate-limiter.burstCapacity: ${GW_LOGIN_RATE_BURST:5}
+                redis-rate-limiter.requestedTokens: 1
+
+        # ============ P1：认证 / 用户 ============
+        - id: judge-auth
+          uri: ${GW_AUTH_URI:http://localhost:9081}
+          predicates:
+            - Path=/accounts/**,/menus/**,/roles/**,/privileges/**,/jwks/**
+        - id: judge-user
+          uri: ${GW_USER_URI:http://localhost:9082}
+          predicates:
+            - Path=/users/**,/students/**,/teachers/**,/staffs/**
+
+        # ============ P2：题目（judge-problem） ============
+        # 题目与标签、测试用例管理；/test-cases/** 为教师/管理员专用的隐藏用例端点，
+        # 网关只负责转发，可见性过滤由 judge-problem 的 OwnerAccessGuard + @RequireRole 兜底。
+        - id: judge-problem
+          uri: ${GW_PROBLEM_URI:http://localhost:9083}
+          predicates:
+            - Path=/problems/**,/tags/**,/test-cases/**
+
+        # ============ P3：提交 / 判题机（judge-submission、judge-worker） ============
+        - id: judge-submission
+          uri: ${GW_SUBMISSION_URI:http://localhost:9084}
+          predicates:
+            - Path=/submissions/**,/workers/**
+
+        # ============ P4：WebSocket ============
+        # ⚠️ 路由顺序即匹配优先级：更具体的 /ws/contests/** 必须排在 /ws/** 之前，
+        #    否则竞赛榜单连接会被通配路由抢走、转发到 judge-submission 上（该服务没有这个端点），
+        #    表现为浏览器侧「连接被立刻关闭」，且服务端日志看不到任何订阅记录。
+        # WebSocket 的判题进度推送（/ws/submissions/{id}）
+        - id: judge-ws-submission
+          uri: ${GW_SUBMISSION_URI:http://localhost:9084}
+          predicates:
+            - Path=/ws/submissions/**
+          metadata:
+            # 长连接：覆盖全局 30s 响应超时（否则空闲 30s 就被网关掐断）
+            response-timeout: 900000
+        # WebSocket 的竞赛榜单推送（/ws/contests/{id}/rank）
+        - id: judge-ws-contest
+          uri: ${GW_CONTEST_URI:http://localhost:9086}
+          predicates:
+            - Path=/ws/contests/**
+          metadata:
+            response-timeout: 900000
+
+        # ============ P4：竞赛 / 排行榜（judge-contest） ============
+        - id: judge-contest
+          uri: ${GW_CONTEST_URI:http://localhost:9086}
+          predicates:
+            - Path=/contests/**
+
+        # ============ P5：AI 代码点评（judge-ai） ============
+        # SSE 流式点评：响应为长连接，覆盖全局 30s 响应超时为 15 分钟
+        - id: judge-ai
+          uri: ${GW_AI_URI:http://localhost:9087}
+          predicates:
+            - Path=/ai/**
+          metadata:
+            response-timeout: 900000
+
+# JWT 签名密钥：由环境变量 CJ_JWT_SECRET 注入
+cj:
+  jwt:
+    secret: ${CJ_JWT_SECRET}

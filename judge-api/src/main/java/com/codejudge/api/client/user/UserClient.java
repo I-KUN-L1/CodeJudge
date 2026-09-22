@@ -1,0 +1,55 @@
+package com.codejudge.api.client.user;
+
+import com.codejudge.api.dto.user.BootstrapAdminDTO;
+import com.codejudge.api.dto.user.LoginFormDTO;
+import com.codejudge.api.dto.user.PasswordChangeDTO;
+import com.codejudge.api.dto.user.UserDTO;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 用户服务客户端
+ */
+@FeignClient(value = "judge-user", contextId = "userClient")
+public interface UserClient {
+
+    @PostMapping("/users/detail/{isStaff}")
+    UserDTO queryUserDetail(@RequestBody LoginFormDTO loginFormDTO, @PathVariable("isStaff") boolean isStaff);
+
+    // ============ 首个管理员引导 ============
+
+    @GetMapping("/users/bootstrap/admin-exists")
+    Boolean adminExists();
+
+    @PostMapping("/users/bootstrap/admin")
+    UserDTO createBootstrapAdmin(@RequestBody BootstrapAdminDTO dto);
+
+    @PutMapping("/users/bootstrap/password")
+    void changeBootstrapPassword(@RequestBody PasswordChangeDTO dto);
+
+    @GetMapping("/users/list")
+    List<UserDTO> queryUserByIds(@RequestParam("ids") List<Long> ids);
+
+    @GetMapping("/users/{id}/type")
+    Integer queryUserType(@PathVariable("id") Long id);
+
+    @GetMapping("/users/ids")
+    Map<String, Long> exchangeUserId(@RequestParam("phone") String phone);
+
+    @GetMapping("/users/me")
+    UserDTO queryMe();
+
+    /**
+     * 用户总量统计（内部 Feign 接口，供管理端看板消费）
+     */
+    @GetMapping("/users/stats/total")
+    Long queryTotalUsers();
+}

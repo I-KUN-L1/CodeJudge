@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.codejudge</groupId>
+        <artifactId>codejudge</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>judge-common</artifactId>
+    <name>judge-common</name>
+    <description>公共基础模块：统一响应、异常、工具类、自动配置</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- RocketMQ 客户端（通用生产者/序列化封装，判题异步链路复用；版本与 judge-submission / judge-worker 保持一致） -->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-client</artifactId>
+            <version>4.9.7</version>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!--
+          spring-tx：org.springframework.dao.DataIntegrityViolationException 所在模块。
+          CommonExceptionAdvice 用它把「数据完整性约束失败（必填项缺失 / 唯一键冲突 / 字段超长）」
+          映射为 400 明确提示，而不是落到兜底的 500「系统繁忙，请稍后再试」。
+
+          ⚠ 必须显式声明且**不能 optional**：
+            judge-ai 等无数据库的服务本身只经由 mybatis-plus（optional）
+            间接看到该类型，运行期类路径上并没有 spring-tx —— 一旦缺失，Spring 在
+            introspect CommonExceptionAdvice 时会抛
+            NoClassDefFoundError: org/springframework/dao/DataIntegrityViolationException，
+            导致该服务**启动直接失败**（已踩过一次）。
+        -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+        <!--
+          WebSocket 与 Redis 依赖均为 optional：
+            WS 推送基座（com.codejudge.common.ws）只在 judge-submission / judge-contest 生效，
+            由这两个模块显式引入 spring-boot-starter-websocket。
+            若在 judge-common 里强制传递，会让 judge-auth / judge-user / judge-problem 等
+            纯 REST 服务也拖上 WebSocket 容器与 Redis 订阅连接（无用处、徒增启动成本与排查面）。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!--
+          micrometer-registry-prometheus（P6 新增）。
+
+          ⚠ 为什么必须显式引入：`spring-boot-starter-actuator` 只提供 `/actuator/metrics`
+          的**内存视图**，`/actuator/prometheus` 端点是由 **registry 的实现类**注册的。
+          仅声明 `management.endpoints.web.exposure.include` 含 prometheus 而没有 registry 时，
+          该端点不会注册 —— 访问返回 404（P6 改造前的实际状态：judge-gateway 白声明了
+          prometheus 却抓不到，其余 7 个服务连声明都没有，Prometheus 无从下手）。
+
+          版本由 spring-boot-starter-parent 的 BOM 管理，不写 <version>。
+          本依赖**不加 optional**：8 个可运行服务都需要被采集，放在公共底座里让
+          judge-auth/user/problem/submission/worker/contest/ai 直接继承；
+          judge-gateway 不依赖本模块，故在它自己的 pom 里单独声明一份。
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+    </dependencies>
+</project>

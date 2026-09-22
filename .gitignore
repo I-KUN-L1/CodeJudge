@@ -1,0 +1,95 @@
+# ---------- 构建产物 ----------
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ---------- IDE ----------
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+.factorypath
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+
+# ---------- 日志与运行时产物 ----------
+logs/
+*.log
+nohup.out
+
+# ---------- 环境变量与凭据（仓库零硬编码，只保留模板） ----------
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+# 首个管理员安全引导落盘的初始凭据，首登改密后自动删除
+.bootstrap-credentials
+
+# ---------- 密钥 / 证书 ----------
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+known_hosts
+*.secret
+*credentials*.json
+service-account*.json
+
+# ---------- 沙箱与判题运行产物 ----------
+# 沙箱工作目录（每次判题独立创建，结束即清理；异常中断时可能残留）
+sandbox/work/
+sandbox/out/
+# 判题机本地落盘的编译产物与临时文件
+judge-worker/work/
+judge-worker/tmp/
+
+# ---------- 数据导出 / 备份（可能含真实用户数据） ----------
+*.dump
+*.sql.gz
+dumps/
+backup/
+*.bak
+
+# ---------- Python 工具脚本缓存 ----------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ---------- JVM 崩溃转储 ----------
+hs_err_pid*.log
+replay_pid*.log
+*.hprof
+
+# ---------- 前端本地依赖与产物（P6） ----------
+node_modules/
+.pnpm-store/
+judge-web/dist/
+judge-web/.env.local
+judge-web/.env.*.local
+# vitest 覆盖率报告：HTML 形态是 56 个文件（每次 npm run test:cov 重建），
+# 与 perf-test/results/ 同类 —— 纯派生产物，无入库价值（2026-09-22 首提交预演时发现遗漏）
+judge-web/coverage/
+
+# ---------- 压测产物与账号池（P6） ----------
+# ① .jtl 原始数据单轮可达**数十 MB**（恒定负载计划实测 180s → 29MB，
+#    失控那轮涨到 400MB），HTML 报告又是上千个小文件；
+# ② csv/users.csv 里是**明文压测账号密码**（seed-users.py 生成的），
+#    属于"本地测试凭据"，与仓库零硬编码规范冲突。
+# 两者都能一键重建（跑一次压测即可），没有任何入库价值。
+perf-test/results/
+perf-test/csv/
+
+# ---------- AI 协作工作区数据（含本地测试凭据与缺陷复盘，不入库） ----------
+.workbuddy/

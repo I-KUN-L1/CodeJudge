@@ -1,0 +1,148 @@
+# ============================================================
+# CodeJudge 监控栈 —— 独立部署（与 docker-compose.yml 的中间件互不依赖）
+#
+# 组件：Prometheus 2.54 / Alertmanager 0.27 / Grafana 11.3
+# 端口：Prometheus 9090 ｜ Alertmanager 9093 ｜ Grafana 3001
+#
+# 用法：
+#   cd deploy/monitoring
+#   docker-compose --env-file ../../.env -f docker-compose.monitoring.yml up -d
+#   浏览器：Grafana http://localhost:3001   Prometheus http://localhost:9090
+#
+# ⚠ **`--env-file` 不能省**（本机实测）：这里的 docker-compose 是 Docker Desktop 的
+#   v5.4.0 二进制，**不读 shell 环境变量**做插值 —— 命令前缀赋值（`VAR=x docker-compose …`）
+#   与 `export VAR=x` 两种写法都试过，容器内拿到的仍是默认值。
+#   （对照：同一 shell 里 python 能读到 export 的变量，所以这是该二进制特有的行为。）
+#   省掉 --env-file 的后果是**静默**的：监控栈照常启动，但 Grafana 密码、告警通道
+#   全部退回默认值 —— 不报错、不复现，最难查。生产务必带上。
+#
+# ⚠ 为什么 Grafana 用 3001 而不是默认 3000：
+#   本机同时存在 zx-learn 等其它项目，3000 是 Grafana 的公共默认值，极易撞端口。
+#   与 CodeJudge 既有避让策略（MySQL 3307 / Redis 6380 / PG 5433）保持一致。
+#
+# ⚠ 为什么 Grafana 能拿到 /var/lib/grafana/dashboards 里的 JSON：
+#   走 provisioning 的 **provider** 机制（见 provisioning/dashboards/codejudge.yml），
+#   而不是把 JSON 塞进 /etc/grafana/provisioning/dashboards/ 当 datasource 处理。
+#   两者目录不能混用，混用表现为「Grafana 启动正常但面板一个都不出现」，无任何报错。
+#
+# ⚠ host.docker.internal 的必要性：
+#   judge-* 服务跑在**宿主机**（dev-start-backend.py 启动的 JVM），不在本 compose 网络内。
+#   Docker Desktop（Win/mac）自带该域名解析；Linux 需要 extra_hosts 的 host-gateway 映射，
+#   这里三个容器都显式加了，保证跨平台一致。
+# ============================================================
+name: codejudge-monitoring
+
+services:
+  # ---------------- Prometheus：指标采集 + 告警规则求值 ----------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: codejudge-prometheus
+    restart: always
+    ports:
+      - "${PROMETHEUS_BIND_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - codejudge-prometheus-data:/prometheus
+    extra_hosts:
+      # Linux 宿主必需；Docker Desktop 上重复声明也无害
+      - "host.docker.internal:host-gateway"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      # 本地开发保留 15 天足够；TSDB 大小与保留期直接相关，压测会产生大量样本
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'          # 支持 POST /-/reload 热加载配置
+      - '--web.enable-admin-api'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------- Alertmanager：告警去重 / 分组 / 抑制 ----------------
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: codejudge-alertmanager
+    restart: always
+    ports:
+      - "${ALERTMANAGER_BIND_PORT:-9093}:9093"
+    volumes:
+      # 挂载的是**模板**（.tpl）：容器启动时由 entrypoint.sh 渲染成实际配置。
+      # 渲染产物写在 /alertmanager 卷里，容器重启会重新渲染 —— 不存在「改了模板但没生效」。
+      - ./alertmanager/alertmanager.yml.tpl:/etc/alertmanager/alertmanager.yml.tpl:ro
+      - ./alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
+      - codejudge-alertmanager-data:/alertmanager
+    environment:
+      # ---- 通知通道开关（默认「不外发」：本地开发不该往群里发消息）----
+      # 生产：把下面两个 RECEIVER 改成 email 或 wecom，填好对应凭据，再 --force-recreate。
+      # 取值必须与模板里的 receiver 名一致：null / email / webhook / wecom
+      ALERTMANAGER_DEFAULT_RECEIVER: ${ALERTMANAGER_DEFAULT_RECEIVER:-null}
+      ALERTMANAGER_CRITICAL_RECEIVER: ${ALERTMANAGER_CRITICAL_RECEIVER:-null}
+      # 占位 URL：Alertmanager 会校验 webhook url 非空，空串会导致启动失败。
+      # 默认路由不指向 webhook/wecom，故该占位地址永远不会被请求。
+      ALERTMANAGER_WECOM_WEBHOOK: ${ALERTMANAGER_WECOM_WEBHOOK:-http://127.0.0.1:1/disabled}
+      # ---- 邮件通道（email receiver 用）----
+      # ⚠ Alertmanager 会**无条件校验**所有 receiver 的字段，即使该 receiver 没被路由选中。
+      #   email_configs 缺 to / smtp 缺 smarthost 都会导致启动失败（实测报
+      #   `missing to address in email config`，容器 CrashLoop）。
+      #   所以这里给 RFC 2606 保留域名的占位值（.invalid 永远解析不到，不会真的发出邮件），
+      #   保证「默认不外发」形态下配置依然合法。生产填真实 SMTP 与收件地址即可覆盖。
+      ALERTMANAGER_SMTP_SMARTHOST: ${ALERTMANAGER_SMTP_SMARTHOST:-localhost:25}
+      ALERTMANAGER_SMTP_FROM: ${ALERTMANAGER_SMTP_FROM:-alertmanager@codejudge.invalid}
+      ALERTMANAGER_SMTP_AUTH_USERNAME: ${ALERTMANAGER_SMTP_AUTH_USERNAME:-}
+      ALERTMANAGER_SMTP_AUTH_PASSWORD: ${ALERTMANAGER_SMTP_AUTH_PASSWORD:-}
+      ALERTMANAGER_EMAIL_TO: ${ALERTMANAGER_EMAIL_TO:-alerts@codejudge.invalid}
+    # 入口脚本负责「渲染模板 → 启动 alertmanager」两步，故不用 command。
+    # ⚠ **不要**改成 `command: --config.expand-env=true`：那是 **Prometheus** 的参数，
+    #    Alertmanager v0.27.0 会报 `unknown long flag` 并进入 CrashLoop（已实测）。
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------- Grafana：仪表盘可视化 ----------------
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: codejudge-grafana
+    restart: always
+    depends_on:
+      - prometheus
+    ports:
+      - "${GRAFANA_BIND_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      # 零硬编码：默认值仅用于本地，生产必须由 .env 覆盖（scripts/rotate-credentials.py 可生成）
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-codejudge}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # 本地：免登录只读，看板直接可点，方便得很。
+      # ⚠ 生产必须为 false —— 否则任何能访问 3001 端口的人都看得到全部监控数据
+      #   （接口清单、错误率、判题队列积压、JVM 状态）。这个开关原先被硬编码为 true，
+      #   现改为由 .env 控制；preflight-check.py 的 B3 会检查它是否被关掉。
+      GF_AUTH_ANONYMOUS_ENABLED: ${GF_AUTH_ANONYMOUS_ENABLED:-true}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: ${GF_AUTH_ANONYMOUS_ORG_ROLE:-Viewer}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_INSTALL_PLUGINS: ""
+      TZ: Asia/Shanghai
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - codejudge-grafana-data:/var/lib/grafana
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+volumes:
+  codejudge-prometheus-data:
+  codejudge-alertmanager-data:
+  codejudge-grafana-data:

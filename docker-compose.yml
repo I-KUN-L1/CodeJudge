@@ -1,0 +1,163 @@
+# ============================================================
+# CodeJudge 分布式在线编程评测平台 —— 基础设施一键启动
+#
+# 组件：MySQL 8 / Redis 7 / PostgreSQL + pgvector / RocketMQ 4.9.7 (+Dashboard) / MinIO
+# 用法：cp .env.example .env && 填写密码 && docker compose up -d
+#
+# ⚠ 端口避让：本机同时存在 zx-learn（占用 3306/6379/5432/9876/10909/10911/10912/18080），
+#   CodeJudge 整体换段，其中 **RocketMQ broker 的三个端口最容易漏改**，
+#   与 deploy/rocketmq/broker.conf 的 listenPort 必须一致：
+#     namesrv 9877 ｜ broker 10919(fast) / 10921(main) / 10922(HA) ｜ dashboard 18081
+# ============================================================
+services:
+  # ---------- MySQL：业务库（auth / user / problem / submission / contest） ----------
+  mysql:
+    image: mysql:8.0
+    container_name: codejudge-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中配置 MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Shanghai
+    ports:
+      # 宿主机 3306 已被 zx-learn 占用，默认映射 3307；如仍冲突可在 .env 配 MYSQL_BIND_PORT
+      - "${MYSQL_BIND_PORT:-3307}:3306"
+    volumes:
+      - codejudge-mysql-data:/var/lib/mysql
+      - ./deploy/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+      # 01/02 前缀保证执行顺序：先建库建表，再灌种子数据
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---------- Redis：判题队列 / 幂等锁 / 竞赛实时榜 ----------
+  redis:
+    image: redis:7
+    container_name: codejudge-redis
+    restart: always
+    ports:
+      # 宿主机 6379 已被 zx-learn 占用，映射 6380
+      - "${REDIS_BIND_PORT:-6380}:6379"
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD:?请在 .env 中配置 REDIS_PASSWORD}
+    volumes:
+      - codejudge-redis-data:/data
+      - ./deploy/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------- PostgreSQL + pgvector：AI 点评的 RAG 向量知识库 ----------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: codejudge-pg
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中配置 POSTGRES_PASSWORD}
+      POSTGRES_DB: judge_ai
+      TZ: Asia/Shanghai
+    ports:
+      # 宿主机 5432 已被 zx-learn 占用，映射 5433
+      - "${POSTGRES_BIND_PORT:-5433}:5432"
+    volumes:
+      - codejudge-pg-data:/var/lib/postgresql/data
+      - ./deploy/pgvector/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-postgres} -d judge_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------- RocketMQ：提交异步判题链路（created / retry / result / dlq） ----------
+  rocketmq-namesrv:
+    image: apache/rocketmq:4.9.7
+    container_name: codejudge-mq-namesrv
+    restart: always
+    ports:
+      # 宿主机 9876 已被 zx-learn 占用，映射 9877
+      - "${ROCKETMQ_NAMESRV_BIND_PORT:-9877}:9876"
+    command: sh mqnamesrv
+
+  rocketmq-broker:
+    image: apache/rocketmq:4.9.7
+    container_name: codejudge-mq-broker
+    restart: always
+    depends_on:
+      - rocketmq-namesrv
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+      # 规避 JDK8 在 cgroup v2（Docker Desktop/WSL2）下 OperatingSystemMXBean NPE
+      # 导致 StoreUtil.<clinit> 失败、消费位点查询全挂的已知问题
+      JAVA_OPT_EXT: "-XX:-UseContainerSupport"
+    ports:
+      # 与 deploy/rocketmq/broker.conf 的 listenPort=10921 严格对应：
+      #   fastRemotingPort = 10919，主端口 = 10921，HA 端口 = 10922
+      - "10919:10919"
+      - "10921:10921"
+      - "10922:10922"
+    volumes:
+      - ./deploy/rocketmq/broker.conf:/home/rocketmq/rocketmq-4.9.7/conf/broker.conf:ro
+      # ⚠ 这里**故意不挂载 /home/rocketmq/store**（踩坑记录 2026-09-20）：
+      #   apache/rocketmq 镜像内并不存在该目录，容器进程以 uid=3000(rocketmq) 运行，
+      #   而 Docker 为命名卷创建的挂载点是 root:root(drwxr-xr-x) —— 进程无写权限，
+      #   broker 会在打印任何日志之前直接退出（ExitCode=253，日志为空，极难定位）。
+      #   实测证据：镜像内 /home/rocketmq 为 drwx------ rocketmq，/home/rocketmq/store 不存在。
+      #   取舍：不挂载则消息存储在容器可写层，`docker restart` 不丢、容器被重建才丢；
+      #   本地开发可接受（主题 autoCreateTopicEnable=true 会自动重建）。
+      #   生产若需持久化，正确做法是先建卷并 chown 3000:3000，再挂载。
+    command: sh mqbroker -c /home/rocketmq/rocketmq-4.9.7/conf/broker.conf
+
+  rocketmq-console:
+    image: apacherocketmq/rocketmq-dashboard:2.0.0
+    container_name: codejudge-mq-console
+    restart: always
+    depends_on:
+      - rocketmq-namesrv
+    environment:
+      JAVA_OPTS: "-Drocketmq.namesrv.addr=rocketmq-namesrv:9876"
+    ports:
+      # 宿主机 8080 预留给 judge-gateway 统一入口，控制台映射到 18081
+      # 访问：http://localhost:18081
+      - "${ROCKETMQ_CONSOLE_BIND_PORT:-18081}:8080"
+
+  # ---------- MinIO：判题代码（超长代码）与题目附件的对象存储 ----------
+  # ⚠ 放在 `storage` profile 下，**默认不随 `docker compose up -d` 启动**，原因见下：
+  #   · MinIO 不是 P1 链路（登录/RBAC/用户）的依赖，P3 才用于存放超长判题代码；
+  #   · 部分受限网络环境下 `minio/minio` 镜像拉取会被仓库拒绝（实测 error from registry: denied），
+  #     若不加 profile，一个非关键组件会把整条 `docker compose up -d` 拖失败。
+  # 需要时显式启动：
+  #   docker compose --profile storage up -d minio
+  minio:
+    image: minio/minio
+    container_name: codejudge-minio
+    profiles: ["storage"]
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?请在 .env 中配置 MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 中配置 MINIO_ROOT_PASSWORD}
+      TZ: Asia/Shanghai
+    ports:
+      # 9000 = S3 API（应用访问），9001 = Web 控制台（浏览器访问）
+      - "${MINIO_API_BIND_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_BIND_PORT:-9001}:9001"
+    volumes:
+      - codejudge-minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  codejudge-mysql-data:
+  codejudge-redis-data:
+  codejudge-pg-data:
+  codejudge-minio-data:

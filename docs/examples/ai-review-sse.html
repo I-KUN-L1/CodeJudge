@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeJudge · AI 代码点评（SSE 流式接入示例）</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b; --bd:#2a2f3a;
+    --fg:#e6e9ef; --fg-dim:#9aa4b2; --accent:#4c8dff; --ok:#3fb950;
+    --warn:#d29922; --err:#f85149; --code:#0b0d12;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{padding:16px 20px;border-bottom:1px solid var(--bd);background:var(--panel)}
+  header h1{margin:0;font-size:16px;font-weight:600}
+  header p{margin:4px 0 0;color:var(--fg-dim);font-size:12px}
+  .wrap{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px;align-items:start}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+  .card h2{margin:0;padding:10px 14px;font-size:13px;font-weight:600;
+           color:var(--fg-dim);border-bottom:1px solid var(--bd);background:var(--panel-2)}
+  .card .body{padding:14px}
+  label{display:block;font-size:12px;color:var(--fg-dim);margin:10px 0 4px}
+  label:first-child{margin-top:0}
+  input,select,textarea{width:100%;background:var(--code);color:var(--fg);
+       border:1px solid var(--bd);border-radius:6px;padding:8px 10px;font:inherit}
+  textarea{resize:vertical;min-height:64px}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  button{background:var(--accent);color:#fff;border:0;border-radius:6px;
+         padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--bd)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .btnbar{display:flex;gap:8px;margin-top:14px}
+  .hint{color:var(--fg-dim);font-size:11px;margin-top:6px}
+  #status{display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 14px;
+          border-bottom:1px solid var(--bd);background:var(--panel-2)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--fg-dim)}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.bad{background:var(--err)}
+  #out{min-height:340px;padding:16px;white-space:pre-wrap;word-break:break-word}
+  #out:empty::before{content:"点评内容将在此处流式出现…";color:var(--fg-dim)}
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;
+         border:1px solid var(--bd);color:var(--fg-dim);margin-right:6px}
+  .badge.deg{border-color:var(--warn);color:var(--warn)}
+  .badge.err{border-color:var(--err);color:var(--err)}
+  .badge.ok{border-color:var(--ok);color:var(--ok)}
+  .srcs{padding:0 16px 16px}
+  .src{border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-top:8px;
+       background:var(--panel-2);font-size:12px}
+  .src b{color:var(--fg)}
+  .src .sc{color:var(--accent);font-variant-numeric:tabular-nums}
+  .src .sn{color:var(--fg-dim);display:block;margin-top:4px}
+  .md h1,.md h2,.md h3{margin:16px 0 8px;font-weight:600;line-height:1.3}
+  .md h2{font-size:15px;padding-bottom:4px;border-bottom:1px solid var(--bd)}
+  .md h3{font-size:14px}
+  .md p{margin:8px 0}
+  .md ul,.md ol{margin:8px 0;padding-left:22px}
+  .md li{margin:4px 0}
+  .md code{background:var(--code);border:1px solid var(--bd);border-radius:4px;
+           padding:1px 5px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+  .md pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;
+          padding:12px;overflow:auto}
+  .md pre code{background:none;border:0;padding:0;font-size:12.5px;line-height:1.55}
+  .md blockquote{margin:8px 0;padding:8px 12px;border-left:3px solid var(--warn);
+                 background:rgba(210,153,34,.08);color:var(--fg-dim);border-radius:0 6px 6px 0}
+  .md table{border-collapse:collapse;margin:10px 0;font-size:12.5px;width:100%}
+  .md th,.md td{border:1px solid var(--bd);padding:6px 10px;text-align:left}
+  .md th{background:var(--panel-2);color:var(--fg-dim)}
+  .md hr{border:0;border-top:1px solid var(--bd);margin:14px 0}
+  .caret{display:inline-block;width:8px;height:15px;background:var(--accent);
+         vertical-align:-2px;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  #log{font:11.5px/1.5 ui-monospace,Consolas,monospace;color:var(--fg-dim);
+       padding:10px 14px;max-height:180px;overflow:auto;white-space:pre-wrap}
+  #log .t{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>CodeJudge · AI 代码点评（SSE 流式接入示例）</h1>
+  <p>POST /ai/review/stream · text/event-stream · 手工解析增量（fetch + ReadableStream）</p>
+</header>
+
+<div class="wrap">
+  <!-- ============ 左：参数与协议说明 ============ -->
+  <div class="card">
+    <h2>请求参数</h2>
+    <div class="body">
+      <label>网关地址</label>
+      <input id="base" value="http://localhost:9080">
+
+      <label>访问令牌（JWT，不含 Bearer 前缀）</label>
+      <input id="token" placeholder="登录后返回的 accessToken">
+
+      <label>提交 ID（submissionId）</label>
+      <input id="sid" type="number" placeholder="例如 1">
+
+      <label>点评类型</label>
+      <select id="rtype">
+        <option value="1">1 · 错误诊断（默认）</option>
+        <option value="2">2 · 主动点评（代码质量）</option>
+        <option value="3">3 · 相似题推荐</option>
+      </select>
+
+      <label>追问（可留空；多轮追问时填写新问题）</label>
+      <textarea id="q" placeholder="例如：那我的边界情况该怎么改？"></textarea>
+
+      <div class="btnbar">
+        <button id="go">开始点评</button>
+        <button id="stop" class="ghost" disabled>中断</button>
+      </div>
+      <div class="hint">
+        点「开始点评」建立 SSE 连接。中途点「中断」可复现「客户端取消」路径
+        （服务端会把已生成的部分点评落库，状态记为失败/中断）。
+      </div>
+      <div class="hint" style="margin-top:10px;color:var(--fg-dim)">
+        <b style="color:var(--fg)">为什么不用 EventSource？</b><br>
+        EventSource 无法设置 <code>Authorization</code> 与 <code>Last-Event-ID</code>
+        请求头，本平台需要携带 JWT；且 POST + body 才能传较长的追问文本。
+        因此示例使用 <code>fetch</code> + <code>ReadableStream</code> 手工解析 SSE 报文
+        —— 这正是生产前端应当采用的方式。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 右：状态 / 正文 / 来源 / 事件日志 ============ -->
+  <div>
+    <div class="card">
+      <div id="status">
+        <span class="dot" id="dot"></span>
+        <span id="statustext">未连接</span>
+        <span id="badges"></span>
+      </div>
+      <div id="out" class="md"></div>
+      <div class="srcs" id="srcs"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>SSE 事件日志（原始）</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+ * 一、SSE 手工解析器
+ * ----------------------------------------------------------------------------
+ * 为什么不能直接用 EventSource（见右栏说明）。手工解析要注意 4 个易错点：
+ *   1. 分帧以「空行」为界，且换行可能是 \n 也可能是 \r\n —— 用正则统一；
+ *   2. 一行事件可能被 TCP/HTTP 分块切成两半（chunk 边界 ≠ 行边界），
+ *      因此必须维护 buffer，只处理「以空行结尾的完整块」，剩余部分留在 buffer；
+ *   3. data: 可以出现多行，规范要求用 \n 拼接；以 ':' 开头的是注释（心跳 :ping）；
+ *   4. id / event 字段要分别解析，id 用于重连时回填 Last-Event-ID。
+ * ========================================================================== */
+class SseParser {
+  constructor(onEvent) {
+    this.onEvent = onEvent;
+    this.buffer = '';
+  }
+  /** 喂入一段解码后的文本，回调可能被调用 0~N 次 */
+  push(text) {
+    this.buffer += text;
+    // 事件块之间以「空行」分隔；\r\n 与 \n 都算
+    let idx;
+    while ((idx = this.buffer.search(/\r\n\r\n|\n\n|\r\r/)) !== -1) {
+      const raw = this.buffer.slice(0, idx);
+      // 跳过被匹配到的分隔符本身
+      const sep = /^\r\n\r\n/.test(this.buffer.slice(idx)) ? 4 : 2;
+      this.buffer = this.buffer.slice(idx + sep);
+      this.emit(raw);
+    }
+  }
+  emit(rawBlock) {
+    if (!rawBlock) return;
+    const evt = { id: null, event: 'message', data: '', comments: [] };
+    for (const line of rawBlock.split(/\r\n|\n|\r/)) {
+      if (!line) continue;
+      if (line.startsWith(':')) {            // 注释行（心跳）
+        evt.comments.push(line.slice(1).trim());
+        continue;
+      }
+      const colon = line.indexOf(':');
+      const field = colon === -1 ? line : line.slice(0, colon);
+      let value = colon === -1 ? '' : line.slice(colon + 1);
+      if (value.startsWith(' ')) value = value.slice(1);   // 规范：冒号后一个空格须去掉
+      if (field === 'id') evt.id = value;
+      else if (field === 'event') evt.event = value;
+      else if (field === 'data') evt.data += (evt.data ? '\n' : '') + value;
+    }
+    // 纯心跳块（只有注释）不产生业务事件，但仍需上报以便观察保活
+    this.onEvent(evt);
+  }
+}
+
+/* ============================================================================
+ * 二、极简 Markdown 渲染（仅覆盖 LLM 实际会输出的子集，无外部依赖）
+ * 说明：生产项目请用 marked / markdown-it + DOMPurify。
+ * 这里内联实现是为了让示例「双击即可运行」，不依赖任何 CDN。
+ * ========================================================================== */
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function renderMarkdown(src) {
+  if (!src) return '';
+  const blocks = [];
+  // 先抽出围栏代码块，避免其中的 # / * / | 被当成 Markdown 语法
+  let text = src.replace(/```([\w+-]*)\n?([\s\S]*?)(?:```|$)/g, (m, lang, code) => {
+    blocks.push('<pre><code data-lang="' + escapeHtml(lang) + '">'
+                + escapeHtml(code.replace(/\n$/, '')) + '</code></pre>');
+    return '\u0000' + (blocks.length - 1) + '\u0000';
+  });
+
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let list = null;      // 'ul' | 'ol' | null
+  let inQuote = false;
+
+  const closeList = () => { if (list) { out.push('</' + list + '>'); list = null; } };
+  const closeQuote = () => { if (inQuote) { out.push('</blockquote>'); inQuote = false; } };
+
+  const inline = (s) => escapeHtml(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+               '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (/^\u0000\d+\u0000$/.test(line.trim())) { closeList(); closeQuote(); out.push(line.trim()); continue; }
+
+    // 表格：当前行含 | 且下一行是分隔行
+    if (line.includes('|') && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i+1])) {
+      closeList(); closeQuote();
+      const head = splitRow(line);
+      i++;   // 跳过分隔行
+      let html = '<table><thead><tr>' + head.map(h => '<th>' + inline(h) + '</th>').join('') + '</tr></thead><tbody>';
+      while (i + 1 < lines.length && lines[i+1].includes('|')) {
+        i++;
+        html += '<tr>' + splitRow(lines[i]).map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>';
+      }
+      out.push(html + '</tbody></table>');
+      continue;
+    }
+    if (/^\s*$/.test(line)) { closeList(); closeQuote(); continue; }
+    let m;
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+      closeList(); closeQuote();
+      out.push('<h' + m[1].length + '>' + inline(m[2]) + '</h' + m[1].length + '>');
+      continue;
+    }
+    if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) { closeList(); closeQuote(); out.push('<hr>'); continue; }
+    if ((m = line.match(/^\s*>\s?(.*)$/))) {
+      closeList();
+      if (!inQuote) { out.push('<blockquote>'); inQuote = true; }
+      out.push('<p>' + inline(m[1]) + '</p>');
+      continue;
+    }
+    closeQuote();
+    if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) {
+      if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+      out.push('<li>' + inline(m[1]) + '</li>');
+      continue;
+    }
+    if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) {
+      if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+      out.push('<li>' + inline(m[1]) + '</li>');
+      continue;
+    }
+    closeList();
+    out.push('<p>' + inline(line) + '</p>');
+  }
+  closeList(); closeQuote();
+
+  return out.join('\n').replace(/\u0000(\d+)\u0000/g, (m, n) => blocks[+n]);
+}
+function splitRow(line) {
+  return line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(s => s.trim());
+}
+
+/* ============================================================================
+ * 三、页面逻辑：建立连接 → 增量接收 → 增量渲染 → 断线重连
+ * ========================================================================== */
+const $ = (id) => document.getElementById(id);
+let controller = null;          // AbortController：用于「中断」
+let acc = '';                   // 已累积的正文（DELTA 拼接）
+let lastEventId = null;         // 最近一次收到的事件 id，重连时回填
+let session = null;             // 当前会话（用于重连时复用参数）
+let gotEnd = false;
+
+function setStatus(text, cls) {
+  $('statustext').textContent = text;
+  $('dot').className = 'dot' + (cls ? ' ' + cls : '');
+}
+function log(msg, isEvent) {
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const el = $('log');
+  el.innerHTML += '<span class="t">[' + t + ']</span> ' + escapeHtml(msg) + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+function renderBody(streaming) {
+  $('out').innerHTML = renderMarkdown(acc) + (streaming ? '<span class="caret"></span>' : '');
+}
+function addBadge(text, cls) {
+  $('badges').innerHTML += '<span class="badge ' + (cls || '') + '">' + escapeHtml(text) + '</span>';
+}
+function clearBadges() { $('badges').innerHTML = ''; }
+
+/**
+ * 建立一次 SSE 请求。
+ * @param {boolean} reconnect true 表示断线重连（携带 Last-Event-ID，服务端只回放不重生成）
+ */
+async function connect(reconnect) {
+  gotEnd = false;
+  controller = new AbortController();
+  $('go').disabled = true;
+  $('stop').disabled = false;
+  setStatus(reconnect ? '重连中…' : '已连接，等待首个事件…', 'on');
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'text/event-stream',
+    'Authorization': 'Bearer ' + $('token').value.trim(),
+  };
+  // 断线重连的核心：把上次收到的事件 id 回填，服务端据此只回放未送达的增量
+  if (reconnect && lastEventId !== null) headers['Last-Event-ID'] = String(lastEventId);
+
+  let resp;
+  try {
+    resp = await fetch($('base').value.replace(/\/+$/, '') + '/ai/review/stream', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        submissionId: Number($('sid').value),
+        reviewType: Number($('rtype').value),
+        question: $('q').value.trim() || null,
+      }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    onNetworkError(e);
+    return;
+  }
+
+  // 网关层的拒绝（401/403/429 等）会以普通 JSON 返回 —— 此时还没有进入 SSE 协议。
+  // 必须区分「HTTP 层失败」与「SSE 事件里的 ERROR」，否则错误提示会张冠李戴。
+  const ctype = resp.headers.get('content-type') || '';
+  if (!resp.ok || !ctype.includes('text/event-stream')) {
+    const text = await resp.text().catch(() => '');
+    setStatus('请求被拒绝（HTTP ' + resp.status + '）', 'bad');
+    log('HTTP ' + resp.status + ' ' + ctype + ' :: ' + text.slice(0, 300));
+    let msg = text;
+    try { const j = JSON.parse(text); msg = j.msg || j.message || text; } catch (_) {}
+    acc = '> ⚠️ 请求失败：' + msg;
+    renderBody(false);
+    $('go').disabled = false; $('stop').disabled = true;
+    return;
+  }
+
+  setStatus('流式接收中…', 'on');
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  const parser = new SseParser(handleEvent);
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      // stream:true 处理跨 chunk 的多字节字符（中文按 UTF-8 最多 3 字节，
+      // 不设 stream 会在 chunk 边界把一个汉字截成两半，出现乱码）
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+    parser.push(decoder.decode());
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      log('客户端主动中断（ABORT），服务端应已把已生成内容落库');
+      setStatus('已中断', 'bad');
+      $('go').disabled = false; $('stop').disabled = true;
+      return;
+    }
+    onNetworkError(e);
+    return;
+  }
+
+  $('go').disabled = false;
+  $('stop').disabled = true;
+  if (gotEnd) setStatus('已完成', 'on');
+  else {
+    // 连接正常关闭但没有 END：几乎总是被中间层（代理/网关空闲超时）提前掐断
+    log('连接关闭但未收到 END 事件 —— 可能是中间层超时截断');
+    setStatus('连接意外结束', 'bad');
+  }
+}
+
+/** 网络层错误（含断线）：自动重连一次，用 Last-Event-ID 续传 */
+function onNetworkError(e) {
+  log('网络错误：' + (e && e.message ? e.message : e));
+  if (lastEventId !== null && session && !session.retried) {
+    session.retried = true;
+    setStatus('连接中断，正在用 Last-Event-ID=' + lastEventId + ' 重连…', 'bad');
+    log('→ 重连（服务端只回放未送达事件，不重新生成）');
+    setTimeout(() => connect(true), 800);
+  } else {
+    setStatus('连接中断', 'bad');
+    $('go').disabled = false;
+    $('stop').disabled = true;
+  }
+}
+
+/** 单个 SSE 事件的分发：START / RETRIEVAL / DELTA / ERROR / END */
+function handleEvent(evt) {
+  if (evt.id !== null && evt.id !== '') lastEventId = Number(evt.id);
+
+  // 纯心跳块（只有 :ping 注释）—— 保活信号，不产生业务内容
+  if (!evt.data && evt.comments.length) { log('♥ 心跳（注释行）：' + evt.comments.join(' / ')); return; }
+  if (!evt.data) return;
+
+  let vo;
+  try { vo = JSON.parse(evt.data); }
+  catch (e) { log('无法解析的 data：' + evt.data.slice(0, 200)); return; }
+
+  log('event=' + evt.event + ' id=' + evt.id + ' type=' + vo.type
+      + (vo.type === 'DELTA' ? ' (+' + (vo.content || '').length + ' 字符)' : ''));
+
+  switch (vo.type) {
+    case 'START':
+      clearBadges();
+      acc = '';
+      renderBody(true);
+      addBadge('reviewId=' + (vo.reviewId == null ? '未落库' : vo.reviewId), 'ok');
+      addBadge('model=' + (vo.model || '-'));
+      if (vo.degraded) addBadge('降级模式（非 AI 生成）', 'deg');
+      setStatus('生成中…', 'on');
+      break;
+
+    case 'RETRIEVAL':
+      // 检索完成先于正文推送 —— 前端可在正文出现前就把「依据」展示出来
+      if (vo.content) log('RAG：' + vo.content);
+      renderSources(vo.sources || []);
+      break;
+
+    case 'DELTA':
+      // 增量累积 + 全量重渲染。
+      // 生产环境若正文很长，可改为只渲染新增部分（但 Markdown 可能跨块，
+      // 全量重渲染反而更简单可靠；配合 requestAnimationFrame 节流即可）。
+      acc += vo.content || '';
+      renderBody(true);
+      break;
+
+    case 'ERROR':
+      // 关键：错误走事件而非 HTTP 状态码（装配阶段的异常此时已无法改状态码）
+      addBadge('错误 ' + vo.code, 'err');
+      acc += (acc ? '\n\n' : '') + '> ⚠️ ' + (vo.content || '点评失败');
+      renderBody(false);
+      setStatus('点评失败（错误码 ' + vo.code + '）', 'bad');
+      break;
+
+    case 'END':
+      gotEnd = true;
+      renderBody(false);
+      const fr = vo.finishReason || 'STOP';
+      addBadge('finishReason=' + fr, fr === 'STOP' ? 'ok' : 'deg');
+      setStatus('已完成（' + fr + '）', fr === 'STOP' ? 'on' : 'bad');
+      log('流结束，累计 ' + acc.length + ' 字符');
+      break;
+  }
+}
+
+function renderSources(sources) {
+  if (!sources.length) return;
+  const box = $('srcs');
+  box.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;margin-top:12px">'
+                + 'RAG 参考来源（' + sources.length + '）</div>' + sources.map(s =>
+      '<div class="src"><b>' + escapeHtml(s.title || '(无标题)') + '</b>'
+      + '<span class="sc"> · ' + (s.sourceType === 'HISTORY' ? '历史点评' : '知识库')
+      + ' · 相似度 ' + (s.score == null ? '-' : Number(s.score).toFixed(3)) + '</span>'
+      + (s.snippet ? '<span class="sn">' + escapeHtml(s.snippet) + '</span>' : '')
+      + '</div>').join('');
+}
+
+/* ---------------- 交互绑定 ---------------- */
+$('go').onclick = () => {
+  if (!$('token').value.trim()) { alert('请先填写访问令牌（JWT）'); return; }
+  if (!$('sid').value) { alert('请填写提交 ID'); return; }
+  acc = ''; lastEventId = null; gotEnd = false;
+  session = { retried: false };
+  $('out').innerHTML = ''; $('srcs').innerHTML = ''; $('log').innerHTML = ''; clearBadges();
+  connect(false);
+};
+$('stop').onclick = () => {
+  if (controller) {
+    controller.abort();
+    // 注意：不要在这里清 lastEventId —— 保留它才能支持「中断后续传」
+  }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,316 @@
+/* ==========================================================================
+   CodeJudge 全局样式与响应式基线
+   --------------------------------------------------------------------------
+   同时适配 Element Plus 的浅色与暗色主题（暗色由 <html class="dark"> 触发）。
+   自定义变量统一以 --cj- 前缀，避免与 Element Plus 的 --el-* 冲突。
+   ========================================================================== */
+
+:root {
+  --cj-bg: #f4f6f9;
+  --cj-panel: #ffffff;
+  --cj-panel-2: #fafbfc;
+  --cj-border: #e3e7ee;
+  --cj-text: #1f2430;
+  --cj-text-sub: #5c6472;
+  --cj-text-dim: #8b93a3;
+  --cj-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 4px 16px rgba(16, 24, 40, 0.05);
+
+  --cj-accent: #3b6ef6;
+  --cj-accepted: #17a673;
+  --cj-wrong: #e5484d;
+  --cj-warn: #f5a524;
+  --cj-info: #6b7280;
+
+  --cj-radius: 10px;
+  --cj-gap: 16px;
+  --cj-header-h: 58px;
+
+  /* 编辑区等宽字体栈：优先系统自带，避免额外字体下载 */
+  --cj-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', 'Cascadia Mono', Consolas,
+    'Liberation Mono', Menlo, monospace;
+}
+
+html.dark {
+  --cj-bg: #101215;
+  --cj-panel: #191c21;
+  --cj-panel-2: #1f2329;
+  --cj-border: #2c3138;
+  --cj-text: #e6eaf2;
+  --cj-text-sub: #a7aeba;
+  --cj-text-dim: #7b8391;
+  --cj-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.35);
+
+  --cj-accent: #5b8def;
+  --cj-accepted: #35bd8b;
+  --cj-wrong: #f2555a;
+  --cj-warn: #f0a83c;
+  --cj-info: #9aa3b2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--cj-bg);
+  color: var(--cj-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--cj-accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 通用容器 ---------- */
+
+.cj-page {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: var(--cj-gap);
+}
+
+.cj-card {
+  background: var(--cj-panel);
+  border: 1px solid var(--cj-border);
+  border-radius: var(--cj-radius);
+  box-shadow: var(--cj-shadow);
+}
+
+.cj-card + .cj-card {
+  margin-top: var(--cj-gap);
+}
+
+.cj-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--cj-border);
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
+.cj-card__body {
+  padding: 16px;
+}
+
+.cj-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+.cj-sub {
+  color: var(--cj-text-sub);
+  font-size: 13px;
+}
+
+.cj-dim {
+  color: var(--cj-text-dim);
+  font-size: 12px;
+}
+
+.cj-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cj-spacer {
+  flex: 1 1 auto;
+}
+
+.cj-mono {
+  font-family: var(--cj-mono);
+}
+
+/* ---------- 判题结论色 ---------- */
+
+.v-ac {
+  color: var(--cj-accepted);
+  font-weight: 700;
+}
+.v-wa,
+.v-re {
+  color: var(--cj-wrong);
+  font-weight: 700;
+}
+.v-tle,
+.v-mle {
+  color: var(--cj-warn);
+  font-weight: 700;
+}
+.v-ce,
+.v-se {
+  color: var(--cj-info);
+  font-weight: 700;
+}
+.v-pending,
+.v-judging {
+  color: var(--cj-accent);
+  font-weight: 700;
+}
+
+/* ---------- 代码块 / Markdown ---------- */
+
+.cj-md {
+  line-height: 1.75;
+  word-break: break-word;
+}
+.cj-md h1,
+.cj-md h2,
+.cj-md h3 {
+  margin: 18px 0 8px;
+  line-height: 1.35;
+}
+.cj-md h1 {
+  font-size: 20px;
+}
+.cj-md h2 {
+  font-size: 17px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--cj-border);
+}
+.cj-md h3 {
+  font-size: 15px;
+}
+.cj-md p {
+  margin: 8px 0;
+}
+.cj-md ul,
+.cj-md ol {
+  padding-left: 22px;
+  margin: 8px 0;
+}
+.cj-md code {
+  font-family: var(--cj-mono);
+  font-size: 0.9em;
+  background: var(--cj-panel-2);
+  border: 1px solid var(--cj-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.cj-md pre {
+  /* 代码块固定深色底 + 浅色字：highlight.js 的 github-dark 主题是深色的，
+     若跟随亮色主题就会变成"浅底浅字"。固定深色在两种主题下都可读，
+     也是主流 OJ（LeetCode / Codeforces）的通行做法。 */
+  background: #0d1117;
+  color: #e6edf3;
+  border: 1px solid var(--cj-border);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+}
+.cj-md pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+.cj-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  display: block;
+  overflow-x: auto;
+}
+.cj-md th,
+.cj-md td {
+  border: 1px solid var(--cj-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.cj-md blockquote {
+  margin: 10px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--cj-accent);
+  background: var(--cj-panel-2);
+  color: var(--cj-text-sub);
+}
+.cj-md img {
+  max-width: 100%;
+}
+
+.cj-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--cj-text-dim);
+}
+
+/* ---------- 图表容器（ECharts 需要显式高度，否则高度为 0 不渲染） ---------- */
+
+.cj-chart {
+  width: 100%;
+  height: 260px;
+}
+.cj-chart--tall {
+  height: 320px;
+}
+
+/* ---------- 响应式基线 ---------- */
+
+.cj-hide-sm {
+  display: initial;
+}
+
+@media (max-width: 900px) {
+  .cj-page {
+    padding: 12px;
+  }
+  .cj-hide-sm {
+    display: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --cj-gap: 12px;
+  }
+  .cj-card__body {
+    padding: 12px;
+  }
+  body {
+    font-size: 13px;
+  }
+}
+
+/* 宽表格在窄屏横向滚动，而不是把列压成不可读 */
+.cj-scroll-x {
+  width: 100%;
+  overflow-x: auto;
+}
+.cj-scroll-x .el-table {
+  min-width: 640px;
+}
+
+/* 滚动条（暗色下默认滚动条太亮） */
+html.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #363b43;
+  border-radius: 6px;
+}
+html.dark ::-webkit-scrollbar-track {
+  background: #17191d;
+}

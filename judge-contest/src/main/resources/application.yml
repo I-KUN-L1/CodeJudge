@@ -1,0 +1,111 @@
+server:
+  port: 9086
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      # 统一 application 标签：Grafana 用 `application` 做多服务切换/聚合。
+      # 不设的话只能按 instance(host:port) 聚合，端口一变面板全废。
+      application: ${spring.application.name}
+    distribution:
+      # 直方图：让 Prometheus 能用 histogram_quantile() 算 P95/P99 延迟。
+      # 不开只能拿到 _count/_sum/_max（平均值会掩盖长尾），"延迟" 面板就失去意义。
+      percentiles-histogram:
+        http.server.requests: true
+
+spring:
+  config:
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:../.env[.properties]
+  application:
+    name: judge-contest
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 竞赛域独立库：contest / contest_problem / contest_registration / contest_rank_snapshot 四张表。
+    # 榜单真实数据在 Redis ZSet，本库负责「竞赛定义」与「封榜/终榜留档」。
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/judge_contest?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME}
+    password: ${MYSQL_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        enabled: ${NACOS_ENABLED:false}
+      config:
+        enabled: ${NACOS_CONFIG_ENABLED:false}
+    # 关闭 Nacos 时经 SimpleDiscoveryClient 静态实例直连。
+    # ⚠️ 这三条**缺一不可**，漏任何一条都会让对应用例在运行期才炸（不是启动期）：
+    #   judge-problem    → 建赛时校验题目存在且已发布（ProblemClient.listSummaries）
+    #                      漏配的报错是「题目服务不可用，暂时无法建赛」，症状看起来像题目服务挂了，
+    #                      实际是本服务根本没给它登记地址 —— 已于 P4 验收首轮被这条坑到过。
+    #   judge-submission → 终榜重建时读竞赛提交（内部分页接口）
+    #   judge-user       → 榜单用户名批量反查（避免每行一次查询）
+    discovery:
+      client:
+        simple:
+          instances:
+            judge-problem:
+              - uri: ${SVC_PROBLEM_URI:http://localhost:9083}
+            judge-submission:
+              - uri: ${SVC_SUBMISSION_URI:http://localhost:9084}
+            judge-user:
+              - uri: ${SVC_USER_URI:http://localhost:9082}
+
+# RocketMQ：**只消费不生产**（订阅 judge_submission 的 RESULT 事件更新榜单）。
+# 不配置 producer-group → RocketMqAutoConfiguration 不装配生产者（空 group 会让 producer 启动失败）。
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:localhost:9877}
+  consumer-group: cj_contest_result_consumer
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  mapper-locations: classpath*:mapper/**/*.xml
+
+# WebSocket 推送基座（judge-common 的 WsPushAutoConfiguration 由此开关激活）
+cj:
+  ws:
+    enabled: true
+    channel: ${CJ_WS_CHANNEL:judge:ws:broadcast}
+    heartbeat-interval-ms: ${CJ_WS_HEARTBEAT_MS:30000}
+    send-time-limit-ms: 5000
+    buffer-size-limit-bytes: 262144
+    max-sessions-per-topic: 5000
+  contest:
+    rank-top-size: ${CJ_CONTEST_RANK_TOP:100}
+    push-flush-interval-ms: ${CJ_CONTEST_PUSH_INTERVAL_MS:1000}
+    lifecycle-scan-interval-ms: ${CJ_CONTEST_SCAN_INTERVAL_MS:10000}
+    require-registration: ${CJ_CONTEST_REQUIRE_REGISTRATION:true}
+    rank-ttl-after-end-hours: 24
+    rebuild-max-submissions: 20000
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+logging:
+  level:
+    com.codejudge.contest: info

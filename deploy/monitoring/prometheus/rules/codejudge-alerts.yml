@@ -1,0 +1,299 @@
+# ============================================================
+# CodeJudge 告警规则
+#
+# 设计原则：**只对「用户可感知且需要人处理」的现象告警**。
+#   · 每个告警的 annotations 都写清「用户侧看到什么 + 先查哪里」，
+#     否则半夜收到 `p95 > 1` 只会让人去翻 20 个面板。
+#   · 阈值必须来自实测分位数，不能拍 —— 标定工具：scripts/recalibrate-alerts.py
+#
+# ---------------------------------------------------------------
+# 阈值标定记录
+# ---------------------------------------------------------------
+# 【2026-09-21 第一次重标】两处**口径修正**（比换数字更重要）：
+#   1. 延迟 / 错误率统计**排除 `/actuator/**`**。
+#      Prometheus 抓取 `/actuator/prometheus` 时，这次抓取本身会被 Micrometer
+#      计入 `http_server_requests`，而它的耗时（要序列化几百 KB 文本）远高于业务接口。
+#      本机实测污染幅度：judge-problem 78ms→6ms(13×)、judge-submission 96ms→8ms(12×)、
+#      judge-contest 103ms→9ms(11×)、judge-gateway 114ms→12ms(9.5×)。
+#      **不排除它，基线就完全不是业务延迟**，据此定的阈值必然失真。
+#   2. 延迟统计**排除 SSE 长连接 `/ai/review/stream*`**。
+#      该请求的生命周期等于整个流式点评时长（数十秒），必然击穿任何合理阈值。
+#      judge-ai 只有这一个长连接接口，不排除它等于给 judge-ai 挂一条永久告警。
+#
+# 【2026-09-21 第二次重标】`HikariPoolSaturation` **换判据**（不是调数字）：
+#   原判据 `hikaricp_connections_pending > 5` 被恒定负载实测证伪 ——
+#   3100 req/s 持续压测下 pending 峰值 29、告警确实触发了，但同期
+#   P95 82ms / 错误率 0.000% / acquire 超时 0 / 平均获取连接耗时 7.6ms，
+#   即**健康态也会触发**。排队是连接复用的正常现象，不是故障。
+#   新判据 = 平均获取连接耗时 > 0.2s（取连接等了多久，与用户可见劣化单调相关），
+#            `or` acquire 超时次数 > 0（已经有人失败，必须报）。
+#   数据来源：`--plan throughput` 60 线程 / 180s 稳态窗口，见 docs/PERF.md §3.5。
+#
+# ⚠ 待生产重标：以上基线取自本机（压测工具与业务同机，见 docs/PERF.md §一），
+#   只能作为**容量下界**。生产环境产生真实流量后执行：
+#       python scripts/recalibrate-alerts.py --prometheus http://<prom>:9090 --write
+#   本文件的可标定阈值均带 `# @tune` 锚点注释，脚本据此精确替换，缺失即报错。
+# ---------------------------------------------------------------
+#
+# severity 约定：
+#   critical = 用户已经不可用 / 数据可能出错，需要立刻介入
+#   warning  = 正在劣化，有窗口期处理
+# ============================================================
+
+groups:
+  # ---------------------------------------------------------------
+  # 1. 可用性：进程还活着吗
+  # ---------------------------------------------------------------
+  - name: codejudge-availability
+    rules:
+      - alert: CodeJudgeServiceDown
+        expr: up{job="codejudge"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.application }} 已无响应（抓取失败持续 1 分钟）"
+          description: |
+            用户侧表现：{{ $labels.application }} 承载的所有接口报 502/超时。
+            排查顺序：
+              1) 端口有没有起来：netstat -ano | findstr {{ $labels.instance }}
+              2) 看 logs/{{ $labels.application }}.*.log 末尾 50 行
+              3) 最常见原因：SERVER__PORT 被宿主注入导致绑定到错误端口（见 docs/CONTEXT.md §7）
+
+      - alert: CodeJudgeMetricsMissing
+        expr: absent(up{job="codejudge"})
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "监控抓取整体失效 —— 8 个服务一个都没抓到"
+          description: |
+            这通常**不是业务故障，而是监控自身的问题**（镜像没起 / 网络不通）。
+            先确认 prometheus 容器在跑，再用 `curl http://host.docker.internal:9080/actuator/prometheus`
+            在容器内验证连通性。注意：容器内写 localhost 是抓不到宿主服务的。
+
+  # ---------------------------------------------------------------
+  # 2. HTTP 质量：错误率与长尾延迟
+  # ---------------------------------------------------------------
+  - name: codejudge-http-quality
+    rules:
+      - alert: CodeJudgeHighErrorRate
+        # @tune error_rate 0.01
+        # 5xx 占该服务**业务请求**的比例 > 1%（持续 5 分钟）。
+        # 分子分母都排除 /actuator（见文件头「口径修正」）。
+        # SLO 视角：1% 已经等于「一个月累计不可用约 7.2 小时」，再高就不该算「可用」。
+        # 加 `and ... > 0` 是为了避开 0/0（无流量时 NaN 会让比较失效，规则静默但不是误报）
+        expr: |
+          (
+            sum by (application) (rate(http_server_requests_seconds_count{
+              job="codejudge", uri!~"/actuator.*", status=~"5.."
+            }[5m]))
+            /
+            sum by (application) (rate(http_server_requests_seconds_count{
+              job="codejudge", uri!~"/actuator.*"
+            }[5m]))
+          ) > 0.01
+          and
+          sum by (application) (rate(http_server_requests_seconds_count{
+            job="codejudge", uri!~"/actuator.*"
+          }[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} 5xx 错误率 {{ $value | humanizePercentage }}（> 1%）"
+          description: |
+            用户侧表现：随机的「服务器开小差」。
+            统计已排除 /actuator；按 uri 维度下钻 Grafana「HTTP 性能」面板定位到具体接口。
+
+      - alert: CodeJudgeHighLatencyP95
+        # @tune latency_p95_seconds 0.3
+        # **业务接口** P95 > 0.3s（持续 5 分钟）。
+        # 用 histogram_quantile 而非 avg —— 平均值会把长尾藏起来，而用户投诉的永远是长尾。
+        #
+        # 阈值推导（本机实测业务 P95，已排除 /actuator 与 SSE）：
+        #   最慢接口 /accounts/login = 110ms（BCrypt 固有开销），其余 ≤ 90ms、多数 < 15ms
+        #   阈值 = 110ms × 3（余量系数）≈ 330ms → 取整 300ms
+        # 取「宁紧勿松」：误报几条能看见并调整；漏报则永远发现不了。
+        #
+        # 【2026-09-21 恒定负载实测后的复核结论：维持 0.3 不变】
+        #   60 线程 / 180s 稳态（3 108 req/s、0 错误）下最慢业务 P95 仅 82ms
+        #   （/problems/{id}），登录 139ms。按 82ms × 3 会得 0.25s，看似该收紧，
+        #   但**不采纳**：重标工具在样本稀疏时会丢弃 NaN 的 URI，而丢掉的可能正是
+        #   天生最慢的 /accounts/login（压测里登录走 Once Only，5m 窗口内样本不足）。
+        #   拿被削掉峰值的基线去收紧阈值，比不调更危险。
+        #   → 详见 scripts/recalibrate-alerts.py 的 `p95_dropped` 守卫。
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (application, le) (rate(http_server_requests_seconds_bucket{
+              job="codejudge", uri!~"/actuator.*|/ai/review/stream.*"
+            }[5m]))
+          ) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} 业务接口 P95 {{ $value }}s（> 0.3s）"
+          description: |
+            用户侧表现：接口「很卡」。
+            统计已排除 /actuator（抓取自身开销：实测使若干服务 P95 虚高 10 倍以上）
+            与 SSE 长连接（生命周期等于整个流式点评，与普通请求不可比）——
+            详见本文件顶部「阈值标定记录」。不排除这两类，基线就不是业务延迟。
+            下钻：Grafana「HTTP 性能」面板按 uri 分开看，定位到具体接口。
+
+      - alert: CodeJudgeSubmitFailureBurst
+        # @tune submit_fail_rps 0.5
+        # 提交接口（判题入口）5xx 突增。单独告警是因为它是全站最关键的一条路径：
+        # 它挂了等于整个平台不可用，但按整体错误率算可能还没到 1%。
+        #
+        # 阈值推导：按提交 QPS 的 1% 计。本机实测提交 ~3.5 req/s → 1% ≈ 0.035，
+        # 取 0.5 次/秒 作为**保守下限**（本地规模下不小；生产按实际提交 QPS × 1% 重标）。
+        #
+        # ⚠ 过滤条件必须写 `method="POST", uri="/submissions"`，**不要**图省事写成
+        #   `uri=~"/submissions.*"`：后者会把只读的 `/submissions/page`（提交记录列表）
+        #   与 `/submissions/{id}`（详情）一起算进来。2026-09-21 实测该宽匹配下
+        #   `GET /submissions/page` 的流量可达 264 req/s，是真实提交请求的数十倍，
+        #   于是这条「提交接口」告警实际上主要在被**列表页**的 5xx 驱动，
+        #   而它的 description 却写「点提交直接失败」—— 值班会被引向错误的排查方向。
+        #   只读接口的 5xx 由 CodeJudgeHighErrorRate 兜底，这里不必代管。
+        expr: |
+          sum by (application) (rate(http_server_requests_seconds_count{
+            job="codejudge", application="judge-submission", method="POST",
+            uri="/submissions", status=~"5.."
+          }[5m])) > 0.5
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "judge-submission 提交接口 5xx 突增（> 0.5 次/秒）"
+          description: |
+            用户侧表现：点「提交」直接失败，无法做题。
+            优先查：① Redis 是否可写（队列 ZSet）② MySQL judge_submission 是否可写 ③ 磁盘是否满。
+
+  # ---------------------------------------------------------------
+  # 3. 判题链路：这是判题平台区别于普通 CRUD 的核心指标
+  #    —— HTTP 全绿但判题卡死，是这套监控最想抓到的场景
+  # ---------------------------------------------------------------
+  - name: codejudge-judge-pipeline
+    rules:
+      - alert: JudgeQueueBacklogHigh
+        # @tune queue_backlog 200
+        # 待判队列积压 > 200。积压本身不报错（用户看到的是「排队中」而非失败），
+        # 所以**只能靠这个指标发现**，HTTP 指标完全正常。
+        #
+        # 阈值推导：积压阈值 = 判题机实例数 × 单实例吞吐(题/秒) × 可接受排队时长(秒)
+        #   本机：1 实例 × 1.5 题/秒 × 约 130s ≈ 200 —— 与实测吻合
+        #   （实测：20 线程 × 10 轮 = 200 次提交使积压冲到 170，见 docs/PERF.md §3.3）
+        # 生产按 worker 实例数线性放大（起 3 个实例 → 阈值可放到 600）。
+        expr: judge_queue_backlog{job="codejudge"} > 200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "待判队列积压 {{ $value }} 个（> 200）"
+          description: |
+            用户侧表现：提交后长时间停在「排队中」。
+            处置：① 看 judge_workers_online 是否掉到 0 ② 看 worker 日志是否有沙箱超时 ③ 需要时多起一个 judge-worker 实例（9085/9185/9285）。
+
+      - alert: JudgeDeadTasksPresent
+        # 死信任务 > 0 = 已有提交在重试耗尽后判不出来。**没有「轻量」这一档，直接 critical。**
+        expr: judge_dead_tasks{job="codejudge"} > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "存在 {{ $value }} 个死信判题任务（重试已耗尽）"
+          description: |
+            用户侧表现：提交永远停在「判题中」，不返回结果。
+            排查：judge_task 表 WHERE status='DEAD'，看 fail_reason。
+            常见原因：沙箱镜像缺失、代码超长导致 OOM、Docker 守护进程异常。
+
+      - alert: JudgeWorkersAllOffline
+        # `absent(...) or ... == 0` 两种都抓：
+        #   · 指标彻底消失（judge-submission 本身挂了）
+        #   · 指标存在但为 0（worker 全下线）
+        # 只写 `== 0` 会漏掉第一种 —— 而第一种恰恰更严重。
+        expr: absent(judge_workers_online{job="codejudge"}) or judge_workers_online{job="codejudge"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "在线判题机数为 0 —— 集群已无判题能力"
+          description: |
+            用户侧表现：所有提交永久排队，平台实质不可用。
+            心跳 key 是 judge:worker:heartbeat:*（TTL 30s），数为 0 说明没有 worker 在续期。
+            先确认 judge-worker 进程在跑、且能连上 6380 端口的 Redis。
+
+  # ---------------------------------------------------------------
+  # 4. 资源：JVM 与连接池
+  # ---------------------------------------------------------------
+  - name: codejudge-resources
+    rules:
+      - alert: JvmHeapHigh
+        # @tune jvm_heap_ratio 0.85
+        # 堆占用 > 85%。必须配 for: 10m —— 否则每次 Full GC 前后都会闪一下，纯噪音。
+        # 该阈值**不随容量重标**：85% 是「GC 压力开始显著影响尾延迟」的通用经验线，
+        # 与实例规模无关（规模变了应调堆大小，而不是调这条线）。
+        expr: |
+          (
+            sum by (application) (jvm_memory_used_bytes{job="codejudge", area="heap"})
+            /
+            sum by (application) (jvm_memory_max_bytes{job="codejudge", area="heap"})
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} 堆占用 {{ $value | humanizePercentage }}（> 85%，持续 10 分钟）"
+          description: "持续高位意味着 GC 压力大、延迟抖动。检查是否有大对象（如一次性拉全量提交记录）或缓存无上限。"
+
+      - alert: HikariPoolSaturation
+        # @tune hikari_acquire_avg 0.2
+        #
+        # 【为什么不用 pending 瞬时值】原判据是 `hikaricp_connections_pending > 5`。
+        #   2026-09-21 恒定负载实测证伪了它：3100 req/s 持续压测下
+        #     pending 峰值 29（>5 成立，告警在 3 分钟后真的触发了），
+        #   但**同期用户侧指标完全健康**：P95 82ms、错误率 0.000%、
+        #   acquire_timeout_total 恒为 0、平均获取连接耗时仅 7.6ms。
+        #   → pending 衡量的是"有没有线程在排队"，而排队本身不是故障：
+        #     10 个连接扛 3100 req/s，排队是正常的复用行为。
+        #   继续用它等于给一个健康系统报 warning，会把真正的故障淹掉。
+        #
+        # 【现在的判据】平均获取连接耗时（acquire 秒数 / acquire 次数，5m 滑窗）。
+        #   它直接对应"用户等了多久"，与用户可见劣化单调相关：
+        #     · 正常：judge-problem 7.6ms、judge-submission 0.01ms（实测）
+        #     · 阈值 0.2s = 每次取连接等 200ms，接口 P95 必然明显劣化
+        #   第二路 `or increase(timeout_total) > 0` 兜住"已经有人失败"的情况：
+        #   出现 acquire 超时说明有请求直接拿不到连接（judge-ai 收紧到 5s，
+        #   其它服务默认 30s），这种必须报，不能只等延迟爬升。
+        #
+        # 【标定依据】0.2s 取自本机实测基线的 26×，因此**仍然偏钝**，
+        #   属"待生产容量重标"（同 CodeJudgeHighLatencyP95 的处理，见文件头标定记录）。
+        expr: |
+          rate(hikaricp_connections_acquire_seconds_sum{job="codejudge"}[5m])
+          / clamp_min(rate(hikaricp_connections_acquire_seconds_count{job="codejudge"}[5m]), 1)
+          > 0.2
+          or increase(hikaricp_connections_timeout_total{job="codejudge"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} 数据库连接获取变慢（{{ $value }}，> 0.2）"
+          description: |
+            用户侧表现：接口大面积变慢，日志出现 Connection is not available, request timed out。
+            judge-ai 的 Hikari 已把 connection-timeout 收紧到 5s（快速失败优于长队）。
+            排查：是否有慢 SQL / 长事务；必要时调大 maximum-pool-size（并同步确认 MySQL max_connections）。
+            注意：`hikaricp_connections_pending` 高**不等于**故障 —— 实测 3100 req/s 健康态下
+            pending 也会到 29。要判断是否需要扩容，看本告警的 acquire 耗时，不要看 pending。
+
+      - alert: ProcessCpuSustainedHigh
+        # @tune process_cpu_ratio 0.9
+        # 进程 CPU > 90% 且持续 10 分钟。只看单点会误报（启动时必然冲高）。
+        expr: process_cpu_usage{job="codejudge"} > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} CPU 持续 {{ $value | humanizePercentage }}"
+          description: "持续高 CPU 常见于：JSON 序列化大对象、正则回溯、死循环重试。用 jstack 或 async-profiler 抓火焰图。"
