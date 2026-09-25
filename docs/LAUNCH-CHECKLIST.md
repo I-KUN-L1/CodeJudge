@@ -40,7 +40,7 @@
 | B1 | 独立压测机做容量标定（本机 3108 req/s 只是**下界**） | 👤 待办（需第二台机器） | 用户，按 `perf-test/RUNBOOK.md` |
 | B2 | 生产流量稳定后重标告警阈值 | 👤 上线后 | 用户 `recalibrate-alerts.py --write`（preflight E4） |
 | B3 | 数据卷备份：异地存放 + 保留周期 + **定期重跑演练** | ✅ 脚本已落地演练通过（B3=2026-09-22）→ 定期重跑 👤 | 用户 |
-| B4 | 前端关键路径真实浏览器 E2E（登录→提交→判题 WS→AI 点评 SSE→榜单 WS） | ⏸ 排期（我可执行，建议下一轮做） | 小柯 |
+| B4 | 前端关键路径真实浏览器 E2E（登录→选题→提交→判题 WS→AI 点评 SSE→榜单 WS） | ✅ **2026-09-25 完成**：`scripts/e2e-critical-path.cjs` **8/8 PASS**（Edge headless + 原生 CDP，可重复执行挂 CI）。并当场抓到并修复 1 个真 bug：`ContestDetailView.vue` 漏导入 `watch` → 竞赛详情页 setup 崩溃（此前榜单 WS 建不起来的根因）；修复后 vitest 167/167 | 小柯（脚本化，可重复） |
 | B5 | gVisor 沙箱运行时（现为 runc+seccomp，与宿主共享内核） | 👤 待办 | 用户（目标机装 runsc，preflight D2） |
 
 ---
