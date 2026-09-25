@@ -54,8 +54,16 @@ public class ResultEventHandler implements MqHandler {
 
     @Override
     public void handle(MessageExt message) throws Exception {
-        String body = new String(message.getBody(), StandardCharsets.UTF_8);
-        SubmissionResultMessage result = objectMapper.readValue(body, SubmissionResultMessage.class);
+        SubmissionResultMessage result;
+        try {
+            String body = new String(message.getBody(), StandardCharsets.UTF_8);
+            result = objectMapper.readValue(body, SubmissionResultMessage.class);
+        } catch (Exception e) {
+            // 反序列化失败属毒消息：重投 16 次也解不出来，只会占用重试队列；
+            // 与 SubmissionTaskHandler / ContestResultHandler 的处理对齐 —— 记录后丢弃
+            log.error("判题结果报文解析失败，丢弃（不重投）：msgId={} err={}", message.getMsgId(), e.toString());
+            return;
+        }
         // 幂等：ZREM 本身幂等，重复消费无副作用
         redis.opsForZSet().remove(JudgeRedisKeys.JUDGE_QUEUE_ZSET, String.valueOf(result.getSubmissionId()));
         log.info("判题结果事件：submissionId={} verdict={} score={} time={}ms mem={}KB passed={}/{}",

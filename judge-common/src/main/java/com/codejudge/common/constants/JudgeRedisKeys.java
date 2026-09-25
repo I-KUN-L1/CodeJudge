@@ -110,7 +110,7 @@ public interface JudgeRedisKeys {
     /**
      * WebSocket 会话索引：{@code judge:ws:session:{instanceId}:{userId}} → Set&lt;sessionId&gt;。
      *
-     * <p>⚠️ 相对 PLAN §4.2 的 {@code judge:ws:session:{userId}} 多了一层 instanceId：
+     * <p>相对 PLAN §4.2 的 {@code judge:ws:session:{userId}} 多了一层 instanceId：
      * 会话是进程内资源，不含实例标识时两个服务（甚至同一服务的两个实例）会写进同一个 Set，
      * 互相覆盖。本 key 只服务于运维观测，推送正确性依赖 Redis 广播通道。
      */

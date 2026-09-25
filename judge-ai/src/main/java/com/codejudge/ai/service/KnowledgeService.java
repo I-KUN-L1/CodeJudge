@@ -53,20 +53,27 @@ public class KnowledgeService {
         if (chunks.isEmpty()) {
             return 0;
         }
-        if (replace && problemId != null) {
-            vectorRepository.deleteByProblem(problemId);
-        }
-        int saved = 0;
-        for (String chunkText : chunks) {
+        // 先全部向量化、成功后再删旧写新：向量化在删除之后做的话，PG/网络故障会让循环
+        // 中途抛异常 —— 旧切片已物理删除、新切片只入库了一部分，且逐条 insert 无事务可回滚
+        List<KnowledgeChunk> prepared = new ArrayList<>(chunks.size());
+        for (int i = 0; i < chunks.size(); i++) {
+            String chunkText = chunks.get(i);
             KnowledgeChunk chunk = new KnowledgeChunk();
             chunk.setProblemId(problemId);
             chunk.setSourceType(sourceType);
             // 多切片时把序号写进标题，便于召回后在前端定位「是第几段」
-            chunk.setTitle(chunks.size() > 1 ? title + "（" + (saved + 1) + "/" + chunks.size() + "）" : title);
+            chunk.setTitle(chunks.size() > 1 ? title + "（" + (i + 1) + "/" + chunks.size() + "）" : title);
             chunk.setContent(chunkText);
             // 向量化嵌入文本时带上标题：标题通常浓缩了切片主题（如「常见 WA 成因：整型溢出」），
             // 只编码正文会让「整型溢出」这类查询词与正文的匹配度被稀释。
             chunk.setEmbedding(embeddingService.embed(title + "\n" + chunkText));
+            prepared.add(chunk);
+        }
+        if (replace && problemId != null) {
+            vectorRepository.deleteByProblem(problemId);
+        }
+        int saved = 0;
+        for (KnowledgeChunk chunk : prepared) {
             vectorRepository.insert(chunk);
             saved++;
         }

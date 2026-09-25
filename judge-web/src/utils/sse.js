@@ -111,7 +111,7 @@ export function streamReview(opts) {
       signal: controller.signal,
     });
 
-    // ⚠️ 判据是 Content-Type，不是 resp.ok ——
+    // 判据是 Content-Type，不是 resp.ok ——
     // "订阅前失败（未登录）"与"订阅后失败（越权/上游不可用）"的 HTTP 状态码**都是 200**。
     // 前者是 application/json，后者才是 text/event-stream。
     const ctype = resp.headers.get('content-type') || '';

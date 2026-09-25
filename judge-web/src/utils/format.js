@@ -110,12 +110,14 @@ export function contestStatusTagType(s) {
 
 /* ------------------------------ 用户 ------------------------------ */
 
-export const USER_TYPES = [
-  { value: 2, label: '学员' },
-  { value: 3, label: '教师' },
-  { value: 1, label: '管理员' },
-];
-
+/**
+ * user.type → 中文名，用于**展示别人的身份**（管理员在用户列表里那一列）。
+ *
+ * <p>注意这里刻意**只做展示、不参与任何权限判定**：判断"当前登录者能做什么"
+ * 一律看后端下发的能力码（`user.can('problem:create')` / `v-perm`）。
+ * 曾经这里还有一个 `USER_TYPES` 数组（给登录页的角色选择器用），角色选择器
+ * 与前端角色判定一起删掉后它就成了死代码 —— 留着只会让人以为前端还有一份角色表。
+ */
 export function userTypeLabel(t) {
   return { 1: '管理员', 2: '学员', 3: '教师' }[t] || '未知';
 }

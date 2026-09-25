@@ -1,116 +1,136 @@
 <template>
   <div class="cj-page">
-    <div class="cj-card">
-      <div class="cj-card__head">
-        <span class="cj-title">题目管理</span>
-        <div class="cj-row">
-          <el-button type="primary" :icon="Plus" @click="router.push('/teacher/problems/new')">
-            新建题目
-          </el-button>
-          <el-button :icon="Refresh" @click="load">刷新</el-button>
-        </div>
+    <!-- ============ 页头：标题 + 总量读数 + 操作 ============ -->
+    <header class="cj-pagehead">
+      <h1 class="cj-pagehead__title">题目管理</h1>
+      <span class="cj-pagehead__meta">
+        共 <b>{{ total }}</b> 题
+      </span>
+      <div class="cj-spacer" />
+      <div class="cj-pagehead__actions">
+        <el-button type="primary" :icon="Plus" @click="router.push('/teacher/problems/new')">
+          新建题目
+        </el-button>
+        <el-button :icon="Refresh" @click="load">刷新</el-button>
+      </div>
+    </header>
+
+    <!-- ============ 筛选条 ============ -->
+    <div class="cj-toolbar">
+      <el-input
+        v-model.trim="query.keyword"
+        placeholder="搜索标题"
+        clearable
+        class="cj-toolbar__kw"
+        @keyup.enter="applyFilter"
+        @clear="applyFilter"
+      />
+      <el-select v-model="query.status" placeholder="状态" clearable class="cj-toolbar__sel" @change="applyFilter">
+        <el-option label="草稿" :value="0" />
+        <el-option label="已发布" :value="1" />
+        <el-option label="已下线" :value="2" />
+      </el-select>
+      <el-checkbox v-model="query.onlyMine" class="cj-toolbar__chk" @change="applyFilter">
+        只看我的
+      </el-checkbox>
+    </div>
+
+    <div class="cj-panel">
+      <div class="cj-panel__table">
+        <el-table v-loading="loading" :data="rows" row-key="id" empty-text="暂无题目">
+          <el-table-column label="ID" width="92" align="right">
+            <template #default="{ row }">
+              <span class="cj-num cj-dim">{{ row.id }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="标题" min-width="200">
+            <template #default="{ row }">
+              <el-link type="primary" @click="router.push({ name: 'problem-detail', params: { id: row.id } })">
+                {{ row.title }}
+              </el-link>
+            </template>
+          </el-table-column>
+
+          <!-- 标签独立成列。原先它垫在标题下方，导致两件事：
+               ① 有标签的行高 64px、无标签的 50px，行距节奏被打断；
+               ② 标签数量多时撑破标题列，把相邻列挤到错位
+               本页与题库列表展示的是同一种实体、同一批列，故对齐方式必须一致：
+               标签列右对齐（align="right" + TagCell 的 align="end" 成对出现） -->
+          <el-table-column label="标签" width="176" align="right" class-name="cj-hide-sm">
+            <template #default="{ row }">
+              <TagCell :tags="row.tags" :limit="2" align="end" />
+            </template>
+          </el-table-column>
+
+          <!-- 难度与题库列表同步：从"状态列居中"改为数据列右对齐 -->
+          <el-table-column label="难度" width="86" align="right">
+            <template #default="{ row }">
+              <el-tag size="small" :type="difficultyTagType(row.difficulty)" effect="light">
+                {{ difficultyLabel(row.difficulty) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="状态" width="150" align="center">
+            <template #default="{ row }">
+              <el-select
+                :model-value="row.status"
+                size="small"
+                style="width: 108px"
+                @change="(v) => onStatusChange(row, v)"
+              >
+                <el-option label="草稿" :value="0" />
+                <el-option label="已发布" :value="1" />
+                <el-option label="已下线" :value="2" />
+              </el-select>
+            </template>
+          </el-table-column>
+
+          <!-- 通过率与题库列表保持同一种单元格：主数字在上、明细在下，
+               两行都右对齐等宽，整列形成一条可竖向比较的读数带 -->
+          <el-table-column label="通过率" width="128" align="right" class-name="cj-hide-sm">
+            <template #default="{ row }">
+              <div class="cj-cell-stack cj-cell-stack--end">
+                <span class="cj-cell-stack__v cj-num" :class="{ 'cj-cell-stack__v--null': row.acceptedRate === null }">
+                  {{ fmtPercent(row.acceptedRate) }}
+                </span>
+                <span class="cj-cell-stack__sub cj-num">
+                  {{ row.acceptedCount ?? 0 }} / {{ row.submitCount ?? 0 }}
+                </span>
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="更新时间" width="160" align="right" class-name="cj-hide-sm">
+            <template #default="{ row }">
+              <span class="cj-num-dim">{{ fmtTime(row.updateTime) }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="操作" width="204" align="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="router.push({ name: 'teacher-problem-edit', params: { id: row.id } })">
+                编辑
+              </el-button>
+              <el-button link type="primary" @click="openCases(row)">用例</el-button>
+              <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
 
-      <div class="cj-card__body">
-        <div class="filters">
-          <el-input
-            v-model.trim="query.keyword"
-            placeholder="搜索标题"
-            clearable
-            class="filters__kw"
-            @keyup.enter="applyFilter"
-            @clear="applyFilter"
-          />
-          <el-select v-model="query.status" placeholder="状态" clearable class="filters__sel" @change="applyFilter">
-            <el-option label="草稿" :value="0" />
-            <el-option label="已发布" :value="1" />
-            <el-option label="已下线" :value="2" />
-          </el-select>
-          <el-checkbox v-model="query.onlyMine" @change="applyFilter">只看我的</el-checkbox>
-          <div class="cj-spacer" />
-        </div>
-
-        <div class="cj-scroll-x" style="margin-top: 12px">
-          <el-table v-loading="loading" :data="rows" stripe row-key="id" empty-text="暂无题目">
-            <el-table-column label="ID" width="90">
-              <template #default="{ row }">
-                <span class="cj-mono cj-dim">{{ row.id }}</span>
-              </template>
-            </el-table-column>
-
-            <el-table-column label="标题" min-width="200">
-              <template #default="{ row }">
-                <el-link type="primary" @click="router.push({ name: 'problem-detail', params: { id: row.id } })">
-                  {{ row.title }}
-                </el-link>
-                <div v-if="row.tags?.length" style="margin-top: 3px">
-                  <el-tag v-for="t in row.tags" :key="t.id" size="small" effect="plain" type="info" style="margin-right: 4px">
-                    {{ t.name }}
-                  </el-tag>
-                </div>
-              </template>
-            </el-table-column>
-
-            <el-table-column label="难度" width="86" align="center">
-              <template #default="{ row }">
-                <el-tag size="small" :type="difficultyTagType(row.difficulty)" effect="light">
-                  {{ difficultyLabel(row.difficulty) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-
-            <el-table-column label="状态" width="150" align="center">
-              <template #default="{ row }">
-                <el-select
-                  :model-value="row.status"
-                  size="small"
-                  style="width: 108px"
-                  @change="(v) => onStatusChange(row, v)"
-                >
-                  <el-option label="草稿" :value="0" />
-                  <el-option label="已发布" :value="1" />
-                  <el-option label="已下线" :value="2" />
-                </el-select>
-              </template>
-            </el-table-column>
-
-            <el-table-column label="提交 / 通过" width="120" align="center" class-name="cj-hide-sm">
-              <template #default="{ row }">
-                <span class="cj-mono cj-dim">{{ row.acceptedCount }} / {{ row.submitCount }}</span>
-                <div class="cj-dim">{{ fmtPercent(row.acceptedRate) }}</div>
-              </template>
-            </el-table-column>
-
-            <el-table-column label="更新时间" width="160" class-name="cj-hide-sm">
-              <template #default="{ row }">
-                <span class="cj-dim">{{ fmtTime(row.updateTime) }}</span>
-              </template>
-            </el-table-column>
-
-            <el-table-column label="操作" width="210" align="center">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="router.push({ name: 'teacher-problem-edit', params: { id: row.id } })">
-                  编辑
-                </el-button>
-                <el-button link type="primary" @click="openCases(row)">用例</el-button>
-                <el-button link type="danger" @click="onDelete(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-
-        <div class="pager">
-          <el-pagination
-            v-model:current-page="query.pageNo"
-            v-model:page-size="query.pageSize"
-            :total="total"
-            :page-sizes="[10, 20, 50]"
-            layout="total, sizes, prev, pager, next"
-            background
-            @current-change="load"
-            @size-change="onSizeChange"
-          />
-        </div>
+      <div class="cj-pager">
+        <el-pagination
+          v-model:current-page="query.pageNo"
+          v-model:page-size="query.pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          background
+          @current-change="load"
+          @size-change="onSizeChange"
+        />
       </div>
     </div>
 
@@ -179,6 +199,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
+import TagCell from '@/components/TagCell.vue';
 import { problemApi } from '@/api';
 import { difficultyLabel, difficultyTagType, fmtPercent, fmtTime } from '@/utils/format';
 
@@ -199,7 +220,9 @@ const caseError = ref('');
 
 const hiddenCount = computed(() => cases.value.filter((c) => c.isHidden === 1).length);
 
+let reqSeq = 0;
 async function load() {
+  const seq = ++reqSeq;
   loading.value = true;
   try {
     const p = { pageNo: query.pageNo, pageSize: query.pageSize };
@@ -207,14 +230,16 @@ async function load() {
     if (query.status !== null && query.status !== '') p.status = query.status;
     if (query.onlyMine) p.onlyMine = true;
     const page = await problemApi.page(p);
+    if (seq !== reqSeq) return; // 已有更新的请求发出，丢弃本次过期响应
     rows.value = page?.list || [];
     total.value = Number(page?.total || 0);
   } catch (e) {
+    if (seq !== reqSeq) return;
     rows.value = [];
     total.value = 0;
     ElMessage.error(e.message || '加载失败');
   } finally {
-    loading.value = false;
+    if (seq === reqSeq) loading.value = false;
   }
 }
 
@@ -231,7 +256,7 @@ function onSizeChange() {
 /**
  * 状态变更。
  *
- * ⚠️ 失败时必须把本地行状态**回滚**：el-select 是受控的（:model-value），
+ * 失败时必须把本地行状态**回滚**：el-select 是受控的（:model-value），
  * 但 row.status 已经不在本地改——这里刻意不预改本地值，靠 load() 重新拉取同步，
  * 因此失败时界面自然保持原状态。这比"先乐观更新再回滚"少一类不一致。
  */
@@ -351,23 +376,8 @@ onMounted(load);
 </script>
 
 <style scoped>
-.filters {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.filters__kw {
-  width: 220px;
-}
-.filters__sel {
-  width: 140px;
-}
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
+/* 列表版式（页头/工具条/面板/分页/单元格）全部来自全局 styles/data-list.css。
+   这里只保留**本页特有**的用例抽屉样式 */
 
 .case-tools {
   display: flex;
@@ -378,34 +388,30 @@ onMounted(load);
 }
 
 .case-item {
-  border: 1px solid var(--cj-border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
 }
 .case-item__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
-  margin-bottom: 8px;
+  margin-bottom: var(--sp-2);
 }
 .case-item__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: var(--sp-3);
 }
 .case-label {
-  font-size: 12px;
-  color: var(--cj-text-dim);
-  margin-bottom: 4px;
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+  margin-bottom: var(--sp-1);
 }
 
 @media (max-width: 900px) {
-  .filters__kw,
-  .filters__sel {
-    width: 100%;
-  }
   .case-item__grid {
     grid-template-columns: 1fr;
   }

@@ -79,28 +79,30 @@
           :title="metricsError"
         />
 
-        <div class="stat-row">
-          <div class="stat">
-            <div class="stat__v">{{ agg.totalRequests }}</div>
-            <div class="stat__k">累计请求数（8 服务合计）</div>
+        <div class="cj-stats">
+          <div class="cj-stat">
+            <div class="cj-stat__v">{{ agg.totalRequests }}</div>
+            <div class="cj-stat__k">累计请求数（8 服务合计）</div>
           </div>
-          <div class="stat">
-            <div class="stat__v" :class="{ 'is-bad': agg.serverErrors > 0 }">{{ agg.serverErrors }}</div>
-            <div class="stat__k">累计 5xx 错误</div>
+          <div class="cj-stat">
+            <div class="cj-stat__v" :class="{ 'cj-stat__v--bad': agg.serverErrors > 0 }">
+              {{ agg.serverErrors }}
+            </div>
+            <div class="cj-stat__k">累计 5xx 错误</div>
           </div>
-          <div class="stat">
-            <div class="stat__v" :class="{ 'is-bad': (agg.serverErrorRate ?? 0) > 1 }">
+          <div class="cj-stat">
+            <div class="cj-stat__v" :class="{ 'cj-stat__v--bad': (agg.serverErrorRate ?? 0) > 1 }">
               {{ agg.serverErrorRate === null ? '—' : `${agg.serverErrorRate.toFixed(2)}%` }}
             </div>
-            <div class="stat__k">5xx 占比（累计口径）</div>
+            <div class="cj-stat__k">5xx 占比（累计口径）</div>
           </div>
-          <div class="stat">
-            <div class="stat__v">{{ agg.avgMs === null ? '—' : `${agg.avgMs.toFixed(1)}ms` }}</div>
-            <div class="stat__k">平均响应耗时（累计）</div>
+          <div class="cj-stat">
+            <div class="cj-stat__v">{{ agg.avgMs === null ? '—' : `${agg.avgMs.toFixed(1)}ms` }}</div>
+            <div class="cj-stat__k">平均响应耗时（累计）</div>
           </div>
-          <div class="stat">
-            <div class="stat__v">{{ fmtBytes(agg.heapUsed) }}</div>
-            <div class="stat__k">堆内存合计</div>
+          <div class="cj-stat">
+            <div class="cj-stat__v">{{ fmtBytes(agg.heapUsed) }}</div>
+            <div class="cj-stat__k">堆内存合计</div>
           </div>
         </div>
 
@@ -130,7 +132,7 @@
       </div>
       <div class="cj-card__body">
         <div class="cj-scroll-x">
-          <el-table :data="serviceMetrics" stripe empty-text="尚未抓到任何指标">
+          <el-table :data="serviceMetrics" empty-text="尚未抓到任何指标">
             <el-table-column label="服务" min-width="150">
               <template #default="{ row }">
                 <span class="cj-mono">{{ row.name }}</span>
@@ -228,7 +230,7 @@ const reqChartOption = computed(() => {
         type: 'bar',
         data: rows.map((r) => r.total),
         barMaxWidth: 32,
-        itemStyle: { color: '#3b6ef6', borderRadius: [4, 4, 0, 0] },
+        // 不写 itemStyle.color：系列色由 EChartPanel 从 CSS 变量 --chart-1 注入
         label: { show: true, position: 'top', fontSize: 10 },
       },
     ],
@@ -236,7 +238,7 @@ const reqChartOption = computed(() => {
 });
 
 const uriChartOption = computed(() => {
-  const rows = topUris(globalMetrics, 8);
+  const rows = topUris(globalMetrics.value, 8);
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: 34, right: 24, top: 20, bottom: 24, containLabel: true },
@@ -252,14 +254,15 @@ const uriChartOption = computed(() => {
         type: 'bar',
         data: rows.map((r) => r.count),
         barMaxWidth: 16,
-        itemStyle: { color: '#7c4dff', borderRadius: [0, 4, 4, 0] },
+        // 不写 itemStyle.color：系列色由 EChartPanel 从 CSS 变量注入
       },
     ],
   };
 });
 
-/** 8 个服务的指标合并（URI 维度跨服务统计用） */
-let globalMetrics = {};
+/** 8 个服务的指标合并（URI 维度跨服务统计用）。
+ * 必须是 ref：uriChartOption 这个 computed 只依赖它，普通变量不会触发重算（图表永远空数据） */
+const globalMetrics = ref({});
 
 async function refreshAll() {
   probing.value = true;
@@ -282,7 +285,7 @@ async function refreshAll() {
     }),
   );
 
-  globalMetrics = {};
+  globalMetrics.value = {};
   const perService = [];
   let okCount = 0;
 
@@ -304,7 +307,7 @@ async function refreshAll() {
     const m = parseMetrics(r.text);
     // 合并到全局（同名指标直接拼接 series）
     for (const [k, v] of Object.entries(m)) {
-      (globalMetrics[k] ||= []).push(...v);
+      (globalMetrics.value[k] ||= []).push(...v);
     }
 
     const http = httpOverview(m);
@@ -346,102 +349,79 @@ onMounted(refreshAll);
 </script>
 
 <style scoped>
+/* 读数卡片用全局 .cj-stats / .cj-stat（原先本页、判题集群页、知识库页
+   各写了一份字号 24/26、圆角 10px 都不同的实现） */
+
 code {
-  font-family: var(--cj-mono);
-  background: var(--cj-panel-2);
-  border: 1px solid var(--cj-border);
-  border-radius: 4px;
-  padding: 0 4px;
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-xs);
+  padding: 0 var(--sp-1);
 }
 
 .links {
   display: flex;
-  gap: 16px;
+  gap: var(--sp-4);
   align-items: center;
   flex-wrap: wrap;
-  margin-top: 12px;
-  font-size: 13px;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
 }
 
+/* 服务方块：等宽网格，避免"每行 3 个 2 个 4 个"的参差 */
 .svc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 10px;
+  gap: var(--sp-2);
 }
 .svc {
-  border: 1px solid var(--cj-border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: var(--cj-panel-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  background: var(--surface-2);
 }
 .svc.is-down {
-  border-color: var(--cj-wrong);
+  border-color: var(--wa);
 }
 .svc__head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-weight: 600;
-  font-size: 13px;
+  gap: var(--sp-2);
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-sm);
 }
 .svc__meta {
   display: flex;
-  gap: 8px;
-  font-size: 12px;
-  margin-top: 3px;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  margin-top: var(--sp-1);
 }
 .dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--r-full);
   flex: 0 0 auto;
 }
 .dot--up {
-  background: var(--cj-accepted);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cj-accepted) 22%, transparent);
+  background: var(--ac);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ac) 22%, transparent);
 }
 .dot--down {
-  background: var(--cj-wrong);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cj-wrong) 22%, transparent);
-}
-
-.stat-row {
-  display: flex;
-  gap: var(--cj-gap);
-  flex-wrap: wrap;
-}
-.stat {
-  flex: 1 1 150px;
-  min-width: 140px;
-  padding: 12px 16px;
-  border: 1px solid var(--cj-border);
-  border-radius: 10px;
-  background: var(--cj-panel-2);
-}
-.stat__v {
-  font-size: 24px;
-  font-weight: 700;
-  font-family: var(--cj-mono);
-  color: var(--cj-accent);
-}
-.stat__v.is-bad {
-  color: var(--cj-wrong);
-}
-.stat__k {
-  font-size: 12.5px;
-  color: var(--cj-text-sub);
+  background: var(--wa);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa) 22%, transparent);
 }
 
 .charts {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--cj-gap);
+  gap: var(--sp-4);
 }
 .charts__title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--cj-text-sub);
-  margin-bottom: 6px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--fg-2);
+  margin-bottom: var(--sp-2);
 }
 
 @media (max-width: 900px) {

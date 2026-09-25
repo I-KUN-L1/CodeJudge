@@ -29,7 +29,7 @@ spring:
   application:
     name: judge-ai
   main:
-    # ⚠️ 必须显式声明，不能依赖类路径推断。
+    # 必须显式声明，不能依赖类路径推断。
     # knife4j → springdoc-openapi-starter-webmvc-ui → spring-webmvc 会把 DispatcherServlet
     # 带进类路径，而 Spring Boot 的 deduceFromClasspath() 在 DispatcherHandler 与 DispatcherServlet
     # **同时存在**时判定为 SERVLET（Tomcat 200 工作线程会被 SSE 长连接占满）。
@@ -70,7 +70,7 @@ spring:
       config:
         enabled: ${NACOS_CONFIG_ENABLED:false}
     # 关闭 Nacos 时经 SimpleDiscoveryClient 静态实例直连。
-    # ⚠️ 两条缺一不可（漏配只在运行期炸，不在启动期）：
+    # 两条缺一不可（漏配只在运行期炸，不在启动期）：
     #   judge-submission → 拉取提交/判题上下文（点评的输入侧，评论没有代码就无从谈起）
     #   judge-problem    → 拉取题目标题/难度（Prompt 里的题目信息；不含任何用例，防止答案外流）
     discovery:
@@ -87,7 +87,7 @@ spring:
 
 # RocketMQ：只消费不生产（ai_review 的 REQUESTED Tag）。
 # 不配 producer-group → 不装配生产者（空 group 会让 DefaultMQProducer 启动即报错）。
-# ⚠️ 仅在 cj.review.mq-enabled=true 时才会注册 MqHandler，消费者才会真正建立连接；
+# 仅在 cj.review.mq-enabled=true 时才会注册 MqHandler，消费者才会真正建立连接；
 #    否则 RocketMQConsumerContainer 发现无处理器后直接跳过启动（不连接 broker）。
 #    这样「可选增强项」不会变成服务启动的强依赖。
 rocketmq:
@@ -130,8 +130,9 @@ cj:
     top-k: 4
     # 历史点评召回条数（与知识分开计数，避免历史点评挤掉题目知识）
     history-top-k: 3
-    # 相似度阈值：低于该值视为「未命中」，宁可不注入也不硬凑（抑制幻觉）
-    min-score: 0.0
+    # 相似度阈值：低于该值视为「未命中」，宁可不注入也不硬凑（抑制幻觉）。
+    # 0.0 = 阈值过滤关闭（余弦相似度非负，0 等于全放行）。有意保留：当前演示数据用
+    # bigram 哈希伪向量，设经验阈值（0.6~0.75）会把演示检索全滤空 —— 接入真实 LLM 后应调高
     # SSE 心跳间隔（秒），0 关闭。异步模型首 token 可能等待较久，默认 15s 保活
     heartbeat-seconds: 15
     # 断线重连可回放的事件条数
@@ -158,7 +159,8 @@ cj:
 
 springdoc:
   api-docs:
-    enabled: true
+    # 生产置 CJ_SPRINGDOC_ENABLED=false 关闭 /v3/api-docs（knife4j 在 judge-common，全服务暴露）
+    enabled: ${CJ_SPRINGDOC_ENABLED:true}
   swagger-ui:
     enabled: false  # 响应式栈下 knife4j/swagger-ui 静态资源不注册，仅保留 /v3/api-docs 契约
 

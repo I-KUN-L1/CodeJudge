@@ -212,7 +212,7 @@ describe('时间 / 数字展示', () => {
 
   it('fmtFromNow 过去 / 未来 / 一分钟内三档', () => {
     const now = Date.now();
-    // ⚠ 必须传 Date（或后端实际下发的字符串/数组）——
+    // 必须传 Date（或后端实际下发的字符串/数组）——
     //   toDate() 对**数字**时间戳刻意返回 null，因为后端从不下发 epoch 毫秒；
     //   传数字得到 '—' 是契约而不是缺陷（见上面 toDate 的用例）。
     const at = (offset) => new Date(now + offset);

@@ -135,18 +135,22 @@ async function onSubmit() {
   text-align: center;
   margin-bottom: 18px;
 }
+/* 与 LoginView 的品牌方块保持同一套写法：石墨底 + 等宽字，
+   去掉蓝紫渐变与 13px 大圆角（那是"友好 SaaS"的语言，不是仪表的） */
 .auth__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 46px;
   height: 46px;
   margin: 0 auto 10px;
-  border-radius: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #3b6ef6, #7c4dff);
-  color: #fff;
-  font-weight: 700;
-  font-size: 17px;
+  border-radius: var(--r-md);
+  background: var(--ink);
+  color: var(--fg-on-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  letter-spacing: var(--ls-tight);
 }
 .auth__title {
   margin: 0;

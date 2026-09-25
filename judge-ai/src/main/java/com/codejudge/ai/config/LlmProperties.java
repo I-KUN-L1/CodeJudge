@@ -59,9 +59,9 @@ public class LlmProperties {
      *
      * <p>必须与厂商实际的 base-url 组合后成立，否则会拼出「多一段前缀」的 404 地址：
      * <ul>
-     *   <li>{@code baseUrl=https://api.openai.com} + {@code v1/embeddings} → /v1/embeddings ✅</li>
-     *   <li>{@code baseUrl=https://open.bigmodel.cn/api/paas/v4} + {@code embeddings} → /v4/embeddings ✅</li>
-     *   <li>智谱 base-url 配 {@code v1/embeddings} → /v4/v1/embeddings ❌ 404（历史缺陷：路径被写死，
+     *   <li>{@code baseUrl=https://api.openai.com} + {@code v1/embeddings} → /v1/embeddings（正确）</li>
+     *   <li>{@code baseUrl=https://open.bigmodel.cn/api/paas/v4} + {@code embeddings} → /v4/embeddings（正确）</li>
+     *   <li>智谱 base-url 配 {@code v1/embeddings} → /v4/v1/embeddings，404（历史缺陷：路径被写死，
      *       Embedding 恒定失败并**静默降级**为伪向量，RAG 检索仅剩演示意义且无任何报错）</li>
      * </ul>
      */

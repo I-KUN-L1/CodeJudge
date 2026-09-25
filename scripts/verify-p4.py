@@ -170,7 +170,7 @@ WA_PY = "a, b = map(int, input().split()); print(a - b)"
 def ws_connect(path, token=None, timeout=12, params=None):
     """path 可自带查询串（如 full=true）；token 必须作为**独立参数**拼接。
 
-    ⚠️ 别写成 f"{path}?token=..." —— 当 path 已含 "?" 时会拼出
+    别写成 f"{path}?token=..." —— 当 path 已含 "?" 时会拼出
     `...?full=true?token=xxx`，第二个问号只是 full 值的一部分，token 根本没传进去，
     表现为「网关 401 握手失败」，看起来像鉴权有问题，实际是 URL 拼错（P4 首轮踩过）。
     """
@@ -318,7 +318,7 @@ def main():
           and all(p.get("fullScore") == 100 for p in probs),
           json.dumps([(p.get("label"), p.get("problemId"), p.get("fullScore")) for p in probs]))
 
-    # ⚠️ 负例必须断言「拒绝的原因」，不能只断言「失败了」——
+    # 负例必须断言「拒绝的原因」，不能只断言「失败了」——
     #    否则下游服务不可用也会让这两条看起来通过（P4 验收首轮就踩到过）。
     bad = dict(create_payload, title="不存在的题目", problems=[{"problemId": 999999}])
     r = requests.post(f"{GATEWAY}/contests", headers=teacher, json=bad, timeout=TIMEOUT).json()

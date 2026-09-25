@@ -14,6 +14,12 @@ import com.codejudge.common.domain.PageQuery;
 import com.codejudge.common.domain.R;
 import com.codejudge.common.utils.BeanUtils;
 import com.codejudge.common.utils.InternalOnlyGuard;
+import com.codejudge.common.utils.OwnerAccessGuard;
+import com.codejudge.common.exceptions.UnauthorizedException;
+import com.codejudge.common.utils.UserContext;
+import com.codejudge.common.utils.OwnerAccessGuard;
+import com.codejudge.common.exceptions.UnauthorizedException;
+import com.codejudge.common.utils.UserContext;
 import com.codejudge.user.domain.dto.UserFormDTO;
 import com.codejudge.user.domain.vo.UserVO;
 import com.codejudge.user.mapper.UserMapper;
@@ -105,9 +111,20 @@ public class UserController {
         return R.ok();
     }
 
+    /**
+     * 更新当前登录用户的个人资料（仅 name/icon/email/city/gender 等非敏感字段）。
+     * <p>历史实现以 {@code form.getId()} 定位目标账号且允许改 {@code password} ——
+     * 任意登录用户传管理员 id 即可重置他人（含管理员）密码，属垂直越权。现强制以
+     * {@code UserContext.getUserId()} 为目标，且该入口不再受理任何密码/状态/角色变更
+     * （改密走 {@code PUT /students/password}，管理操作走 {@code @RequireRole} 端点）。
+     */
     @PutMapping
     public R<Void> updateCurrentUser(@RequestBody UserFormDTO form) {
-        userService.updateUser(form.getId(), form);
+        Long currentUserId = UserContext.getUserId();
+        if (currentUserId == null || currentUserId == 0) {
+            throw new UnauthorizedException("未登录");
+        }
+        userService.updateProfile(currentUserId, form);
         return R.ok();
     }
 

@@ -34,9 +34,11 @@ class JwtToolTest {
     }
 
     @Test
-    void publicKeyIsNotEmpty() {
-        String publicKey = jwtTool.getPublicKeyBase64();
-        assertNotNull(publicKey);
-        assertFalse(publicKey.isBlank());
+    void tokenTypeClaimIsWrittenAndParsable() {
+        // type claim 是网关/续签链路区分 access 与 refresh 的依据（缺它 refresh 可当 access 用）
+        String access = jwtTool.createAccessToken(100L, 30 * 60 * 1000L);
+        String refresh = jwtTool.createRefreshToken(200L, 30L * 24 * 60 * 60 * 1000L);
+        assertEquals("access", jwtTool.parseTokenType(access));
+        assertEquals("refresh", jwtTool.parseTokenType(refresh));
     }
 }

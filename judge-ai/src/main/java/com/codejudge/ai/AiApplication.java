@@ -17,7 +17,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  * <p>不执行判题、不写 MySQL：判题上下文经 judge-submission 的内部契约拉取，
  * 代码与用例输出在本服务内**只读不落库**（落库的是点评本身，写 PG）。
  *
- * <p>⚠️ 本服务跑在响应式栈（Netty）上，原因与代价见 pom.xml 顶部注释。
+ * <p>本服务跑在响应式栈（Netty）上，原因与代价见 pom.xml 顶部注释。
  * 由此带来两条硬约束：
  * <ol>
  *   <li>{@code com.codejudge.common.utils.UserContext} 是 ThreadLocal + Servlet 拦截器填充的，

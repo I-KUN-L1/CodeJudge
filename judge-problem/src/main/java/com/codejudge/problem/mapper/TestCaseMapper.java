@@ -10,7 +10,7 @@ public interface TestCaseMapper extends BaseMapper<TestCase> {
     /**
      * 物理删除某题目的全部用例。
      *
-     * <p>⚠️ 必须物理删除，不能走 {@code BaseMapper#delete} 的逻辑删除：
+     * <p>必须物理删除，不能走 {@code BaseMapper#delete} 的逻辑删除：
      * {@code test_case} 的唯一键是 {@code uk_test_case_seq (problem_id, seq)}，**不含 deleted 列**。
      * 逻辑删除只是把 deleted 置 1 而保留行，之后再用同一个 seq 插入用例就会撞唯一键，
      * 表现为"删了用例却再也加不回同样的序号"。

@@ -34,6 +34,30 @@ public class RocketMQConsumerContainer {
         this.handlers = handlers;
     }
 
+    /**
+     * 按配置约束消费并发线程数（两者都 {@code <=0} 时不设置，保持 RocketMQ 默认 20/64）。
+     *
+     * <p>为什么必须**同时**设置 min 与 max：RocketMQ 的消费线程池在
+     * {@code [consumeThreadMin, consumeThreadMax]} 区间内按积压自适应伸缩。
+     * 只设 max 而 min 仍是默认 20 时，池子最小也有 20 个线程在跑 ——
+     * 对判题机来说 20 个并发 {@code docker run} 就已经能把容器冷启动拖过墙钟预算。
+     * 因此把 min 一并压到上限以内才是真正的"封顶"。
+     */
+    private void applyConsumeThreadBound(DefaultMQPushConsumer c) {
+        int max = properties.getConsumeThreadMax();
+        int min = properties.getConsumeThreadMin();
+        if (max <= 0 && min <= 0) {
+            return;   // 未配置 → 沿用 RocketMQ 默认，行为与加该旋钮之前完全一致
+        }
+        int boundMax = max > 0 ? max : Math.max(min, 1);
+        int boundMin = min > 0 ? Math.min(min, boundMax) : boundMax;
+        c.setConsumeThreadMax(boundMax);
+        c.setConsumeThreadMin(boundMin);
+        log.info("消费线程数已限定：min={} max={}（group={}）—— 用于约束并发沙箱数，"
+                + "多实例判题时建议「实例数 × max ≤ 宿主机 CPU 核数」", boundMin, boundMax,
+                properties.getConsumerGroup());
+    }
+
     /** 启动消费者；MQ 不可用时不抛出，记录降级日志。 */
     public void start() {
         if (handlers == null || handlers.isEmpty()) {
@@ -44,6 +68,7 @@ public class RocketMQConsumerContainer {
             DefaultMQPushConsumer c = new DefaultMQPushConsumer(properties.getConsumerGroup());
             c.setNamesrvAddr(properties.getNameServer());
             c.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_LAST_OFFSET);
+            applyConsumeThreadBound(c);
             Map<String, Set<String>> tagsByTopic = tagsByTopic();
             tagsByTopic.forEach((topic, tags) -> {
                 // 任一处理器未声明 Tag（记入 "*"）即退化为订阅全部 Tag —— 宁可多收，

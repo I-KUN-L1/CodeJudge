@@ -23,6 +23,14 @@ public interface SandboxExecutor {
      */
     SandboxResult execute(SandboxSpec spec);
 
+    /**
+     * 释放某次判题占用的**编译产物共享目录**（{@link SandboxSpec#artifactKey()}）。
+     *
+     * <p>实现必须幂等：键不存在、目录已删、删除失败都不得抛异常 —— 调用点位于
+     * {@code finally} 中，此处抛异常会把判题结果吞掉。残留目录由运维清扫兜底。
+     */
+    void releaseArtifactDir(String artifactKey);
+
     /** 沙箱可用性自检（启动时与判题前调用）：docker 可达 + 指定镜像存在 */
     boolean available(String image);
 }

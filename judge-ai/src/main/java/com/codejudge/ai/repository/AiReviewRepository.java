@@ -49,7 +49,7 @@ public class AiReviewRepository {
     /**
      * 插入点评记录（status=0 生成中），返回自增主键。
      *
-     * <p>⚠️ <b>必须用 PG 的 {@code RETURNING id}，不能用
+     * <p><b>必须用 PG 的 {@code RETURNING id}，不能用
      * {@code Statement.RETURN_GENERATED_KEYS} + {@code KeyHolder.getKey()}。</b>
      *
      * <p>PG 驱动在后者模式下会把<b>整行所有列</b>都当作返回的 key，{@code getKey()}
@@ -163,7 +163,7 @@ public class AiReviewRepository {
             PGvector vec = new PGvector(query);
             ps.setObject(1, vec);
             ps.setObject(2, problemId, java.sql.Types.BIGINT);
-            // ⚠️ 必须显式指定 JDBC 类型：`? IS NULL` 里的占位符没有可推断的列上下文，
+            // 必须显式指定 JDBC 类型：`? IS NULL` 里的占位符没有可推断的列上下文，
             //    纯 setObject(i, null) 会让 PG 报 "could not determine data type of parameter"。
             ps.setObject(3, excludeSubmissionId, java.sql.Types.BIGINT);
             ps.setObject(4, excludeSubmissionId, java.sql.Types.BIGINT);

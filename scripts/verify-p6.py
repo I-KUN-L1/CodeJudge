@@ -21,7 +21,7 @@ P6 端到端验收：前端产物 + 可观测性 + 监控栈 + 压测资产 + �
     CJ_P6_GATEWAY       网关地址，默认 http://127.0.0.1:9080
     CJ_P3_PHONE         学员手机号，默认 13900000001
     CJ_P3_PASS          学员密码，默认 123456
-    CJ_P6_GRAFANA_PASS  Grafana 密码，默认 codejudge
+    CJ_P6_GRAFANA_PASS  Grafana 密码；不设时依次取 .env 的 GRAFANA_ADMIN_PASSWORD、再退回 codejudge
 """
 import argparse
 import json
@@ -44,7 +44,34 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 GATEWAY = os.environ.get("CJ_P6_GATEWAY", "http://127.0.0.1:9080")
 PHONE = os.environ.get("CJ_P3_PHONE", "13900000001")
 PASSWORD = os.environ.get("CJ_P3_PASS", "123456")
-GRAFANA_PASS = os.environ.get("CJ_P6_GRAFANA_PASS", "codejudge")
+
+
+def _env_file_value(key: str) -> str:
+    """从仓库根 .env 取一个键的值（读不到返回空串）。**不打印任何值**。
+
+    存在的意义：Grafana 管理员口令一旦按 LAUNCH-READINESS A1 轮换成功，
+    原先硬编码的默认值 `codejudge` 会让 F 段的凭据检查误报 FAIL ——
+    等于"加固之后验收反而变红"。改为优先跟随 .env，轮换后无需改测试代码。
+    """
+    try:
+        for line in (ROOT / ".env").read_text(encoding="utf-8", errors="replace").splitlines():
+            s = line.strip()
+            if s.startswith("#") or "=" not in s:
+                continue
+            k, v = s.split("=", 1)
+            if k.strip() == key:
+                return v.strip()
+    except OSError:
+        pass
+    return ""
+
+
+# 优先级：显式环境变量 > .env 的 GRAFANA_ADMIN_PASSWORD > 历史默认值。
+# 保持 codejudge 兜底只是为了不改变本地默认行为；它同时意味着
+#   「F 段通过」并不等于「Grafana 已加固」—— 加固与否由 preflight B4 判定。
+GRAFANA_PASS = (os.environ.get("CJ_P6_GRAFANA_PASS")
+                or _env_file_value("GRAFANA_ADMIN_PASSWORD")
+                or "codejudge")
 TIMEOUT = 15
 
 SERVICES = {
@@ -265,10 +292,10 @@ def sec_e(do_judge=True):
         return
 
     # ---- 真实提交 + 等判题终态 ----
-    # ⚠ 必须固定用 A+B 题目（默认 4001）：列表首条不保证是 A+B，
+    # 必须固定用 A+B 题目（默认 4001）：列表首条不保证是 A+B，
     #   把 A+B 的解法提交到别的题目上会稳定得到 WA，从而把「判题链路正常」误判成失败。
     ab_pid = int(os.environ.get("CJ_P6_AB_PROBLEM", "4001"))
-    # ⚠ 代码里必须带唯一标记：不带的话第二次执行本脚本会命中幂等（同一用户+题目+代码），
+    # 代码里必须带唯一标记：不带的话第二次执行本脚本会命中幂等（同一用户+题目+代码），
     #   下面的 idempotent=false 断言会失败 —— 验收脚本必须可重复执行。
     nonce = uuid.uuid4().hex
     code = ("import sys\n"
@@ -313,8 +340,14 @@ def sec_e(do_judge=True):
 def sec_f():
     section("F. Prometheus / Alertmanager / Grafana（真实起容器）")
     mon = ROOT / "deploy" / "monitoring"
+    # 必须带 --env-file：监控 compose 里的敏感项（Grafana 口令）是 fail-closed 形式，
+    #    漏带会直接拒绝启动。此前本行不带也能"通过"，是因为 compose 的默认口令恰好等于
+    #    容器里的口令 —— 即"验收全绿"这件事本身建立在默认值仍然有效之上（见 preflight B4）。
+    #    用绝对路径而非 ../../.env，避免对 cwd 的隐式依赖。
+    env_file = ROOT / ".env"
     try:
-        p = subprocess.run(["docker", "compose", "-f", "docker-compose.monitoring.yml", "up", "-d"],
+        p = subprocess.run(["docker", "compose", "--env-file", str(env_file),
+                            "-f", "docker-compose.monitoring.yml", "up", "-d"],
                            cwd=str(mon), capture_output=True, text=True, timeout=420)
         check(p.returncode == 0, "docker compose up -d（监控栈）",
               (p.stderr or p.stdout)[-200:] if p.returncode else "")
@@ -337,7 +370,7 @@ def sec_f():
         check(ok, f"{name} 就绪（/-/ready）")
 
     # Prometheus targets —— 8 个服务必须全部 up
-    # ⚠ 必须轮询：/-/ready 只表示 HTTP 服务已起，抓取间隔 15s，首个 scrape 完成前
+    # 必须轮询：/-/ready 只表示 HTTP 服务已起，抓取间隔 15s，首个 scrape 完成前
     #   /api/v1/targets 会返回空列表（实测踩到过，会把配置正确误报成"抓取到 0 个 target"）。
     cj, down = [], []
     try:
@@ -394,7 +427,7 @@ def sec_f():
         return
 
     # Grafana 鉴权走 HTTP Basic。
-    # ⚠ 不要用 POST /api/login：该端点在 Grafana 11.3 上返回 404 {"message":"Not found"}，
+    # 不要用 POST /api/login：该端点在 Grafana 11.3 上返回 404 {"message":"Not found"}，
     #   会让"凭据正确"被误判为失败。Basic Auth 是稳定可用的替代。
     gs = requests.Session()
     gs.trust_env = False

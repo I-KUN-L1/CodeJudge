@@ -66,7 +66,7 @@ public class KnowledgeVectorRepository {
      * <p>{@code score = 1 - 余弦距离}。向量在 {@code EmbeddingService} 侧已做 L2 归一化，
      * 因此该值等同余弦相似度，取值区间 [0, 1]。
      *
-     * <p>⚠️ 带 {@code problem_id} 过滤时，PostgreSQL 未必选择 HNSW 索引
+     * <p>带 {@code problem_id} 过滤时，PostgreSQL 未必选择 HNSW 索引
      * （索引只建在 embedding 上）—— 计划器会按代价在「索引扫描 + 过滤」与
      * 「顺序扫描 + 精确排序」之间取舍。当前知识库规模（数十~数百切片）下两者都够快；
      * 若未来切片量上万，应改为**部分索引**（按 problem_id 分区）或

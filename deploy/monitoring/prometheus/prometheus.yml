@@ -3,12 +3,12 @@
 #
 # 抓取目标：8 个 judge-* 服务（9080–9087）的 /actuator/prometheus。
 #
-# ⚠ 关键点：judge-* 服务**跑在宿主机上**（由 scripts/dev-start-backend.py 启动），
+# 关键点：judge-* 服务**跑在宿主机上**（由 scripts/dev-start-backend.py 启动），
 #   不在 Docker 网络里。因此 Prometheus 容器必须用 host.docker.internal 访问，
 #   写 localhost:9080 会指向容器自身 → 全部 target 显示 down（且报 connection refused）。
 #   Linux 宿主需配合 docker-compose 里的 extra_hosts: host-gateway（已配）。
 #
-# ⚠ 服务不从网关抓：网关只代理业务路由，/actuator/** 未被暴露到网关路由表。
+# 服务不从网关抓：网关只代理业务路由，/actuator/** 未被暴露到网关路由表。
 #   直连各服务端口才是唯一可达路径，也因此**不需要 JWT**（actuator 端点未接鉴权）。
 # ============================================================
 global:

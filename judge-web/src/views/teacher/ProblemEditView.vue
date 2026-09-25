@@ -173,7 +173,8 @@ const route = useRoute();
 const router = useRouter();
 
 const isEdit = computed(() => route.name === 'teacher-problem-edit');
-const problemId = computed(() => (isEdit.value ? Number(route.params.id) : null));
+// 雪花 id 一律按字符串透传（Number 对 19 位 id 会精度截断，update 请求会打到不存在的题目）
+const problemId = computed(() => (isEdit.value ? route.params.id : null));
 
 const tab = ref('basic');
 const tplLang = ref('JAVA');
@@ -275,7 +276,7 @@ function addEmptyCase() {
 /**
  * 保存用例（全量替换）。
  *
- * ⚠️ 用例与题目是**两个独立请求**：题面改了但用例没保存，或反之，
+ * 用例与题目是**两个独立请求**：题面改了但用例没保存，或反之，
  * 所以这里的保存按钮只作用域用例集合，不隐式带上题目表单 —— 避免用户
  * 只是想存个用例却把没写完的题面一起提交了。
  */

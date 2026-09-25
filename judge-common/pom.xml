@@ -46,11 +46,10 @@
             <artifactId>spring-cloud-starter-openfeign</artifactId>
             <optional>true</optional>
         </dependency>
-        <!-- RocketMQ 客户端（通用生产者/序列化封装，判题异步链路复用；版本与 judge-submission / judge-worker 保持一致） -->
+        <!-- RocketMQ 客户端（通用生产者/序列化封装，判题异步链路复用）；版本由父 pom dependencyManagement 托管，勿在此钉死 -->
         <dependency>
             <groupId>org.apache.rocketmq</groupId>
             <artifactId>rocketmq-client</artifactId>
-            <version>4.9.7</version>
         </dependency>
         <dependency>
             <groupId>jakarta.servlet</groupId>
@@ -62,7 +61,7 @@
           CommonExceptionAdvice 用它把「数据完整性约束失败（必填项缺失 / 唯一键冲突 / 字段超长）」
           映射为 400 明确提示，而不是落到兜底的 500「系统繁忙，请稍后再试」。
 
-          ⚠ 必须显式声明且**不能 optional**：
+          必须显式声明且**不能 optional**：
             judge-ai 等无数据库的服务本身只经由 mybatis-plus（optional）
             间接看到该类型，运行期类路径上并没有 spring-tx —— 一旦缺失，Spring 在
             introspect CommonExceptionAdvice 时会抛
@@ -93,7 +92,7 @@
         <!--
           micrometer-registry-prometheus（P6 新增）。
 
-          ⚠ 为什么必须显式引入：`spring-boot-starter-actuator` 只提供 `/actuator/metrics`
+          为什么必须显式引入：`spring-boot-starter-actuator` 只提供 `/actuator/metrics`
           的**内存视图**，`/actuator/prometheus` 端点是由 **registry 的实现类**注册的。
           仅声明 `management.endpoints.web.exposure.include` 含 prometheus 而没有 registry 时，
           该端点不会注册 —— 访问返回 404（P6 改造前的实际状态：judge-gateway 白声明了

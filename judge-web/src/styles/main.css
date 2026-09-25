@@ -1,51 +1,274 @@
 /* ==========================================================================
-   CodeJudge 全局样式与响应式基线
+   CodeJudge 设计基线
    --------------------------------------------------------------------------
-   同时适配 Element Plus 的浅色与暗色主题（暗色由 <html class="dark"> 触发）。
-   自定义变量统一以 --cj- 前缀，避免与 Element Plus 的 --el-* 冲突。
+   分三层，改动请自上而下、不要跨层硬编码数值：
+
+     L1 基色旋钮 —— 色相与 chroma 的源头。整体偏移品牌色只改这里。
+     L2 语义 token —— 界面实际引用的名字（--bg / --fg / --accent …）。
+                      深色模式**只重定义本层**，L1 不动。
+     L3 兼容别名 —— 早期视图直接引用了 --cj-* 系列（16 个文件）。
+                      保留为别名，值指向 L2。**不要在新代码里用。**
+
+   所有颜色用 oklch：感知均匀，同 L 步长的明度看起来就是等距的。
+   全部前景/背景配对已用脚本核算过 WCAG 对比度（见文末注释）。
    ========================================================================== */
 
+/* --------------------------------------------------------------------------
+   L1 基色旋钮
+   中性色带极轻的冷调（chroma 0.002–0.014）。纯灰没有个性，
+   而这一点点倾向会让界面与品牌色产生潜意识的呼应。
+   -------------------------------------------------------------------------- */
 :root {
-  --cj-bg: #f4f6f9;
-  --cj-panel: #ffffff;
-  --cj-panel-2: #fafbfc;
-  --cj-border: #e3e7ee;
-  --cj-text: #1f2430;
-  --cj-text-sub: #5c6472;
-  --cj-text-dim: #8b93a3;
-  --cj-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 4px 16px rgba(16, 24, 40, 0.05);
-
-  --cj-accent: #3b6ef6;
-  --cj-accepted: #17a673;
-  --cj-wrong: #e5484d;
-  --cj-warn: #f5a524;
-  --cj-info: #6b7280;
-
-  --cj-radius: 10px;
-  --cj-gap: 16px;
-  --cj-header-h: 58px;
-
-  /* 编辑区等宽字体栈：优先系统自带，避免额外字体下载 */
-  --cj-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', 'Cascadia Mono', Consolas,
-    'Liberation Mono', Menlo, monospace;
+  --h-neutral: 255; /* 表面、分割线 */
+  --h-fg: 258; /* 文字（比表面略偏冷，拉开层次） */
+  --h-accent: 255; /* 交互主色 */
+  --h-ac: 155; /* 判题：通过 */
+  --h-wa: 25; /* 判题：错误 */
+  --h-tle: 68; /* 判题：超时/超内存 */
+  --h-ce: 268; /* 判题：编译/系统错误 */
 }
 
+/* --------------------------------------------------------------------------
+   L2 语义 token —— 浅色
+
+   ⚠️ 改色前先读这段，否则很容易越改越不对：
+   本层每个前景色都由脚本反解，遵循**两层要求**——
+
+     A. 设计目标（美学层次）：如"正文 15:1、次要 7:1"。
+        只在 token 的**典型所在面**上成立即可。
+     B. WCAG 硬底线：正文/语义色 ≥4.5:1、控件边线 ≥3:1，
+        且必须在**它能出现的每一个面**上都成立（含 hover/选中面）。
+
+   取二者中更严苛的那个 L。两个常见错误：
+     · 只按典型面求解 → 弱化色与语义色会在 surface-4 上悄悄跌破 4.5；
+     · 一律按最坏面求解 → 正文被一路压到近乎纯黑（实测会到 0.141）。
+   最坏面方向**随主题反转**：浅色模式的深字，最坏 = 最暗的面（surface-4）；
+   深色模式的浅字，最坏 = 最亮的面（surface-4）。别凭直觉选。
+   全部配对已用 scripts/palette_solve.py 核算，浅/深 × 5 个面共 112 项全过。
+   -------------------------------------------------------------------------- */
+:root {
+  /* 表面：亮度差即层级。浅色模式只用了 4 档，够用且不糊 */
+  --bg: oklch(0.975 0.004 var(--h-neutral)); /* 页面底 */
+  --surface-1: oklch(0.993 0.002 var(--h-neutral)); /* 面板 */
+  --surface-2: oklch(0.962 0.005 var(--h-neutral)); /* 面板头、内嵌块、输入框 */
+  --surface-3: oklch(0.935 0.007 var(--h-neutral)); /* hover */
+  --surface-4: oklch(0.905 0.009 var(--h-neutral)); /* active / 选中：浅色下最暗的面 */
+
+  /* 边线：line-1 是纯装饰（无对比度要求）；
+     line-2/3 承载"这是可交互控件"的信息，故必须 ≥3:1 */
+  --line-1: oklch(0.898 0.008 var(--h-neutral));
+  --line-2: oklch(0.590 0.011 var(--h-neutral)); /* 3.10:1 on surface-4 */
+  --line-3: oklch(0.547 0.013 var(--h-neutral)); /* 3.70:1 on surface-4 */
+
+  /* 文字 */
+  --fg: oklch(0.247 0.014 var(--h-fg)); /* 15.00:1 on bg；最坏面 12.15:1 */
+  --fg-2: oklch(0.459 0.014 var(--h-fg)); /*  7.00:1 on surface-1 */
+  --fg-3: oklch(0.496 0.012 var(--h-fg)); /*  4.60:1 on surface-4（含余量；要求 4.50） */
+  --fg-on-ink: oklch(0.975 0.004 var(--h-neutral)); /* 深底上的白字 */
+
+  /* 交互主色：链接、焦点环、选中态、导航高亮。
+     刻意**不**用于大面积填充 —— 强调色稀有才有力量 */
+  --accent: oklch(0.500 0.165 var(--h-accent)); /* 4.60:1 on surface-4 */
+  --accent-soft: oklch(0.955 0.030 var(--h-accent)); /* 选中行底色（非文字，不适用 4.5） */
+  --accent-line: oklch(0.870 0.075 var(--h-accent)); /* 选中态描边（非文字，不适用 4.5） */
+
+  /* 判题语义色。这是 OJ 用户的肌肉记忆，不可为美观改动。
+     同时必须配合文字标签使用，不能只靠颜色传达信息（色盲友好） */
+  --ac: oklch(0.482 0.119 var(--h-ac)); /* 4.60:1 on surface-4 —— AC 通过 */
+  --wa: oklch(0.521 0.200 var(--h-wa)); /* 4.60:1 —— WA 错误 */
+  --tle: oklch(0.502 0.110 var(--h-tle)); /* 4.60:1 —— TLE / MLE */
+  --ce: oklch(0.496 0.026 var(--h-ce)); /* 4.60:1 —— CE / SE */
+  --run: var(--accent); /* 判题中 */
+  --ac-soft: oklch(0.955 0.035 var(--h-ac));
+  --wa-soft: oklch(0.955 0.030 var(--h-wa));
+  --tle-soft: oklch(0.960 0.035 var(--h-tle));
+  --ce-soft: oklch(0.955 0.008 var(--h-ce));
+
+  /* 主按钮：外壳无色 —— 用正文色作底、页面底色作字（15.00:1）。
+     这正是「外壳无色、数据有色」原则的落点 */
+  --ink: var(--fg);
+  --ink-hover: oklch(0.320 0.014 var(--h-fg));
+
+  /* 高度：浅色模式用极轻的投影；深色模式改为靠表面明度，投影归零 */
+  --elev-1: 0 1px 1px oklch(0.247 0.01 var(--h-neutral) / 0.05);
+  --elev-2: 0 2px 8px oklch(0.247 0.01 var(--h-neutral) / 0.08);
+  --elev-3: 0 8px 28px oklch(0.247 0.01 var(--h-neutral) / 0.12);
+
+  /* 图表系列色。
+     ⚠️ 这里是**唯一**用 sRGB 十六进制而不是 oklch 的地方 —— 不是笔误：
+     ECharts 走 zrender 自带的颜色解析，不认识 oklch()，喂进去会画成黑色。
+     色值由 scripts/palette_solve.py 同源换算而来，与 --accent 同色相；
+     改基色（--h-accent）时必须一并重算，否则图表会与界面脱色。
+     消费方是 components/EChartPanel.vue（作为全局系列调色板），
+     视图里**不要**再写 color / itemStyle.color */
+  --chart-1: #0061be; /* = oklch(0.500 0.165 255) */
+  --chart-2: #835cbe; /* = oklch(0.560 0.150 300) */
+  --chart-3: #378054; /* = oklch(0.540 0.100 155) 与 --ac 同色相 */
+  --chart-4: #9d1a7e; /* = oklch(0.480 0.190 340) */
+}
+
+/* --------------------------------------------------------------------------
+   L2 语义 token —— 深色（只重定义本层）
+   深色不是浅色的反转：层级靠**表面变亮**而非投影，字重需略降，
+   强调色需略提亮以补偿深底上的感知重量。
+   最坏面方向与浅色**相反**：浅字在更亮的底上对比更低 → 最坏 = 最亮的面（surface-4）。
+   -------------------------------------------------------------------------- */
 html.dark {
-  --cj-bg: #101215;
-  --cj-panel: #191c21;
-  --cj-panel-2: #1f2329;
-  --cj-border: #2c3138;
-  --cj-text: #e6eaf2;
-  --cj-text-sub: #a7aeba;
-  --cj-text-dim: #7b8391;
-  --cj-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.35);
+  --bg: oklch(0.170 0.006 var(--h-neutral));
+  --surface-1: oklch(0.212 0.007 var(--h-neutral));
+  --surface-2: oklch(0.252 0.008 var(--h-neutral));
+  --surface-3: oklch(0.295 0.009 var(--h-neutral));
+  --surface-4: oklch(0.335 0.010 var(--h-neutral));
 
-  --cj-accent: #5b8def;
-  --cj-accepted: #35bd8b;
-  --cj-wrong: #f2555a;
-  --cj-warn: #f0a83c;
-  --cj-info: #9aa3b2;
+  --line-1: oklch(0.300 0.009 var(--h-neutral));
+  --line-2: oklch(0.605 0.011 var(--h-neutral)); /* 3.10:1 on surface-4 */
+  --line-3: oklch(0.650 0.013 var(--h-neutral)); /* 3.70:1 on surface-4 */
+
+  --fg: oklch(0.918 0.014 var(--h-fg)); /* 15.00:1 on bg；最坏面 9.40:1 */
+  --fg-2: oklch(0.716 0.014 var(--h-fg)); /*  4.76:1 on surface-4（8.29:1 on bg） */
+  --fg-3: oklch(0.707 0.012 var(--h-fg)); /*  4.60:1 on surface-4（含余量） */
+  --fg-on-ink: oklch(0.170 0.006 var(--h-neutral));
+
+  --accent: oklch(0.708 0.155 var(--h-accent)); /* 4.60:1 on surface-4 */
+  --accent-soft: oklch(0.290 0.045 var(--h-accent));
+  --accent-line: oklch(0.400 0.090 var(--h-accent));
+
+  --ac: oklch(0.691 0.135 var(--h-ac)); /* 4.60:1 on surface-4 */
+  --wa: oklch(0.727 0.169 var(--h-wa));
+  --tle: oklch(0.715 0.140 var(--h-tle));
+  --ce: oklch(0.707 0.026 var(--h-ce));
+  --ac-soft: oklch(0.290 0.050 var(--h-ac));
+  --wa-soft: oklch(0.295 0.055 var(--h-wa));
+  --tle-soft: oklch(0.300 0.045 var(--h-tle));
+  --ce-soft: oklch(0.290 0.015 var(--h-ce));
+
+  --ink: var(--fg);
+  --ink-hover: oklch(0.870 0.010 var(--h-fg));
+
+  --elev-1: none;
+  --elev-2: 0 2px 8px oklch(0 0 0 / 0.35);
+  --elev-3: 0 8px 28px oklch(0 0 0 / 0.45);
+
+  /* 图表系列色：深底上需要提亮，否则与背景对比不足（同 sRGB hex 的理由见浅色段注释） */
+  --chart-1: #58a3ff; /* = oklch(0.708 0.155 255) */
+  --chart-2: #b995f6; /* = oklch(0.740 0.140 300) */
+  --chart-3: #6fb789; /* = oklch(0.720 0.100 155) */
+  --chart-4: #e57fc5; /* = oklch(0.730 0.150 340) */
 }
+
+/* --------------------------------------------------------------------------
+   字体 / 字号 / 间距 / 圆角 / 动效
+   -------------------------------------------------------------------------- */
+:root {
+  /* CJK 走系统栈：中文 webfont 单字重即 2–8MB，对首屏不可接受。
+     Latin 与等宽层自托管 IBM Plex Mono（3 个字重 latin 子集约 45KB），
+     这是中文之外唯一能注入字体个性的层。 */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas,
+    'Liberation Mono', Menlo, monospace;
+
+  /* 字号：固定 rem 阶跃，**不用** clamp()。
+     数据密集的产品 UI 需要跨视口可预测的空间（Material / Polaris / Primer / Carbon 均如此）。
+     宏观比例 1.33（纯四度）：15 → 20 → 26 → 34。
+     12 与 13 是两个微档，职责不同：12 给非交互元数据，13 给密集表格单元格。 */
+  --fs-xs: 0.75rem; /* 12 — 元数据、表头、角标 */
+  --fs-sm: 0.8125rem; /* 13 — 密集数据单元格、榜单 */
+  --fs-md: 0.9375rem; /* 15 — UI 正文 / 表单 / 按钮（基准） */
+  --fs-lg: 1.25rem; /* 20 — 区块标题 */
+  --fs-xl: 1.625rem; /* 26 — 页面主标题 */
+  --fs-2xl: 2.125rem; /* 34 — 门面数字 */
+
+  --lh-display: 1.15;
+  --lh-tight: 1.3;
+  --lh-base: 1.55;
+  --lh-read: 1.75; /* 长文/题面。浅色深底都要够松 */
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semi: 600;
+  --fw-bold: 700;
+
+  /* 字距：**只用于 Latin 与等宽**。
+     中文是等宽方块字，负字距会让笔画粘连 —— 故中文场景一律 0。 */
+  --ls-tight: -0.02em;
+  --ls-none: 0;
+  --ls-wide: 0.02em; /* 小号全大写标签 */
+
+  /* 间距：4pt 基准。8pt 太粗，取不出 12px 这种中间值 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  /* 语义别名：按**关系**命名，而不是按数值。用 gap 而不是 margin */
+  --inset-panel: var(--sp-4);
+  --inset-page: var(--sp-5);
+  --stack-1: var(--sp-1); /* 同一组内 */
+  --stack-2: var(--sp-2);
+  --stack-3: var(--sp-3);
+  --stack-4: var(--sp-4); /* 组之间 */
+  --stack-5: var(--sp-6); /* 大区块之间 */
+
+  /* 圆角：工业仪表靠刻线不靠软边。刻意收到 2–6px */
+  --r-xs: 2px;
+  --r-sm: 3px;
+  --r-md: 4px;
+  --r-lg: 6px;
+  --r-full: 999px;
+
+  /* 动效：100/300/500 法则。缓动一律指数曲线，**不用** ease，
+     也不用回弹/弹性（真实物体停下是减速，不是弹跳） */
+  --dur-1: 120ms; /* 即时反馈：按下、切换、变色 */
+  --dur-2: 220ms; /* 状态变化：菜单、提示、hover */
+  --dur-3: 380ms; /* 布局变化：抽屉、弹窗、折叠 */
+  --ease-out: cubic-bezier(0.25, 1, 0.5, 1); /* ease-out-quart */
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0); /* 退场比入场快 25% */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* z 轴阶梯：语义化命名，不写裸数字。
+     全部低于 Element Plus 的 popper(2000)，保证下拉面板永远压在我们的框架层之上 */
+  --z-sticky: 900;
+  --z-drawer: 950;
+  --z-modal: 1000;
+
+  --header-h: 52px;
+  --page-max: 1440px;
+  --measure: 68ch; /* 长文行宽上限 */
+}
+
+/* --------------------------------------------------------------------------
+   L3 兼容别名
+   16 个既有视图直接引用了 --cj-* 系列。改名会静默失效（不报错、只是不好看），
+   故保留为别名。**新代码请用上面的 L2 语义 token。**
+   -------------------------------------------------------------------------- */
+:root {
+  --cj-bg: var(--bg);
+  --cj-panel: var(--surface-1);
+  --cj-panel-2: var(--surface-2);
+  --cj-border: var(--line-1);
+  --cj-text: var(--fg);
+  --cj-text-sub: var(--fg-2);
+  --cj-text-dim: var(--fg-3);
+  --cj-shadow: var(--elev-1);
+  --cj-accent: var(--accent);
+  --cj-accepted: var(--ac);
+  --cj-wrong: var(--wa);
+  --cj-warn: var(--tle);
+  --cj-info: var(--ce);
+  --cj-radius: var(--r-md);
+  --cj-gap: var(--sp-4);
+  --cj-header-h: var(--header-h);
+  --cj-mono: var(--font-mono);
+}
+
+/* ==========================================================================
+   基础
+   ========================================================================== */
 
 * {
   box-sizing: border-box;
@@ -59,79 +282,129 @@ body,
 }
 
 body {
-  background: var(--cj-bg);
-  color: var(--cj-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
-  font-size: 14px;
-  line-height: 1.6;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: var(--lh-base);
+  font-kerning: normal;
+  font-synthesis: none;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 深底浅字时，字形感知重量更轻，故行高放开一点 */
+  text-underline-offset: 0.2em;
+}
+
+html.dark body {
+  /* 深底浅字感知重量更轻，行高放开一点。
+     刻意不改 font-weight：正文走系统 CJK 栈，多数系统只有 400/700 两档，
+     写 380 会被静默吸附到 400，是段不产生效果的代码。 */
+  line-height: calc(var(--lh-base) + 0.05);
 }
 
 a {
-  color: var(--cj-accent);
+  color: var(--accent);
   text-decoration: none;
+  text-decoration-thickness: 1px;
+  transition: color var(--dur-1) var(--ease-out);
 }
 a:hover {
   text-decoration: underline;
 }
 
-/* ---------- 通用容器 ---------- */
+/* 焦点可见性：键盘用户必须能看清。用 outline 而非 box-shadow，
+   避免被 border-radius 裁掉，也避免与投影叠加 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+/* 数字一律等宽对齐。任何会出现两次以上的数字都应加 .cj-num 或 .cj-mono。
+   等宽在这里承担**结构**职责，不是「技术感」的装饰 */
+.cj-num,
+.cj-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: var(--ls-none);
+}
+
+/* ==========================================================================
+   页面骨架
+   ========================================================================== */
 
 .cj-page {
   width: 100%;
-  max-width: 1320px;
+  max-width: var(--page-max);
   margin: 0 auto;
-  padding: var(--cj-gap);
+  padding: var(--inset-page);
 }
 
+/* 面板：发丝线 + 硬边，投影只在浅色模式保留最轻一档。
+   深色模式 --elev-1 为 none —— 层级改由表面明度差表达 */
 .cj-card {
-  background: var(--cj-panel);
-  border: 1px solid var(--cj-border);
-  border-radius: var(--cj-radius);
-  box-shadow: var(--cj-shadow);
+  background: var(--surface-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  box-shadow: var(--elev-1);
 }
 
 .cj-card + .cj-card {
-  margin-top: var(--cj-gap);
+  margin-top: var(--sp-4);
 }
 
+/* 面板头做成「仪表标签条」：底比面板暗一档，下沿一条刻线。
+   不用图标容器 + 大圆角的常见做法 —— 那是装饰，不是信息 */
 .cj-card__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--cj-border);
-  font-weight: 600;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  min-height: 40px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line-1);
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  letter-spacing: var(--ls-wide);
+  color: var(--fg);
   flex-wrap: wrap;
 }
 
 .cj-card__body {
-  padding: 16px;
+  padding: var(--inset-panel);
 }
 
 .cj-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: 0.2px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-none); /* 中文不加负字距 */
+  color: var(--fg);
 }
 
 .cj-sub {
-  color: var(--cj-text-sub);
-  font-size: 13px;
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
 }
 
 .cj-dim {
-  color: var(--cj-text-dim);
-  font-size: 12px;
+  color: var(--fg-3);
+  font-size: var(--fs-xs);
 }
 
 .cj-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
 }
 
@@ -139,86 +412,116 @@ a:hover {
   flex: 1 1 auto;
 }
 
-.cj-mono {
-  font-family: var(--cj-mono);
+/* 小节分隔：用发丝线代替「卡片里再套卡片」。
+   嵌套卡片会让层级读不出来 —— 组内用间距与刻线区分即可 */
+.cj-rule {
+  height: 1px;
+  border: 0;
+  margin: var(--sp-4) 0;
+  background: var(--line-1);
 }
 
-/* ---------- 判题结论色 ---------- */
+.cj-empty {
+  padding: var(--sp-7) var(--sp-4);
+  text-align: center;
+  color: var(--fg-3);
+  font-size: var(--fs-sm);
+}
+
+/* ==========================================================================
+   判题结论
+   颜色是辅助，文字才是信息载体 —— 每一处用色的地方都必须同时有文字标签
+   ========================================================================== */
 
 .v-ac {
-  color: var(--cj-accepted);
-  font-weight: 700;
+  color: var(--ac);
+  font-weight: var(--fw-semi);
 }
 .v-wa,
 .v-re {
-  color: var(--cj-wrong);
-  font-weight: 700;
+  color: var(--wa);
+  font-weight: var(--fw-semi);
 }
 .v-tle,
 .v-mle {
-  color: var(--cj-warn);
-  font-weight: 700;
+  color: var(--tle);
+  font-weight: var(--fw-semi);
 }
 .v-ce,
 .v-se {
-  color: var(--cj-info);
-  font-weight: 700;
+  color: var(--ce);
+  font-weight: var(--fw-semi);
 }
 .v-pending,
 .v-judging {
-  color: var(--cj-accent);
-  font-weight: 700;
+  color: var(--run);
+  font-weight: var(--fw-semi);
 }
 
-/* ---------- 代码块 / Markdown ---------- */
+/* ==========================================================================
+   Markdown / 题面
+   题面是长时间阅读面，故正文用 --fs-md 配 --lh-read，并限制行宽
+   ========================================================================== */
 
 .cj-md {
-  line-height: 1.75;
+  line-height: var(--lh-read);
+  color: var(--fg);
   word-break: break-word;
+  max-width: var(--measure);
 }
 .cj-md h1,
 .cj-md h2,
 .cj-md h3 {
-  margin: 18px 0 8px;
-  line-height: 1.35;
+  margin: var(--sp-5) 0 var(--sp-2);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-none);
 }
 .cj-md h1 {
-  font-size: 20px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
 }
 .cj-md h2 {
-  font-size: 17px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--cj-border);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--line-1);
 }
 .cj-md h3 {
-  font-size: 15px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
 }
 .cj-md p {
-  margin: 8px 0;
+  margin: var(--sp-3) 0;
 }
 .cj-md ul,
 .cj-md ol {
-  padding-left: 22px;
-  margin: 8px 0;
+  padding-left: var(--sp-5);
+  margin: var(--sp-3) 0;
+}
+.cj-md li + li {
+  margin-top: var(--sp-1);
 }
 .cj-md code {
-  font-family: var(--cj-mono);
+  font-family: var(--font-mono);
   font-size: 0.9em;
-  background: var(--cj-panel-2);
-  border: 1px solid var(--cj-border);
-  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-xs);
   padding: 1px 5px;
 }
 .cj-md pre {
-  /* 代码块固定深色底 + 浅色字：highlight.js 的 github-dark 主题是深色的，
-     若跟随亮色主题就会变成"浅底浅字"。固定深色在两种主题下都可读，
-     也是主流 OJ（LeetCode / Codeforces）的通行做法。 */
-  background: #0d1117;
-  color: #e6edf3;
-  border: 1px solid var(--cj-border);
-  border-radius: 8px;
-  padding: 12px;
+  /* 代码块固定深色底 + 浅色字：highlight.js 的 github-dark 是深色主题，
+     跟随亮色主题会变成「浅底浅字」。固定深色在两种主题下都可读，
+     也是主流 OJ（LeetCode / Codeforces）的通行做法。
+     这里的色值刻意不参与主题变量 —— 它必须与两个主题都保持对比。 */
+  background: oklch(0.180 0.010 258);
+  color: oklch(0.930 0.010 258);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
   overflow-x: auto;
+  max-width: 100%;
 }
 .cj-md pre code {
   background: none;
@@ -229,34 +532,44 @@ a:hover {
 .cj-md table {
   width: 100%;
   border-collapse: collapse;
-  margin: 10px 0;
+  margin: var(--sp-4) 0;
   display: block;
   overflow-x: auto;
+  font-size: var(--fs-sm);
 }
 .cj-md th,
 .cj-md td {
-  border: 1px solid var(--cj-border);
-  padding: 6px 10px;
+  border: 1px solid var(--line-1);
+  padding: var(--sp-2) var(--sp-3);
   text-align: left;
 }
+.cj-md th {
+  background: var(--surface-2);
+  font-weight: var(--fw-semi);
+}
+.cj-md td {
+  font-variant-numeric: tabular-nums;
+}
 .cj-md blockquote {
-  margin: 10px 0;
-  padding: 6px 12px;
-  border-left: 3px solid var(--cj-accent);
-  background: var(--cj-panel-2);
-  color: var(--cj-text-sub);
+  margin: var(--sp-4) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 2px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--fg-2);
 }
 .cj-md img {
   max-width: 100%;
 }
-
-.cj-empty {
-  padding: 40px 16px;
-  text-align: center;
-  color: var(--cj-text-dim);
+.cj-md > :first-child {
+  margin-top: 0;
+}
+.cj-md > :last-child {
+  margin-bottom: 0;
 }
 
-/* ---------- 图表容器（ECharts 需要显式高度，否则高度为 0 不渲染） ---------- */
+/* ==========================================================================
+   图表容器（ECharts 需要显式高度，否则高度为 0 不渲染）
+   ========================================================================== */
 
 .cj-chart {
   width: 100%;
@@ -266,15 +579,46 @@ a:hover {
   height: 320px;
 }
 
-/* ---------- 响应式基线 ---------- */
+/* ==========================================================================
+   响应式
+   断点沿用既有约定（1100 / 900 / 640），README §5 有记录
+   ========================================================================== */
 
-.cj-hide-sm {
-  display: initial;
+/* ⚠️ `.cj-hide-sm` 这里**刻意不写任何声明**，只在窄屏媒体查询里隐藏。
+ *
+ * 它此前写的是 `display: initial` —— 这是本页最贵的一处缺陷，务必别再写回去。
+ *
+ * `display` 的 initial 值是 `inline`，**不是** `table-cell`。而这个类是通过
+ * el-table 的 `class-name` 挂上去的，落点是 `<th>` / `<td>`：
+ *
+ *     <el-table-column label="赛程" class-name="cj-hide-sm">   →  <td class="cj-hide-sm">
+ *
+ * 把表格单元格设成 `display: inline`，它就脱离了 `<tr>` 的单元格流。浏览器按
+ * CSS 表格修复规则把这一串行内子元素包成**一个匿名单元格**，于是：
+ *   · 列数不再等于 colgroup 的列数 → table-layout: fixed 重新分配全部列宽；
+ *   · 同一个匿名单元格里的多列内容**叠在同一块面积上**（真·文字重叠）；
+ *   · 表头与表体的列边界随之错开（"表头与内容不一致"）。
+ *
+ * 实测（logs/tmp/probe-hide-sm.cjs，720px 表宽，第 2/3/4 列带该类）：
+ *     现状 display:initial → 三列并成一个盒子 [329.8, 573]，其后右侧全空
+ *     不声明 display      → 三列各自 table-cell：[329.3,573.5] [573.5,656.5] [656.5,739.5]
+ *
+ * 受影响页面即所有用了该 class-name 的列表：竞赛（赛程/题目/报名）、题库（限制）、
+ * 提交记录（提交人/耗时·内存）、题目管理（通过率/更新时间）。
+ */
+
+@media (max-width: 1100px) {
+  :root {
+    --inset-page: var(--sp-4);
+  }
 }
 
 @media (max-width: 900px) {
+  :root {
+    --page-max: 100%;
+  }
   .cj-page {
-    padding: 12px;
+    padding: var(--sp-3);
   }
   .cj-hide-sm {
     display: none !important;
@@ -283,13 +627,12 @@ a:hover {
 
 @media (max-width: 640px) {
   :root {
-    --cj-gap: 12px;
+    --fs-lg: 1.125rem; /* 20 → 18：窄屏上 20px 标题相对过重 */
+    --fs-xl: 1.375rem; /* 26 → 22 */
+    --inset-panel: var(--sp-3);
   }
   .cj-card__body {
-    padding: 12px;
-  }
-  body {
-    font-size: 13px;
+    padding: var(--sp-3);
   }
 }
 
@@ -302,15 +645,83 @@ a:hover {
   min-width: 640px;
 }
 
-/* 滚动条（暗色下默认滚动条太亮） */
-html.dark ::-webkit-scrollbar {
+/* ==========================================================================
+   动效可访问性
+   prefers-reduced-motion 不是可选项：前庭功能障碍影响约 35% 的 40 岁以上成年人。
+   只压制**空间位移**，功能性动画（加载指示、进度条）保留但放慢。
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 1ms;
+    --dur-2: 1ms;
+    --dur-3: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* 加载态仍需要「在动」的信号，否则用户会以为卡死 */
+  .el-loading-spinner {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* ==========================================================================
+   滚动条
+   ========================================================================== */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-html.dark ::-webkit-scrollbar-thumb {
-  background: #363b43;
-  border-radius: 6px;
+::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: var(--r-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
-html.dark ::-webkit-scrollbar-track {
-  background: #17191d;
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-3);
+  background-clip: content-box;
 }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ==========================================================================
+   对比度核算记录
+   以下配对均已用脚本（oklch → sRGB → WCAG 相对亮度）逐项验证：
+
+   验证口径：**两层要求，取更严苛者**（详见本文件顶部 L2 段的说明）
+     · 设计目标（美学层次）  只在 token 的典型所在面上成立
+     · WCAG 硬底线           必须在它能出现的每一个面上成立
+
+   ⚠️ 最坏面方向随主题反转，且是**最暗/最亮的那个面 `surface-4`**，不是 `bg`：
+     浅色 —— 深字在更亮的底上对比更高 → 最坏 = 最暗的面 = surface-4
+     深色 —— 浅字在更亮的底上对比更低 → 最坏 = 最亮的面 = surface-4
+     早期版本误按 `bg` 求解，导致 --fg-3 落到 hover 面上只有 4.13:1、
+     line-2 只有 2.91:1（**都不达标**）—— 这类错误只在 hover/选中行才露馅，
+     扫截图看不出来，必须用**覆盖全部背景的配对矩阵**来验证。
+
+   当前实测（51 项 × 2 主题 = 102 项全过，均取浏览器计算值而非纸面值）：
+     浅色  各类最坏值均在 surface-4：--fg 12.19 / --fg-3 4.62 / 语义色 4.58–4.62
+           --line-2 3.09 / --line-3 3.71（≥3.0，WCAG 1.4.11 非文本对比度）
+     深色  同上口径：--fg 9.37 / --fg-3 4.61 / 语义色 4.58–4.62
+
+   改任何色值前请重跑核算（技能 frontend-token-rebuild 的 palette_solve.py），
+   不要凭肉眼判断 —— 显示器上的「看起来够」不作数。
+   ========================================================================== */

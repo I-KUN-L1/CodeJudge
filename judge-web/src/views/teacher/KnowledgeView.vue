@@ -7,21 +7,19 @@
         <el-button size="small" :icon="Refresh" @click="loadCount">刷新</el-button>
       </div>
       <div class="cj-card__body">
-        <div class="stats">
-          <div class="stat">
-            <div class="stat__v">{{ count.knowledgeChunks ?? '—' }}</div>
-            <div class="stat__k">知识切片数</div>
+        <div class="cj-stats">
+          <div class="cj-stat">
+            <div class="cj-stat__v">{{ count.knowledgeChunks ?? '—' }}</div>
+            <div class="cj-stat__k">知识切片数</div>
           </div>
-          <div class="stat">
-            <div class="stat__v">{{ count.reviews ?? '—' }}</div>
-            <div class="stat__k">历史点评数</div>
+          <div class="cj-stat">
+            <div class="cj-stat__v">{{ count.reviews ?? '—' }}</div>
+            <div class="cj-stat__k">历史点评数</div>
           </div>
-          <div class="stat stat--note">
-            <div class="cj-sub">
-              知识切片会被注入每一次点评的 Prompt，是面向全体学员的输出内容，
-              因此写入权限收紧到教师/管理员 —— 学员若能写入，等于开了一条
-              「往所有同学的 AI 点评里注入指定文本」的间接提示注入通道。
-            </div>
+          <div class="cj-stat cj-stat--note">
+            知识切片会被注入每一次点评的 Prompt，是面向全体学员的输出内容，
+            因此写入权限收紧到教师/管理员 —— 学员若能写入，等于开了一条
+            「往所有同学的 AI 点评里注入指定文本」的间接提示注入通道。
           </div>
         </div>
       </div>
@@ -59,11 +57,15 @@
         <div v-if="hits.length" class="hits">
           <div v-for="h in hits" :key="h.id" class="hit">
             <div class="hit__head">
+              <!-- 四段定宽：来源 / 标题 / 题目 / 相似度。
+                   相似度用 grid 的自适应列推到最右，而不是靠 flex 的 gap 碰运气 ——
+                   各行的相似度数值位数不同，必须右对齐才比得出来 -->
               <el-tag size="small" effect="plain">{{ h.sourceType || '—' }}</el-tag>
               <span class="hit__title">{{ h.title || '(无标题)' }}</span>
-              <span class="cj-dim">题目 #{{ h.problemId ?? '通用' }}</span>
-              <div class="cj-spacer" />
-              <span class="cj-mono v-ac">{{ h.score !== null && h.score !== undefined ? Number(h.score).toFixed(4) : '—' }}</span>
+              <span class="cj-num-dim">题目 #{{ h.problemId ?? '通用' }}</span>
+              <span class="cj-num hit__score">
+                {{ h.score !== null && h.score !== undefined ? Number(h.score).toFixed(4) : '—' }}
+              </span>
             </div>
             <div class="hit__body">{{ h.content }}</div>
           </div>
@@ -170,7 +172,7 @@ async function onSearch() {
     hits.value =
       (await aiApi.knowledgeSearch({
         query: search.query,
-        problemId: search.problemId ? Number(search.problemId) : null,
+        problemId: search.problemId || null,
         topK: search.topK,
         includeHistory: search.includeHistory,
       })) || [];
@@ -184,7 +186,7 @@ async function onSearch() {
 
 function buildUploadBody() {
   return {
-    problemId: upload.problemId ? Number(upload.problemId) : null,
+    problemId: upload.problemId || null,
     sourceType: upload.sourceType,
     title: upload.title,
     content: upload.content,
@@ -243,7 +245,7 @@ async function onClear() {
   }
   clearing.value = true;
   try {
-    const data = await aiApi.knowledgeClear(Number(upload.problemId));
+    const data = await aiApi.knowledgeClear(upload.problemId);
     ElMessage.success(`已清空，当前总量 ${data?.total ?? '—'}`);
     await loadCount();
   } catch (e) {
@@ -257,60 +259,40 @@ onMounted(loadCount);
 </script>
 
 <style scoped>
-.stats {
-  display: flex;
-  gap: var(--cj-gap);
-  flex-wrap: wrap;
-  align-items: flex-start;
-}
-.stat {
-  min-width: 150px;
-  padding: 12px 16px;
-  border: 1px solid var(--cj-border);
-  border-radius: 10px;
-  background: var(--cj-panel-2);
-}
-.stat--note {
-  flex: 1 1 380px;
-  background: transparent;
-  border-style: dashed;
-}
-.stat__v {
-  font-size: 26px;
-  font-weight: 700;
-  font-family: var(--cj-mono);
-  color: var(--cj-accent);
-}
-.stat__k {
-  font-size: 12.5px;
-  color: var(--cj-text-sub);
-}
+/* 读数卡片用全局 .cj-stats / .cj-stat；这里只保留召回结果列表的样式 */
 
 .hits {
-  margin-top: 12px;
+  margin-top: var(--sp-3);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-2);
 }
 .hit {
-  border: 1px solid var(--cj-border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
 }
 .hit__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
-  margin-bottom: 6px;
+  margin-bottom: var(--sp-2);
 }
 .hit__title {
-  font-weight: 600;
+  font-weight: var(--fw-semi);
+}
+/* 相似度推到最右：position 用 margin-left:auto 而不是 flex:1 的 spacer，
+   这样它在窄屏折行时不会被拉成整行宽 */
+.hit__score {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  color: var(--fg);
 }
 .hit__body {
-  font-size: 12.5px;
-  color: var(--cj-text-sub);
-  line-height: 1.65;
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  line-height: var(--lh-base);
   max-height: 160px;
   overflow: auto;
   white-space: pre-wrap;

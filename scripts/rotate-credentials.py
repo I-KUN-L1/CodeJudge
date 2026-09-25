@@ -7,7 +7,7 @@
     python scripts/rotate-credentials.py --rotate            # 生成新值但只打印（dry-run）
     python scripts/rotate-credentials.py --rotate --write    # 真正回写 .env（自动备份为 .env.bak.<时间戳>）
 
-⚠ 三条必须理解的限制（否则轮换会直接把服务打挂）：
+ 三条必须理解的限制（否则轮换会直接把服务打挂）：
 
   1. **改 `.env` ≠ 改数据卷里的密码。**
      MySQL / PostgreSQL / MinIO 的密码**存在数据卷里**，`.env` 只是「下次连接时用哪个密码」。
@@ -58,7 +58,7 @@ SENSITIVE = [
     ("POSTGRES_PASSWORD",         24, "auto",     "PostgreSQL 密码（存 pgdata 数据卷，须 ALTER USER）"),
     ("MINIO_ROOT_PASSWORD",       24, "auto",     "MinIO root 密码（环境变量注入，重建即生效）"),
     ("CJ_JWT_SECRET",             48, "auto",     "JWT 签名密钥（HS384 ≥48 字节；轮换踢掉全部在线会话）"),
-    ("GRAFANA_ADMIN_PASSWORD",    16, "auto",     "Grafana 管理员密码（⚠ 当前 .env 未定义，走 compose 默认值 codejudge）"),
+    ("GRAFANA_ADMIN_PASSWORD",    16, "auto",     "Grafana 管理员密码（监控 compose 已 fail-closed，缺值直接拒绝启动）"),
     ("CJ_ADMIN_INIT_PASSWORD",    12, "manual",   "首个管理员初始密码（首次登录强制改密）"),
     ("CJ_USER_DEFAULT_PASSWORD",  12, "manual",   "管理员重置用户后的统一初始密码"),
     ("CJ_LLM_API_KEY",            20, "external", "LLM API Key（在服务商控制台轮换后回填，脚本无法生成）"),
@@ -236,8 +236,10 @@ SYNC_HINTS = r"""
 ④ MinIO（密码由环境变量注入，重建容器即生效）
    cd <项目根> && docker-compose up -d --force-recreate minio
 
-⑤ Grafana（密码由环境变量注入，重建容器即生效）
-   cd deploy/monitoring && docker-compose -f docker-compose.monitoring.yml up -d --force-recreate grafana
+⑤ Grafana（密码由环境变量注入；**必须带 --env-file**，该 compose 的敏感项为 fail-closed）
+   cd deploy/monitoring && docker-compose --env-file ../../.env -f docker-compose.monitoring.yml up -d --force-recreate grafana
+   ⚠ 若仅重建容器后旧口令仍可登录，说明口令存在 grafana.db（持久卷）里，需补：
+     docker exec codejudge-grafana grafana cli admin reset-admin-password "<新口令>"
 
 ⑥ 重启 8 个后端服务，让它们读新的 .env：
    python scripts/dev-start-backend.py --wait
@@ -270,8 +272,9 @@ def do_rotate(env: dict[str, str], text: str, *, write: bool, include_init: bool
 
     if "GRAFANA_ADMIN_PASSWORD" in appended:
         print()
-        print("ℹ GRAFANA_ADMIN_PASSWORD 已追加到 .env —— 此前它只存在于")
-        print("  deploy/monitoring/docker-compose.monitoring.yml 的默认值（codejudge）中。")
+        print("ℹ GRAFANA_ADMIN_PASSWORD 已追加到 .env —— 该键原先缺失，")
+        print("  而监控 compose 中它是 fail-closed 形式，缺值会直接拒绝启动。")
+        print("  追加后请带 --env-file 重建 grafana 容器，新口令才会生效。")
 
     if write:
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")

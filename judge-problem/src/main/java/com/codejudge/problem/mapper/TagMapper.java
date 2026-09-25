@@ -10,7 +10,7 @@ public interface TagMapper extends BaseMapper<Tag> {
     /**
      * 物理删除标签。
      *
-     * <p>⚠️ 必须物理删除：{@code uk_tag_name (name)} **不含 deleted 列**。
+     * <p>必须物理删除：{@code uk_tag_name (name)} **不含 deleted 列**。
      * 逻辑删除后管理员再新建同名标签会撞唯一键，前端只能看到"数据已存在"却找不到已删的那条。
      */
     @Delete("DELETE FROM tag WHERE id = #{id}")

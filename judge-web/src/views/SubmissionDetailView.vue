@@ -17,7 +17,7 @@
 
           <div class="cj-row">
             <el-button
-              v-if="user.canManage"
+              v-perm="'submission:rejudge'"
               size="small"
               :icon="RefreshRight"
               :loading="rejudging"
@@ -114,7 +114,7 @@
           <span>用例结果</span>
           <span class="cj-dim">
             共 {{ detail.caseResults?.length || 0 }} 条
-            <template v-if="user.isStudent">（隐藏用例不返回输出摘要）</template>
+            <template v-if="!user.can('submission:hidden-output')">（隐藏用例不返回输出摘要）</template>
           </span>
         </div>
         <div class="cj-card__body">
@@ -122,30 +122,29 @@
             <el-table
               :data="detail.caseResults || []"
               size="small"
-              stripe
               empty-text="暂无用例结果（判题进行中或已短路）"
             >
-              <el-table-column label="用例" width="80" align="center">
+              <el-table-column label="用例" width="80" align="right">
                 <template #default="{ row }">
-                  <span class="cj-mono">#{{ row.seq }}</span>
+                  <span class="cj-num cj-dim">#{{ row.seq }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="结论" width="120">
+              <el-table-column label="结论" width="120" align="center">
                 <template #default="{ row }">
                   <VerdictTag :verdict="row.verdict" :dot="false" />
                 </template>
               </el-table-column>
-              <el-table-column label="耗时" width="100">
+              <el-table-column label="耗时" width="100" align="right">
                 <template #default="{ row }">
-                  <span class="cj-mono cj-dim">{{ fmtDuration(row.timeMs) }}</span>
+                  <span class="cj-num-dim">{{ fmtDuration(row.timeMs) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="内存" width="110">
+              <el-table-column label="内存" width="110" align="right">
                 <template #default="{ row }">
-                  <span class="cj-mono cj-dim">{{ fmtMemory(row.memoryKb) }}</span>
+                  <span class="cj-num-dim">{{ fmtMemory(row.memoryKb) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="可见性" width="100" class-name="cj-hide-sm">
+              <el-table-column label="可见性" width="100" align="center" class-name="cj-hide-sm">
                 <template #default="{ row }">
                   <!-- 只有教师/管理员视角才会区分隐藏用例；学员视角该字段不参与展示 -->
                   <el-tag v-if="row.hidden" size="small" type="warning" effect="plain">隐藏</el-tag>
@@ -186,7 +185,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { ArrowLeft, Refresh, RefreshRight } from '@element-plus/icons-vue';
@@ -262,6 +261,11 @@ function goProblem() {
 }
 
 onMounted(load);
+
+// 同路由不同 id 的跳转会复用组件实例，onMounted 不再执行 —— 必须监听参数重载
+watch(() => route.params.id, (nv, ov) => {
+  if (nv && nv !== ov) load();
+});
 </script>
 
 <style scoped>

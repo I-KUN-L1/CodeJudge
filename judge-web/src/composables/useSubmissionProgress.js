@@ -74,9 +74,11 @@ export function useSubmissionProgress() {
   function handle(envelope) {
     if (!envelope || typeof envelope !== 'object') return;
     state.lastType = envelope.type || '';
-    // seq 单调递增：服务端会主动丢弃中间态，允许跳号；只挡"倒退"的过期消息
+    // seq 单调递增：服务端会主动丢弃中间态，允许跳号；只挡"倒退"的过期消息。
+    // SNAPSHOT 例外：恒放行并重置基线 —— 服务端/网关重启后 seq 归零，
+    // 若按旧基线丢弃，重连后的进度会永久卡死且无任何报错
     if (typeof envelope.seq === 'number') {
-      if (envelope.seq < state.seq) return;
+      if (envelope.type !== 'SNAPSHOT' && envelope.seq < state.seq) return;
       state.seq = envelope.seq;
     }
 

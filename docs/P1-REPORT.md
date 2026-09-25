@@ -65,7 +65,7 @@
 
 ## 四、有意偏离底座之处（需你知晓）
 
-1. **包名**：底座根包是 `com.zhixing`（提示词误写为 `com.zx`），已统一改为 `com.codejudge`。
+1. **包名**：底座根包是 `com.zhixing`（**不是** `com.zx`），已统一改为 `com.codejudge`。
 2. **MQ Topic 命名**：改为 `judge_submission` + Tag `CREATED/RETRY/RESULT`（底座规范是下划线+大写 Tag），
    未采用设计稿的点号命名 `judge.submission.created`。语义等价且能复用底座的消费容器。
 3. **教师注册安全加固（重要）**：底座白名单放行 `/teachers/register`，**任何人无需登录即可注册成教师**；

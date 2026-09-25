@@ -9,7 +9,7 @@
 -- 公共字段约定：id / create_time / update_time / creater / updater / deleted（逻辑删除）
 -- 主键统一使用雪花 ID（BIGINT，无 AUTO_INCREMENT），与 judge-common 的 SnowflakeIdGenerator 一致。
 --
--- ⚠ 为什么一次性把后续阶段的表也建好？
+-- 为什么一次性把后续阶段的表也建好？
 --   MySQL 官方镜像的 /docker-entrypoint-initdb.d 脚本**只在数据卷为空时执行一次**。
 --   若 P1 只建 auth/user，P2 再往本文件追加 problem 等 DDL，已初始化过的卷不会重新执行，
 --   必须手工 docker exec 灌入或删除数据卷重来 —— 容易在联调时踩坑。
@@ -19,7 +19,7 @@
 -- ============================================================
 
 -- ------------------------------------------------------------------
--- ⚠ 必须首先执行：显式声明会话字符集。
+-- 必须首先执行：显式声明会话字符集。
 -- 本文件是 UTF-8 编码。而容器内 `docker exec <container> mysql < file.sql`
 -- 在 LANG 未设置时 @@character_set_client 会退化为 latin1，服务端就会把
 -- 文件里的 UTF-8 字节按 latin1 解释后再转存进 utf8mb4 列 —— 于是
@@ -188,8 +188,9 @@ CREATE TABLE IF NOT EXISTS `user_detail` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户详情表';
 
 -- 首个管理员不在脚本中硬编码凭据：由 judge-auth 启动时的安全引导生成
--- （检测到无管理员时使用系统预设密码（默认 123456，可用 CJ_ADMIN_INIT_PASSWORD 覆盖），
---   BCrypt 加密入库，凭据写入 .bootstrap-credentials，首次改密后自动删除）
+-- （检测到无管理员时创建，BCrypt 加密入库，凭据写入 .bootstrap-credentials，首次改密后自动删除）
+-- 初始口令来源：CJ_ADMIN_INIT_PASSWORD；**未配置时生成一次性随机强口令**，
+-- 因此源码与 SQL 里都不存在任何可预测的默认管理员口令。
 
 -- ============================================================
 -- 三、题目服务库 judge_problem

@@ -80,7 +80,7 @@ mybatis-plus:
 # 判题调度参数（对齐 .env 的 CJ_JUDGE_* 前缀）
 cj:
   judge:
-    task-timeout-ms: ${CJ_JUDGE_TASK_TIMEOUT_MS:120000}
+    task-timeout-ms: ${CJ_JUDGE_TASK_TIMEOUT_MS:60000}
     max-attempt: ${CJ_JUDGE_MAX_ATTEMPT:3}
     submit-rate-limit-per-min: ${CJ_SUBMIT_RATE_LIMIT:30}
     idempotent-ttl-seconds: 60
@@ -96,9 +96,10 @@ cj:
 
 springdoc:
   api-docs:
-    enabled: true
+    # 生产置 CJ_SPRINGDOC_ENABLED=false 关闭 /v3/api-docs 与 doc.html（knife4j 在 judge-common，全服务暴露）
+    enabled: ${CJ_SPRINGDOC_ENABLED:true}
   swagger-ui:
-    enabled: true
+    enabled: ${CJ_SPRINGDOC_ENABLED:true}
 
 logging:
   level:

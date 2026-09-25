@@ -41,6 +41,11 @@ public class JwtUtils {
     public Identity parseIdentity(String token) {
         try {
             Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+            // token 类型校验：只有 access token 可作为接口凭证。refresh token 有效期 30 天且
+            // 经 HttpOnly Cookie 流转，若不校验 type，被盗 cookie 可直接当 access 用（30 天全权限）
+            if (!"access".equals(claims.get("type"))) {
+                return null;
+            }
             return new Identity(toLong(claims.get("userId")), toInt(claims.get("roleId")));
         } catch (Exception e) {
             return null;

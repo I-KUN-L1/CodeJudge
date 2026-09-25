@@ -18,8 +18,9 @@ import { useRoute, useRouter } from 'vue-router';
 
 /**
  * 403 / 404 通用错误页。
- * 403 的典型来源：路由 meta.roles 不匹配（如学员访问 /admin/users）——
- * 这里只做前端引导，真正的权限边界在后端 @RequireRole 上。
+ * 403 的典型来源：当前账号缺少该路由 `meta.perm` 要求的能力码
+ * （如学员访问 /admin/users）—— 这里只做前端引导，
+ * 真正的权限边界在后端 @RequireRole 上。
  */
 const route = useRoute();
 const router = useRouter();
@@ -48,14 +49,17 @@ const desc = computed(() =>
   padding: 40px 28px;
   text-align: center;
 }
+/* 错误码用**尺寸与字重**取得第一视觉层级，不用渐变字。
+   蓝紫渐变是上一版的遗留（登录页已去除，这里属于同一处未收尾的改动）：
+   渐变字在深色模式下会掉对比，且把"错误码"这一中性读数涂成品牌色是错的语义 */
 .err__code {
-  font-size: 56px;
-  font-weight: 800;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
   line-height: 1;
-  background: linear-gradient(135deg, #3b6ef6, #7c4dff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  letter-spacing: var(--ls-tight);
+  color: var(--fg);
 }
 .err__title {
   margin: 14px 0 8px;

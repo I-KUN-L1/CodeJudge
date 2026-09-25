@@ -31,10 +31,14 @@ function buildOption() {
   const styles = getComputedStyle(document.documentElement);
   const textColor = styles.getPropertyValue('--cj-text-sub').trim() || '#5c6472';
   const axisLine = styles.getPropertyValue('--cj-border').trim() || '#e3e7ee';
+  const palette = chartPalette(styles);
 
   return {
     backgroundColor: 'transparent',
     textStyle: { color: textColor, fontFamily: 'inherit' },
+    // 全局系列调色板：由 CSS 变量提供（视图不再硬编码色值）。
+    // 放在 ...props.option **之前**，视图若显式指定 color 仍以视图为准
+    ...(palette.length ? { color: palette } : {}),
     ...props.option,
     xAxis: props.option.xAxis
       ? Array.isArray(props.option.xAxis)
@@ -56,6 +60,21 @@ function buildOption() {
       ...axis,
     };
   }
+}
+
+/**
+ * 读 CSS 里的图表系列色（--chart-1..4）。
+ *
+ * 为什么不把色值写成本模块的常量：只有浏览器知道 `html.dark` 最终让哪一条声明胜出。
+ * 主题切换时本组件会 dispose + rebuild（见下方 watch），届时重新计算才会拿到新值。
+ */
+function chartPalette(styles) {
+  const out = [];
+  for (const key of ['--chart-1', '--chart-2', '--chart-3', '--chart-4']) {
+    const v = styles.getPropertyValue(key).trim();
+    if (v) out.push(v);
+  }
+  return out;
 }
 
 function render() {

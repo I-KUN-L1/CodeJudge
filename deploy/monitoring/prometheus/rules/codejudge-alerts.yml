@@ -29,7 +29,7 @@
 #            `or` acquire 超时次数 > 0（已经有人失败，必须报）。
 #   数据来源：`--plan throughput` 60 线程 / 180s 稳态窗口，见 docs/PERF.md §3.5。
 #
-# ⚠ 待生产重标：以上基线取自本机（压测工具与业务同机，见 docs/PERF.md §一），
+# 待生产重标：以上基线取自本机（压测工具与业务同机，见 docs/PERF.md §一），
 #   只能作为**容量下界**。生产环境产生真实流量后执行：
 #       python scripts/recalibrate-alerts.py --prometheus http://<prom>:9090 --write
 #   本文件的可标定阈值均带 `# @tune` 锚点注释，脚本据此精确替换，缺失即报错。
@@ -150,7 +150,7 @@ groups:
         # 阈值推导：按提交 QPS 的 1% 计。本机实测提交 ~3.5 req/s → 1% ≈ 0.035，
         # 取 0.5 次/秒 作为**保守下限**（本地规模下不小；生产按实际提交 QPS × 1% 重标）。
         #
-        # ⚠ 过滤条件必须写 `method="POST", uri="/submissions"`，**不要**图省事写成
+        # 过滤条件必须写 `method="POST", uri="/submissions"`，**不要**图省事写成
         #   `uri=~"/submissions.*"`：后者会把只读的 `/submissions/page`（提交记录列表）
         #   与 `/submissions/{id}`（详情）一起算进来。2026-09-21 实测该宽匹配下
         #   `GET /submissions/page` 的流量可达 264 req/s，是真实提交请求的数十倍，

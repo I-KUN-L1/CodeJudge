@@ -5,7 +5,7 @@ package com.codejudge.common.mq;
  * <p>
  * 所有业务模块统一引用此类，禁止散落硬编码；新增主题须在此登记。
  * <p>
- * ⚠️ 命名对齐说明：底座 zx-learn 的规范是「下划线主题 + 大写 Tag」，
+ * 命名对齐说明：底座 zx-learn 的规范是「下划线主题 + 大写 Tag」，
  * 而 CodeJudge 的设计稿写的是点号主题（{@code judge.submission.created}）。
  * 点号命名与底座既有封装（{@link RocketMQTemplate}）及 RocketMQ Dashboard 的检索习惯
  * 都不一致，故统一改为 {@code judge_submission} + Tag {@code CREATED/RETRY/RESULT}，

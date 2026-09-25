@@ -132,7 +132,7 @@ def run_jmeter(jmeter, plan, extra_j, report_dir, jtl, html=True):
         sys.exit(2)
 
     # HTML 报告目录必须是空的，否则 JMeter 直接拒绝生成。
-    # ⚠️ 报告目录有上千个文件，`rmtree` 属于批量删除 —— 在带删除保护的环境里会被拦下，
+    # 报告目录有上千个文件，`rmtree` 属于批量删除 —— 在带删除保护的环境里会被拦下，
     #    导致「跑不了压测」。因此加 --no-html：门槛判定只依赖 .jtl 解析，
     #    HTML 报告纯属给人看的产物，不该成为必经路径。
     if html:

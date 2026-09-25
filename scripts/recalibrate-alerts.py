@@ -67,7 +67,7 @@ def baseline(prom: str) -> dict:
         v = float(r["value"][1])
         uri = r["metric"].get("uri", "?")
         if math.isnan(v):
-            # ⚠ histogram_quantile 在样本稀疏时返回 NaN。而**稀疏的恰恰可能是最慢的接口**：
+            # histogram_quantile 在样本稀疏时返回 NaN。而**稀疏的恰恰可能是最慢的接口**：
             #   /accounts/login 每次登录都有 BCrypt 开销（实测 P95 110–139ms），
             #   但压测里登录走 Once Only Controller，5m 窗口内只有几十个样本 → 被判 NaN 丢掉。
             #   丢掉它会让"最慢接口"退化成 /problems/{id}（80ms），基线因此**偏低**，
@@ -82,7 +82,7 @@ def baseline(prom: str) -> dict:
 
     # 2) 提交 QPS（判题入口）
     #
-    # ⚠ 必须同时限定 method=POST 与 uri 精确匹配。旧写法是
+    # 必须同时限定 method=POST 与 uri 精确匹配。旧写法是
     #     uri=~"/submissions.*"
     #   它把**只读接口 `/submissions/page`（提交记录列表）与 `/submissions/{id}`（详情）
     #   也算成了"提交"**。2026-09-21 实测：压测刚结束时该表达式给出 323.6 req/s，
@@ -115,7 +115,7 @@ def recommend(base: dict, *, margin: float, budget: float,
 
     # 延迟：最慢业务接口 × 余量系数，向上取整到 0.05s
     #
-    # ⚠ 但只要窗口内有 NaN（样本稀疏）被丢弃，就**不采纳**这次推导 ——
+    # 但只要窗口内有 NaN（样本稀疏）被丢弃，就**不采纳**这次推导 ——
     #   丢掉稀疏接口（通常是 BCrypt 登录这种"调用少但天生慢"的）会让基线偏低，
     #   据此收紧阈值等于凭不完整的数据把告警调紧，比不调更糟。
     #   宁可不改：等压测把登录也打足样本，或在独立压测机上重标。

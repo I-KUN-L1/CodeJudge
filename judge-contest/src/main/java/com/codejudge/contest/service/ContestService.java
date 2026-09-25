@@ -58,6 +58,8 @@ public class ContestService {
     private final ContestRegistrationMapper registrationMapper;
     private final ContestProperties properties;
     private final ProblemClient problemClient;
+    /** 自代理：doCreate 的 @Transactional 需经代理调用才生效（避免自调用绕过事务） */
+    private final org.springframework.beans.factory.ObjectProvider<ContestService> self;
 
     // ==================================================================
     // 创建
@@ -70,7 +72,16 @@ public class ContestService {
      * 若允许编排一个不存在的题目 id，管理员会在赛前拿到一个「看起来正常、提交永远失败」
      * 的竞赛，而问题要到比赛当天才暴露。
      */
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 建赛：写 contest + contest_problem（同事务），并校验题目合法性。
+     *
+     * <p>为什么要经内部 Feign 校验题目：竞赛题一旦写入，后续提交、榜单、快照都会以它为准。
+     * 若允许编排一个不存在的题目 id，管理员会在赛前拿到一个「看起来正常、提交永远失败」
+     * 的竞赛，而问题要到比赛当天才暴露。
+     *
+     * <p>题目校验（Feign）在事务外执行 —— 事务开启即占用连接池连接，judge-problem 慢/超时
+     * 会把这些连接白白占住；写库收拢在 {@link #doCreate}（经自代理调用保证事务生效）。
+     */
     public ContestDetailVO create(ContestFormDTO form) {
         validateWindow(form);
         Long ownerId = UserContext.getUserId();
@@ -92,7 +103,12 @@ public class ContestService {
                         + "（当前状态 " + summary.getStatus() + "）");
             }
         }
+        return self.getObject().doCreate(form, ownerId);
+    }
 
+    /** 建赛的写库部分（须在事务内执行），校验已在 {@link #create} 完成。 */
+    @Transactional(rollbackFor = Exception.class)
+    public ContestDetailVO doCreate(ContestFormDTO form, Long ownerId) {
         Contest contest = new Contest();
         contest.setTitle(form.getTitle());
         contest.setDescription(form.getDescription());
@@ -123,7 +139,7 @@ public class ContestService {
             order++;
         }
         log.info("竞赛创建成功：contestId={} title={} rule={} problems={} owner={} window=[{}, {}) freezeAt={}",
-                contest.getId(), contest.getTitle(), contest.getRule(), problemIds.size(), ownerId,
+                contest.getId(), contest.getTitle(), contest.getRule(), form.getProblems().size(), ownerId,
                 contest.getStartTime(), contest.getEndTime(), contest.getFreezeAt());
         return detail(contest.getId());
     }
@@ -296,7 +312,22 @@ public class ContestService {
             r.setUserId(userId);
             r.setRegisterTime(now);
             r.setStatus(ContestRegistration.ST_REGISTERED);
-            registrationMapper.insert(r);
+            try {
+                registrationMapper.insert(r);
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                // select-then-insert 竞态：并发报名双双通过 existing==null 检查，后者撞唯一键。
+                // 回查按幂等返回，而不是把 DuplicateKeyException 裸抛成 500
+                ContestRegistration again = registrationMapper.selectOne(
+                        new LambdaQueryWrapper<ContestRegistration>()
+                                .eq(ContestRegistration::getContestId, contestId)
+                                .eq(ContestRegistration::getUserId, userId)
+                                .last("LIMIT 1"));
+                if (again != null) {
+                    log.info("并发报名幂等返回：contestId={} userId={}", contestId, userId);
+                    return;
+                }
+                throw e;
+            }
             log.info("竞赛报名成功：contestId={} userId={}", contestId, userId);
             return;
         }

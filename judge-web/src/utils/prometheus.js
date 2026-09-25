@@ -111,7 +111,7 @@ export function groupSum(metrics, name, labelKey, filter) {
 /**
  * 从 http_server_requests_seconds_* 推导 HTTP 概览。
  *
- * ⚠️ `http_server_requests_seconds_count` 是**进程启动以来的累计值**，不是速率。
+ * `http_server_requests_seconds_count` 是**进程启动以来的累计值**，不是速率。
  * 因此这里的"错误率"是"累计 5xx 占比"，用于快速判断"服务有没有在报错"，
  * 不能当成实时 QPS/错误率 —— 真正的速率要靠 Prometheus 的 `rate()`（见 Grafana 面板）。
  */

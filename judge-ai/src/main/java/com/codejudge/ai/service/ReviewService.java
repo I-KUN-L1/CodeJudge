@@ -160,6 +160,11 @@ public class ReviewService {
                         return llmClient.chatStream(messages);
                     })
                     .doOnNext(acc::append)
+                    // 关键：LLM 增量来自 WebClient（reactor-http-nio 事件循环线程），而本流水线的
+                    // 后续环节全是阻塞 IO —— wrap() 里的 Redis 写、END 帧的 JDBC + Embedding block()。
+                    // 不切线程的话，每个 DELTA 都在 Netty 事件循环上阻塞一次，高并发下整个服务卡死。
+                    // publishOn 之后的 map/defer/doOnCancel 全部落在 boundedElastic。
+                    .publishOn(Schedulers.boundedElastic())
                     .onErrorResume(e -> {
                         log.error("点评生成失败 submissionId={}：{}", submissionId, e.toString());
                         errored.set(true);
@@ -183,12 +188,16 @@ public class ReviewService {
             );
 
             return body.map(vo -> wrap(sessionId, seq, vo))
-                    // 取消（客户端断开）时落库已生成内容，避免永久停留在「生成中」
+                    // 取消（客户端断开）时落库已生成内容，避免永久停留在「生成中」。
+                    // doOnCancel 的回调运行在发起取消的线程（Netty IO 线程）上，
+                    // 而 persistAborted 是阻塞 JDBC —— 必须调度到 boundedElastic 执行
                     .doOnCancel(() -> {
                         if (!persisted.get() && reviewId != null) {
-                            persistAborted(reviewId, acc.toString(), persisted);
-                            log.info("SSE 连接中断，已保存部分点评 submissionId={}，已生成 {} 字",
-                                    submissionId, acc.length());
+                            Schedulers.boundedElastic().schedule(() -> {
+                                persistAborted(reviewId, acc.toString(), persisted);
+                                log.info("SSE 连接中断，已保存部分点评 submissionId={}，已生成 {} 字",
+                                        submissionId, acc.length());
+                            });
                         }
                     });
         })
@@ -265,8 +274,9 @@ public class ReviewService {
             } else {
                 List<Map<String, String>> messages =
                         promptBuilder.build(ctx, chatMemory.loadAsMap(sessionId));
-                // block() 在此是安全的：本方法已由调用方调度到 boundedElastic / MQ 消费线程
-                content = llmClient.chat(messages).block();
+                // block() 在此是安全的：本方法已由调用方调度到 boundedElastic / MQ 消费线程；
+                // 必须带上限：LLM 网关挂起时无限期 block 会永久占用 MQ 消费线程配额
+                content = llmClient.chat(messages).block(Duration.ofSeconds(120));
                 if (content == null) {
                     content = "";
                 }

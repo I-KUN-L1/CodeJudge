@@ -82,6 +82,54 @@ CJ_LLM_EMBEDDING_DIMENSION=1024           # ← 必须等于 pgvector 中向量�
 
 ## 3. 启动流程
 
+> **想跑起来只需要一条命令**：`python scripts/start-all.py`（见 §3.0）。
+> 下面的 §3.1–§3.6 是**分解说明**，用于排障、或只想跑其中一部分的场景。
+
+### 3.0 一条命令拉起全部（推荐）
+
+```bash
+cd D:/1/CodeJudge
+python scripts/start-all.py                    # 基础设施 + 8 个后端服务
+python scripts/start-all.py --all              # 再加 监控栈 + 前端 dev server
+python scripts/start-all.py --with-web         # 基础设施 + 服务 + 前端
+python scripts/start-all.py --no-infra         # 基础设施已在跑，只起服务
+python scripts/start-all.py --wait             # 看护模式：本进程常驻，退出即回收全部子进程
+python scripts/start-all.py --extra judge-worker=9185:9285 --wait    # 判题机多实例
+```
+
+脚本按**真实依赖顺序**逐个启动并等待 `/actuator/health`，任一环节不就绪就明确报错退出。
+它复用 `dev-start-backend.py` 的派生逻辑（清 `SERVER__PORT`、`DETACHED_PROCESS`、日志分流），
+不复制一份 —— 避免两处真相。
+
+> ⚠ `--wait` 必须挂在**受管后台任务**里。直接 `nohup ... &` 起的进程会随父 shell 退出
+> 被宿主 Job Object 整体回收（见 §6）。
+
+### 3.0.1 启动顺序与依赖关系
+
+| 阶段 | 组件 | 端口 | 依赖（谁必须先起来） | 依赖的性质 |
+|---|---|---|---|---|
+| 0 | MySQL / Redis / PostgreSQL / RocketMQ | 3307 / 6380 / 5433 / 9877+10921 | — | **硬**：任何服务连不上库都起不来 |
+| 1 | **judge-user** | 9082 | 仅 MySQL | **硬**：见下方「为什么 user 必须在 auth 之前」 |
+| 2 | **judge-auth** | 9081 | MySQL · **judge-user**（Feign） | **硬**：启动期引导 + 登录校验都要调 user |
+| 3 | judge-problem | 9083 | 仅 MySQL | 无服务依赖 |
+| 4 | judge-submission | 9084 | MySQL · MQ · judge-problem（Feign） | 提交时要校验题目 |
+| 5 | judge-contest | 9086 | MySQL · Redis · judge-submission / problem / user | 榜单聚合 |
+| 5 | judge-worker | 9085（可多实例 9085/9185/9285） | MySQL · Redis · MQ · **沙箱镜像** | 与 3/4/5 并列，互不阻塞 |
+| 5 | judge-ai | 9087 | MySQL · Redis · **PostgreSQL(pgvector)** | 唯一响应式（WebFlux） |
+| 6 | **judge-gateway** | 9080 | 上面全部 | **硬**：最后一个起，否则路由指向未就绪的下游 |
+| 7 | judge-web | 5174 | 后端 + 网关（所有请求经 9080） | 呈现层 |
+| 7 | 监控栈 | 9090 / 9093 / 3001 | 各服务已暴露 `/actuator/prometheus` | 可观测性，可后置 |
+
+**真正"硬"的顺序只有三条**：① 基础设施先于任何服务；② `judge-user` 先于 `judge-auth`；
+③ 网关最后。其余（3–5 阶段）是并列的，分组只是为了输出好读。
+
+> ⚠ **为什么 `judge-user` 必须在 `judge-auth` 之前**（踩过）：
+> `judge-auth` 的首个管理员引导是 `ApplicationRunner`，一启动就经 Feign 调 `judge-user` 问
+> 「有没有管理员」。顺序反了时这一步抛异常、被 `AdminBootstrapRunner` 的 catch 吞成一行 error，
+> **症状是「8 个服务全绿、健康检查全过，但没有管理员账号也没有凭据文件」** ——
+> 看起来像引导功能坏了。`start-all.py` 把它变成了启动期的一次明确失败。
+> （历史缺陷：`dev-start-backend.py` 的 `SERVICES` 字典顺序曾是 auth → user。）
+
 ### 3.1 第一步：基础设施
 
 ```bash
@@ -135,10 +183,13 @@ python scripts/dev-start-backend.py --wait      # 全部 8 个服务
 python scripts/dev-start-backend.py judge-problem   # 只起指定服务
 ```
 
-启动顺序（脚本内固化为依赖顺序）：
-`judge-auth → judge-user → judge-problem → judge-submission → judge-contest → judge-worker → judge-ai → judge-gateway`
+启动顺序（脚本内固化为依赖顺序，理由见 §3.0.1）：
+`judge-user → judge-auth → judge-problem → judge-submission → judge-contest → judge-worker → judge-ai → judge-gateway`
 
 日志：`logs/<module>.log`。
+
+> ⚠ 服务数量多的场景直接用 §3.0 的 `start-all.py`：它会在每个服务启动后**逐个等待就绪**，
+> 而不是只把进程拉起来就返回。
 
 > ⚠ **为什么必须用这个脚本而不是 `java -jar`**（三条都是实测踩出来的）：
 > 1. **Git Bash 下 `nohup ... &` 启动的子 JVM 会随 shell 退出被整体回收**（Job Object 语义）；
@@ -167,7 +218,10 @@ npm run build        # 产物 dist/
 
 ```bash
 cd deploy/monitoring
-docker compose -f docker-compose.monitoring.yml up -d
+# ⚠ 必须带 --env-file：该 compose 的 Grafana 口令为 fail-closed 形式，漏带会直接拒绝启动。
+#   （本机 docker-compose 不做 shell 环境变量插值，export 无效；且它只自动读 cwd 下的 .env，
+#    而 .env 在项目根，故必须显式指定相对路径。）
+docker-compose --env-file ../../.env -f docker-compose.monitoring.yml up -d
 ```
 
 | 组件 | 地址 |
@@ -278,11 +332,14 @@ allow-credentials: true
 
 ```bash
 # 逐阶段回归（按需）
-python scripts/verify-p1-login.py     # 登录链路 41 项断言
+python scripts/verify-p1-login.py     # 登录链路 43 项断言
 python scripts/verify-p2.py           # 题目
 python scripts/verify-p3.py           # 提交/判题/沙箱 20 项
 python scripts/verify-p4.py           # 竞赛/榜单 60 项（约 6 分钟）
 python scripts/verify-p5.py           # AI 点评 46 项
+
+# 统一登录 + 能力码（按钮级权限）契约：56 项断言，只读、无副作用
+python scripts/verify-authz.py
 
 # P6 全量验收（含前端产物、监控、压测）
 python scripts/verify-p6.py
@@ -291,6 +348,14 @@ python scripts/verify-p6.py
 python scripts/preflight-check.py            # 环境/暴露面/通知（18 项自动检查，不读凭据明文）
 python scripts/check-hardcoded-defaults.py   # 「零硬编码」静态扫描（只读源码，不碰 .env）
 ```
+
+`verify-authz.py` 覆盖的是**跨阶段契约**，被任一阶段改动打破都会红：
+登录只有一个入口且角色由 `user.type` 决定、`GET /accounts/me/capabilities` 的能力码集合
+（学员 6 / 教师 16 / 员工 20 且严格嵌套）、未登录与伪造 token 的 fail-closed、
+旧端点 `/accounts/admin/login` 的兼容门槛，以及**前端静态断言**——源码中不得残留角色判定代码
+（`isStaff` / `canManage` / `USER_TYPES` / `meta.roles`）、不得再外显默认账密。
+需要前端 `dist/` 才能跑最后一项；`dist/` 缺失时该子项会**显式标 SKIP 并计入跳过数**，
+不会被算成通过。
 
 管理员凭据通过环境变量传入（开发库已有 `p3admin` / `13900000099`）：
 
@@ -365,19 +430,29 @@ export CJ_P3_ADMIN_PASS=<密码>
 
 - [ ] ✋ `.env` 中所有 `必须修改` 项已改；`CJ_JWT_SECRET` 用强随机值
       —— `python scripts/rotate-credentials.py --rotate`（预演）→ `--rotate --write`（落盘）
-- [ ] ✋ **两处"兜底弱口令"必须确认已被生产值覆盖**
-      ｜ 校验：自动 **E3**（当前 WARN）+ `python scripts/check-hardcoded-defaults.py`
-      - `CJ_ADMIN_INIT_PASSWORD` —— 首个管理员引导口令。
-        Spring 键为 `cj.admin-bootstrap.init-password`，`AdminBootstrapService` 的
-        `@Value("${cj.admin-bootstrap.init-password:123456}")` 兜底为 **`123456`**。
-      - `CJ_USER_DEFAULT_PASSWORD` —— 新建/重置用户口令。
-        Spring 键同名，`UserService` 用常量 `FALLBACK_DEFAULT_PASSWORD` 兜底。
-      > E3 查的是 **`.env.example` 模板**，`check-hardcoded-defaults.py` 查的是**源码兜底默认值** ——
-      > 两层都过才算数：把模板里的弱值删掉并不会让源码的 `123456` 消失。
-      > 二者都属**静默失效**家族（不覆盖也能正常启动、不报任何错），请逐条确认。
+- [x] ✅ **两处"兜底弱口令"已从源码移除**（2026-09-22）
+      ｜ 校验：自动 **E3** + `python scripts/check-hardcoded-defaults.py`（**FAIL=0 / WARN=0**）
+      - `CJ_ADMIN_INIT_PASSWORD` —— 首个管理员引导口令。原先 **yml 与 `AdminBootstrapService`
+        双份**兜底 `123456`，现全部移除：未配置时生成 24 位随机强口令，**只写入
+        `.bootstrap-credentials`，不进日志**（避免口令长期留在日志文件里）。
+      - `CJ_USER_DEFAULT_PASSWORD` —— 重置用户口令。原先 `UserService` 用常量
+        `FALLBACK_DEFAULT_PASSWORD = "123456"` 兜底，现移除：未配置时该接口 fail-closed 返回 400。
+      > 静默失效的根源是"不覆盖也能正常启动、不报任何错"。现在未配置时**要么随机生成、
+      > 要么明确拒绝** —— 两种情况都不会再产生一个可预测的口令。
+- [x] ⚙ 首个管理员凭据文件的**落点**已明确（2026-09-23）
+      ｜ 校验：`python scripts/verify-authz.py`（`mustChangePassword` 字段存在性）
+      —— 默认值 `.bootstrap-credentials` 是**相对路径，按进程工作目录解析**；
+      两种受支持的启动方式（`start-all.py` / `dev-start-backend.py`）都把 cwd 固定为仓库根，
+      故**规范落点是 `<仓库根>/.bootstrap-credentials`**。
+      `AdminBootstrapService` 启动时**无条件打印解析后的绝对路径**（只打路径、不打口令）——
+      只报"生成过凭据"却不报位置，等于把口令藏起来。
+      ⚠️ 手工 `java -jar` 必须自己保证 cwd，否则凭据会落到别处（历史踩坑：`judge-auth/` 下
+      留下一份含旧口令的孤儿文件），并且 `isBootstrapPending()` 会因查不到文件而**静默为 false**，
+      登录响应里的改密提示随之消失。
 - [x] ⚙ 数据库密码不使用默认值；`.env` **未提交到仓库** ｜ 校验：自动 E1 / E2
-- [ ] ⚙ `GRAFANA_ADMIN_PASSWORD` 覆盖默认值（**当前未通过**）｜ 校验：自动 B4
-      —— 实测默认凭据仍可登录 3001，即 `.env` 未覆盖、走的是 compose 默认值
+- [x] ⚙ `GRAFANA_ADMIN_PASSWORD` 已覆盖默认值 ｜ 校验：自动 B4 **PASS**（2026-09-22）
+      —— 监控 compose 已改为 **fail-closed**（缺 `--env-file` 直接拒绝启动，不再静默退回默认值），
+      容器内环境变量与 `.env` 一致，旧默认凭据 `admin/codejudge` 登录返回 **401**
 - [x] ⚙ 生产环境**关闭** `GF_AUTH_ANONYMOUS_ENABLED` ｜ 校验：自动 B3（当前为 WARN，见第 8 项）
 - [ ] ✋ 轮换后**同步更新**三处持有旧凭据的地方（`rotate-credentials.py` 会打印具体命令）：
       MySQL 应用账号、MinIO 的 `MINIO_ROOT_PASSWORD`、Grafana 的 admin 口令
@@ -400,7 +475,12 @@ export CJ_P3_ADMIN_PASS=<密码>
       机制已就绪（改 `ALERTMANAGER_*` 环境变量即可，无需改配置模板），
       见 `deploy/monitoring/alertmanager/README.md`
 - [ ] ✋ `judge-worker` 起多实例（9085/9185/9285）并确认 MQ 消费组分流正常
-      ｜ 校验：自动 C2（当前 1 个实例；单实例实测约 **1.5 题/秒**，扩容优先级最高）
+      ｜ 校验：自动 C2（当前 1 个实例）
+      ⚠️ **不要照搬旧结论「加实例即线性扩容」** —— 2026-09-22 实测**推翻**：
+      单实例 0.95 题/s、3 实例 0.96 题/s（瓶颈是每题 5 个容器的启停），
+      且未限并发时正确解会被判**假 TLE**（抽样 18/25）。
+      多实例必须同时设 `CJ_MQ_CONSUME_THREADS`（实例数 × 该值 ≤ CPU 核数），
+      且**跨宿主机**部署才可能接近线性。详见 `docs/PERF.md` §3.7 与 `CONTEXT.md` §3 第 17 条
 - [ ] ⚙ 按真实容量重标 `codejudge-alerts.yml` 阈值 ｜ 校验：自动 E4
       —— 在独立压测机跑完容量标定后执行 `python scripts/recalibrate-alerts.py --write`
       （流程见 `perf-test/RUNBOOK.md`）
@@ -409,11 +489,16 @@ export CJ_P3_ADMIN_PASS=<密码>
 
 - [ ] ✋ 判题沙箱：评估 `CJ_SANDBOX_RUNTIME=runsc`（gVisor），生产不建议仅用 runc
       ｜ 校验：自动 D2
-- [ ] ✋ 数据卷备份与回滚预案（MySQL / PG / Redis / MinIO），生产前演练一次
+- [x] ✋ 数据卷备份与回滚预案（MySQL / PG / Redis / MinIO）
+      ｜ 本地已于 **2026-09-22 演练通过**：`python scripts/backup-volumes.py --backup --verify`
+      （MySQL `user` 生产 133 = 演练 133、PG 1 = 1、RDB `redis-check-rdb` 可加载、临时库无残留）
+      ⚠️ **生产仍需补齐**：① 备份异地存放与保留周期；② **定期**重跑演练（不是一次性）；
+      ③ MinIO 对象存储（当前 `storage` profile，容器未运行，脚本会明确跳过而非静默放过）；
+      ④ 注意 RocketMQ broker **未挂 store 卷**，消息不持久化，不在这份备份覆盖范围内
 - [ ] ⚙ **服务发现：维持 `NACOS_ENABLED=false`**，同步维护 `GW_*_URI` / `SVC_*_URI`
       ｜ 校验：自动 A2（网关对外可达即说明路由表生效）
       —— 选型论证与推翻条件见 `docs/ADR-001-服务发现选型.md`
-      ⚠️ **不要照搬「生产置 `NACOS_ENABLED=true`」这句旧写法**：`docker-compose.yml` 内
+      ⚠️ **生产不要置 `NACOS_ENABLED=true`**：`docker-compose.yml` 内
       **没有 Nacos 容器**，且该切换路径**从未被实测验证**（ADR §6.2 技术债 D2）。
       真要启用须先补部署 Nacos，并显式清空 `simple.instances`（防双 DiscoveryClient 共存）。
 

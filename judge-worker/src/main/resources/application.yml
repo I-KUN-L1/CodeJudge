@@ -62,6 +62,12 @@ rocketmq:
   name-server: ${ROCKETMQ_NAME_SERVER:localhost:9877}
   producer-group: cj_worker_producer
   consumer-group: cj_worker_consumer
+  # 并发沙箱数上限（= 消费线程数）。0 = 不设置，沿用 RocketMQ 默认 20/64。
+  # 判题机多实例时**必须**设置，否则并发 `docker run` 让容器冷启动吃满墙钟预算，
+  #    正确解会被判假 TLE（2026-09-22 实测：3 实例 60 并发 → 抽样 18/25 假 TLE）。
+  #    经验公式：实例数 × CJ_MQ_CONSUME_THREADS ≤ 宿主机 CPU 核数。详见 docs/PERF.md §3.7。
+  consume-thread-min: ${CJ_MQ_CONSUME_THREADS:0}
+  consume-thread-max: ${CJ_MQ_CONSUME_THREADS:0}
 
 mybatis-plus:
   configuration:
@@ -75,15 +81,18 @@ mybatis-plus:
 
 cj:
   worker:
-    image-java: ${CJ_SANDBOX_IMAGE_JAVA:judge-java21:latest}
-    image-python: ${CJ_SANDBOX_IMAGE_PYTHON:judge-python3.12:latest}
-    image-cpp: ${CJ_SANDBOX_IMAGE_CPP:judge-gcc13:latest}
-    image-go: ${CJ_SANDBOX_IMAGE_GO:judge-go1.22:latest}
+    image-java: ${CJ_SANDBOX_IMAGE_JAVA:codejudge/judge-java21:latest}
+    image-python: ${CJ_SANDBOX_IMAGE_PYTHON:codejudge/judge-python312:latest}
+    image-cpp: ${CJ_SANDBOX_IMAGE_CPP:codejudge/judge-gcc13:latest}
+    image-go: ${CJ_SANDBOX_IMAGE_GO:codejudge/judge-go122:latest}
     sandbox-runtime: ${CJ_SANDBOX_RUNTIME:runc}
     seccomp-profile: ${CJ_SANDBOX_SECCOMP:sandbox/seccomp/judge-seccomp.json}
     cpus: ${CJ_SANDBOX_CPUS:1.0}
     pids-limit: ${CJ_SANDBOX_PIDS_LIMIT:64}
-    max-output-kb: ${CJ_SANDBOX_MAX_OUTPUT_KB:64}
+    # 编译阶段进程数上限：编译器自身重度 fork（Go 工具链实测 64 必失败、256 起正常），
+    # 运行阶段仍用上面的 64 防 fork 炸弹。
+    compile-pids-limit: ${CJ_SANDBOX_COMPILE_PIDS_LIMIT:256}
+    max-output-kb: ${CJ_SANDBOX_MAX_OUTPUT_KB:1024}
     compile-timeout-ms: ${CJ_SANDBOX_COMPILE_TIMEOUT_MS:30000}
     compile-memory-mb: 512
     wall-clock-grace-ms: ${CJ_SANDBOX_WALL_GRACE_MS:5000}
@@ -96,6 +105,7 @@ cj:
 
 springdoc:
   api-docs:
+    # 内部判题服务：接口文档保持关闭（未走 CJ_SPRINGDOC_ENABLED 总开关）
     enabled: false
 
 logging:

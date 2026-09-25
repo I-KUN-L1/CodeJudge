@@ -75,8 +75,17 @@ public class AiReviewMqConsumer implements MqHandler {
      */
     @Override
     public void handle(MessageExt message) throws Exception {
-        String raw = new String(message.getBody(), StandardCharsets.UTF_8);
-        JsonNode node = objectMapper.readTree(raw);
+        JsonNode node;
+        String raw;
+        try {
+            raw = new String(message.getBody(), StandardCharsets.UTF_8);
+            node = objectMapper.readTree(raw);
+        } catch (Exception e) {
+            // 毒消息：重投也解不出来，与 submission 侧 handler 对齐 —— 记录后丢弃
+            log.error("ai_review#REQUESTED 报文解析失败，丢弃（不重投）：msgId={} err={}",
+                    message.getMsgId(), e.toString());
+            return;
+        }
         Long submissionId = node.hasNonNull("submissionId") ? node.get("submissionId").asLong() : null;
         if (submissionId == null) {
             log.warn("ai_review#REQUESTED 报文缺少 submissionId，丢弃：{}", raw);
