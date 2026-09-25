@@ -158,7 +158,8 @@ function start() {
 
   task = streamReview({
     token: user.accessToken,
-    submissionId: Number(props.submissionId),
+    // 雪花 id 是 19 位数字，Number() 会截断（2^53-1 ≈ 9.0e15）—— 一律按字符串透传
+    submissionId: props.submissionId,
     reviewType: reviewType.value,
     question: question.value || null,
 
@@ -231,7 +232,7 @@ function abort() {
 
 async function loadHistory() {
   try {
-    history.value = (await aiApi.history(Number(props.submissionId), 10)) || [];
+    history.value = (await aiApi.history(props.submissionId, 10)) || [];
   } catch {
     // 历史查询失败不打扰用户（可能是权限或服务未启动）
     history.value = [];

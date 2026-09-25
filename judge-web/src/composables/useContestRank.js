@@ -98,6 +98,12 @@ export function useContestRank() {
       path,
       token,
       onMessage: handle,
+      // 重连耗尽必须有可见提示，否则页面只剩"未连接"标签，用户不知道要刷新
+      onError: (ev) => {
+        if (ev?.type === 'giveup') {
+          status.error = '榜单连接中断，请刷新页面重试';
+        }
+      },
     });
   }
 

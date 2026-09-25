@@ -10,7 +10,7 @@ public interface ProblemTagMapper extends BaseMapper<ProblemTag> {
     /**
      * 物理删除某题目的全部标签关联。
      *
-     * <p>⚠️ 必须物理删除：{@code uk_problem_tag (problem_id, tag_id)} **不含 deleted 列**。
+     * <p>必须物理删除：{@code uk_problem_tag (problem_id, tag_id)} **不含 deleted 列**。
      * 逻辑删除后重新给同一题打上同一标签会撞唯一键 ——
      * 表现为"取消标签后就再也打不回去了"。
      */

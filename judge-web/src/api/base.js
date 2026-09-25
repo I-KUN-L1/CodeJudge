@@ -52,7 +52,7 @@ export function apiUrl(path) {
 /**
  * 拼接 WebSocket 地址（自动带 token，网关 WS 握手需要）。
  *
- * ⚠️ path 可能自带查询参数（如 `/ws/contests/1/rank?full=true`），
+ * path 可能自带查询参数（如 `/ws/contests/1/rank?full=true`），
  * 因此必须判断已有 `?` 再用 `&` 续接 —— 写成 `${path}?token=` 会得到
  * `...?full=true?token=xxx`，服务端解析 query 时把整个 "full=true?token=xxx"
  * 当成 full 的值，表现为 `full` 失效（要么拒绝、要么永远订阅到公开榜）。

@@ -192,7 +192,7 @@
             </div>
             <div class="cj-card__body" style="padding: 8px 12px">
               <el-table :data="mySubmissions" size="small" :show-header="false" empty-text="暂无提交">
-                <el-table-column width="94">
+                <el-table-column width="94" align="center">
                   <template #default="{ row }">
                     <VerdictTag
                       :verdict="row.verdict"
@@ -203,12 +203,12 @@
                 </el-table-column>
                 <el-table-column>
                   <template #default="{ row }">
-                    <span class="cj-dim cj-mono">{{ languageLabel(row.language) }}</span>
+                    <span class="cj-num-dim">{{ languageLabel(row.language) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column width="120">
+                <el-table-column width="120" align="right">
                   <template #default="{ row }">
-                    <span class="cj-dim">{{ fmtFromNow(row.submitTime) }}</span>
+                    <span class="cj-num-dim">{{ fmtFromNow(row.submitTime) }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column width="52" align="right">
@@ -266,8 +266,9 @@ const currentSubmissionId = ref(null);
 
 /** 从竞赛页跳转过来时带上 contestId，提交会记为竞赛提交 */
 const contestId = computed(() => {
+  // 竞赛 id 是 19 位雪花，Number() 截断会让提交挂到不存在的竞赛上 —— 字符串透传
   const v = route.query.contestId;
-  return v ? Number(v) : null;
+  return v || null;
 });
 
 /**
@@ -329,7 +330,7 @@ async function onSubmit() {
   submitting.value = true;
   try {
     const body = {
-      problemId: Number(route.params.id),
+      problemId: route.params.id,
       language: language.value,
       code: code.value,
     };
@@ -415,6 +416,15 @@ watch(language, (nv, ov) => {
 onMounted(() => {
   loadProblem();
   loadMySubmissions();
+});
+
+// 同路由不同 id（如从提交详情回跳别的题目）会复用组件实例，onMounted 不再执行 ——
+// 不监听的话页面展示旧题目，甚至把代码提交到旧题目上
+watch(() => route.params.id, (nv, ov) => {
+  if (nv && nv !== ov) {
+    loadProblem();
+    loadMySubmissions();
+  }
 });
 
 onBeforeUnmount(() => progress.close());

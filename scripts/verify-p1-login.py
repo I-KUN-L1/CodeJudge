@@ -21,8 +21,9 @@ CodeJudge —— P1 遗留项验收脚本（登录链路 + 教师注册加固）
 ────────────────────────────────────────────────────────────
 凭据来源（不硬编码敏感值）：
     学员 13900000001 / teacher 13900000011 的种子密码默认 123456（见 sql/seed.sql）；
-    管理员初始密码默认 123456（见 .env 的 CJ_ADMIN_INIT_PASSWORD）。
-    均可用环境变量覆盖：PWD_SEED / PWD_ADMIN / PHONE_STUDENT / PHONE_ADMIN ...
+    管理员口令取自 .env 的 CJ_ADMIN_INIT_PASSWORD —— 2026-09-22 已轮换，**不再是 123456**，
+    故本脚本自动跟随 .env（读取顺序：PWD_ADMIN 环境变量 > .env > 历史默认 123456）。
+    其余可用环境变量覆盖：PWD_SEED / PHONE_STUDENT / PHONE_ADMIN / GW / AUTH ...
 
 为什么本脚本走网关（与 verify-p2.py 相反）？
     verify-p2.py 验的是服务层归属逻辑，故直连 9083 并手工构造身份头。
@@ -32,6 +33,8 @@ CodeJudge —— P1 遗留项验收脚本（登录链路 + 教师注册加固）
 副作用与清理：
     会创建 1 个教师账号 + 1 个学员账号，用管理员 token 删除（逻辑删除）。
     不会修改任何既有账号的密码。首次改密只测**失败路径**，不触发凭据文件删除。
+    若仓库根 `.bootstrap-credentials` 不存在，会临时创建哨兵文件让 fail-closed 断言有意义，
+    测试结束即删除；文件本就存在时原样保留、不改写内容。
 ────────────────────────────────────────────────────────────
 """
 
@@ -39,6 +42,7 @@ import base64
 import http.cookiejar
 import json
 import os
+import pathlib
 import sys
 import time
 import urllib.error
@@ -50,7 +54,33 @@ AUTH = os.environ.get("AUTH", "http://localhost:9081")
 
 # ---- 种子凭据（可用环境变量覆盖；默认值与 sql/seed.sql / .env 一致）----
 PWD_SEED = os.environ.get("PWD_SEED", "123456")
-PWD_ADMIN = os.environ.get("PWD_ADMIN", "123456")
+
+
+def _env_file_value(key: str) -> str:
+    """从仓库根目录的 .env 读取变量（不回显、不硬编码）。
+
+    管理员口令已由 .env 的 CJ_ADMIN_INIT_PASSWORD 轮换，**不再等于种子默认 123456**，
+      故此处自动跟随 .env —— 与 verify-p6.py 处理 Grafana 口令的方式一致：
+      否则每次轮换凭据都会让本脚本误报，而"误报"会被当成"改测试就变绿"。
+    """
+    try:
+        env_path = pathlib.Path(__file__).resolve().parent.parent / ".env"
+        for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            s = line.strip()
+            if s.startswith("#") or "=" not in s:
+                continue
+            k, v = s.split("=", 1)
+            if k.strip() == key:
+                return v.strip()
+    except OSError:
+        pass
+    return ""
+
+
+# 优先级：显式环境变量 > .env 的 CJ_ADMIN_INIT_PASSWORD > 历史种子默认值
+PWD_ADMIN = (os.environ.get("PWD_ADMIN")
+             or _env_file_value("CJ_ADMIN_INIT_PASSWORD")
+             or "123456")
 PHONE_STUDENT = os.environ.get("PHONE_STUDENT", "13900000001")
 UID_STUDENT = int(os.environ.get("UID_STUDENT", "2001"))
 PHONE_ADMIN = os.environ.get("PHONE_ADMIN", "13800000000")
@@ -196,7 +226,9 @@ def main():
     check_true("accessToken 为三段式 JWT", access.count(".") == 2,
                "segments=%d" % (access.count(".") + 1))
     check_true("accessToken 非空", len(access) > 40, "len=%d" % len(access))
-    check_true("refreshToken 非空", len(refresh) > 40, "len=%d" % len(refresh))
+    # 2026-09-25 加固：refreshToken 只经 HttpOnly Cookie 下发，不再出现在响应体（@JsonIgnore）
+    check_true("refreshToken 不随 body 下发", refresh == "",
+               "len=%s" % ("nonzero" if refresh else "0"))
     check("data.expireTime（秒）", dig(r, "data.expireTime"), 1800)
     check("accessToken 的 userId claim", jwt_claim(access, "userId"), UID_STUDENT)
     check("accessToken 的 roleId claim（学员=2）", jwt_claim(access, "roleId"), 2)
@@ -317,14 +349,55 @@ def main():
 
     # ---------------------------------------------------------------
     print("[7] 首次改密 fail-closed（只测失败路径，不触发凭据文件删除）")
-    st, r, _ = gw.request("POST", GW + "/accounts/password/first-change",
-                          {"cellPhone": PHONE_ADMIN, "oldPassword": "definitely-wrong",
-                           "newPassword": "NewPwd_2026!"})
-    check("原密码错误被拒", dig(r, "code"), 400)
-    cred = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "..", "judge-auth", ".bootstrap-credentials")
-    cred = os.path.normpath(cred)
-    check("校验失败时不删除初始凭据文件（fail-closed）", os.path.exists(cred), True)
+    # ⚠ 这一项的坑（2026-09-23 修）：
+    #   ① 路径错了 —— AdminBootstrapService 解析的是 `<进程工作目录>/.bootstrap-credentials`，
+    #      而两种受支持的启动方式都把 cwd 固定为**仓库根**，不是 judge-auth/。
+    #      （早期手工从模块目录启动过一次，在 judge-auth/ 下留了个孤儿文件，
+    #       于是这条断言靠那个孤儿文件"一直绿"。）
+    #   ② 断言本身假绿 —— 只查"文件是否存在"，而前提就是它本来就存在；
+    #      全新部署（文件不存在）或已改密后被删时它必红，且与 fail-closed 行为毫无关系。
+    #   现在改成：文件不存在就先临时造一个哨兵并记下内容，跑完失败路径后断言
+    #   **文件仍在且内容未被改写**，最后（finally）清理自己造的那份。
+    #      —— 「没验证过」不允许被算成「验证通过」。
+    # ⚠ 哨兵必须保证清理：`AdminBootstrapService.isBootstrapPending()` 的判据就是
+    #   「这个文件在不在」，残留一个哨兵会让服务误以为仍处于引导态，
+    #   登录响应里的 `mustChangePassword` 会被伪造成 true → 污染被测系统状态。
+    cred = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         "..", ".bootstrap-credentials"))
+    SENTINEL_MARK = "verify-p1-login.py 临时创建"
+    sentinel = "# 本文件由 %s，仅用于验证 fail-closed，测试结束即删除\n" % SENTINEL_MARK
+
+    def _read(path):
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+
+    # 自愈：上次异常退出（Ctrl-C / 超时）可能留下我们自己的哨兵，先清掉
+    if os.path.exists(cred) and SENTINEL_MARK in _read(cred):
+        os.remove(cred)
+        print("  [i] 已清理上次运行遗留的哨兵文件（否则会被误判为「待改密」状态）")
+
+    created_sentinel = False
+    try:
+        if not os.path.exists(cred):
+            with open(cred, "w", encoding="utf-8") as fh:
+                fh.write(sentinel)
+            created_sentinel = True
+            print("  [i] %s 不存在，已临时创建哨兵文件，使本项断言有意义"
+                  % os.path.basename(cred))
+        check_true("前置：存在待验证的凭据文件（非空样本）", os.path.exists(cred), cred)
+        before = _read(cred) if os.path.exists(cred) else ""
+
+        st, r, _ = gw.request("POST", GW + "/accounts/password/first-change",
+                              {"cellPhone": PHONE_ADMIN, "oldPassword": "definitely-wrong",
+                               "newPassword": "NewPwd_2026!"})
+        check("原密码错误被拒", dig(r, "code"), 400)
+        check("校验失败时不删除初始凭据文件（fail-closed）", os.path.exists(cred), True)
+        if os.path.exists(cred):
+            check_true("校验失败时不改写凭据文件内容", _read(cred) == before)
+    finally:
+        if created_sentinel and os.path.exists(cred):
+            os.remove(cred)
+            print("  [i] 已清理本脚本临时创建的哨兵文件")
 
     # ---------------------------------------------------------------
     print("[8] 收尾清理（逻辑删除本脚本创建的临时账号）")

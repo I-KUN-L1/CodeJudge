@@ -3,7 +3,7 @@ package com.codejudge.common.exceptions;
 /**
  * 业务逻辑异常。
  * <p>
- * ⚠ 默认业务码必须是 {@link ErrorCode#BIZ_ILLEGAL}(1001)，**不能是 500**。
+ * 默认业务码必须是 {@link ErrorCode#BIZ_ILLEGAL}(1001)，**不能是 500**。
  * <p>
  * 历史问题：本类原先用 `super(500, message)` 作默认码，导致全项目 49 处
  * `new BizIllegalException("...")`（手机号已存在、重复下单、券不可用……）

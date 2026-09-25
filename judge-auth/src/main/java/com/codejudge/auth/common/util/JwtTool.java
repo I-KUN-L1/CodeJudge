@@ -78,7 +78,14 @@ public class JwtTool {
         return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
     }
 
-    public String getPublicKeyBase64() {
-        return java.util.Base64.getEncoder().encodeToString(key.getEncoded());
+    /**
+     * 解析 token 的类型标记（{@code type} claim：access / refresh）。
+     * <p>HMAC 是对称签名，密钥即"公钥"，不存在可公开分发的 JWK ——
+     * 历史上的 {@code GET /jwks} 端点会把 {@code getEncoded()}（即密钥本体）匿名返回，
+     * 等于交出任意伪造身份的能力，已随本次加固删除；该方法仅供服务内部区分 token 类型。
+     */
+    public String parseTokenType(String token) {
+        Object type = parse(token).get("type");
+        return type == null ? null : String.valueOf(type);
     }
 }

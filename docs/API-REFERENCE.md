@@ -46,17 +46,23 @@
 | 项 | 说明 |
 |---|---|
 | 认证头 | `Authorization: Bearer <accessToken>` |
-| 令牌算法 | RS256，公钥经 `GET /jwks` 暴露 |
-| 网关白名单 | `/accounts/login`、`/accounts/admin/login`、`/accounts/refresh`、`/accounts/password/first-change`、`/students/register`、`/jwks`、`/v3/api-docs`、`/doc.html` |
+| 令牌算法 | HS256（HMAC 对称签名，密钥 `CJ_JWT_SECRET` 共享给网关；access token 含 `type=access` claim，refresh 只可用于续签） |
+| 网关白名单 | `/accounts/login`、`/accounts/admin/login`、`/accounts/refresh`、`/accounts/password/first-change`、`/students/register`、`/v3/api-docs`、`/doc.html`（`/jwks` 已随 2026-09-25 加固删除 —— HMAC 对称密钥没有"公钥"，匿名暴露即交出伪造身份能力） |
 | 下游可见身份 | 网关注入 `user-info: <userId>`、`role-info: <roleId>` |
 | 角色 | `1` 管理员（员工）｜ `2` 学员 ｜ `3` 教师 |
+| 能力码 | 按钮级权限的**唯一权威**，由 `GET /accounts/me/capabilities` 下发。以 `user.type` 为唯一输入，不读 DB 里的 RBAC 表 |
+
+**登录限流的覆盖范围（注意）**：网关的 `login-rate-limit` 谓词是
+`Path=/accounts/login,/accounts/admin/login` + `Method=POST` —— **两个登录入口都在限流内**
+（2026-09-25 补：此前兼容别名不在谓词内，可绕过防爆破限流）。兼容别名 `/accounts/admin/login`
+保留但**新代码不应使用**。
 
 ### 0.4 服务与端口
 
 | 服务 | 端口 | 路由前缀 |
 |---|---|---|
 | judge-gateway | 9080 | — |
-| judge-auth | 9081 | `/accounts/**` `/menus/**` `/roles/**` `/privileges/**` `/jwks/**` |
+| judge-auth | 9081 | `/accounts/**` `/menus/**` `/roles/**` `/privileges/**` |
 | judge-user | 9082 | `/users/**` `/students/**` `/teachers/**` `/staffs/**` |
 | judge-problem | 9083 | `/problems/**` `/tags/**` `/test-cases/**` |
 | judge-submission | 9084 | `/submissions/**` `/workers/**` |
@@ -70,12 +76,12 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| POST | `/accounts/login` | 匿名 | 学员/教师登录。**有令牌桶限流**：2 req/s，突发 5 |
-| POST | `/accounts/admin/login` | 匿名 | 管理员登录（独立入口，便于审计） |
-| POST | `/accounts/refresh` | 匿名（携 refreshToken） | 刷新 accessToken |
-| POST | `/accounts/password/first-change` | 匿名 | 首次登录强制改密 |
+| POST | `/accounts/login` | 匿名 | **唯一登录入口**。角色由账号自身 `user.type` 决定，调用方不指定。**有令牌桶限流**：2 req/s，突发 5 |
+| POST | `/accounts/admin/login` | 匿名 | ⚠ **已废弃（兼容别名）**：委托同一条逻辑，额外要求账号为员工。响应包含 `role` / `roleLabel` / `mustChangePassword` |
+| GET | `/accounts/me/capabilities` | 登录 | **能力画像**：`perms`（能力码）+ `menus`（导航）+ `home`。前端的全部鉴权依据 |
+| POST | `/accounts/refresh` | 匿名（携 refreshToken） | 刷新 accessToken（不轮换 refreshToken） |
+| POST | `/accounts/password/first-change` | 匿名 | 首次登录强制改密；成功后删除 `.bootstrap-credentials` |
 | POST | `/accounts/logout` | 登录 | 登出（清 Redis 会话） |
-| GET | `/jwks` | 匿名 | 公钥集（供其它服务验签） |
 
 **登录请求**
 
@@ -87,12 +93,59 @@ POST /accounts/login
 **登录响应**
 
 ```json
-{ "code": 1, "data": {
-  "accessToken": "eyJ...", "expireTime": 1758432000000,
-  "refreshToken": "eyJ...", "userId": 2001, "username": "student001" } }
+{ "code": 200, "data": {
+  "accessToken": "eyJ...", "expireTime": 1800,
+  "refreshToken": "eyJ...", "userId": 2001, "username": "student001",
+  "role": 2, "roleLabel": "学员", "mustChangePassword": false } }
 ```
 
+| 字段 | 说明 |
+|---|---|
+| `accessToken` | JWT，RS256，30 分钟；携带 `userId` / `roleId`（=`user.type`）claim |
+| `refreshToken` | 30 天。**同时以 HttpOnly Cookie 下发，不进入响应体**（响应里出现它即为缺陷） |
+| `expireTime` | access token 有效期，单位**秒**（1800） |
+| `role` / `roleLabel` | `user.type` 与中文名（管理员/学员/教师）。前端**不据此判权限**，仅用于顶栏标签 |
+| `mustChangePassword` | 判据 = 引导期凭据文件是否仍存在。前端据此提示改密，**不阻断登录** |
+
+Refresh Cookie 名按角色区分：学员/教师 `judge-refresh-token`，员工 `judge-admin-refresh-token`。
+登录时写一枚并**清掉另一枚**，否则续签会读到过期身份（症状：「刚登录就被踢下线」）。
+
+**能力画像响应**
+
+```json
+GET /accounts/me/capabilities    (Authorization: Bearer <accessToken>)
+{ "code": 200, "data": {
+  "role": 3, "roleAlias": "teacher", "roleLabel": "教师",
+  "home": "/teacher/problems",
+  "menus": [ { "key": "problems", "name": "题库", "path": "/problems",
+               "icon": "Notebook", "group": "primary", "perm": "problem:view" } ],
+  "perms": [ { "code": "problem:view", "name": "浏览题目" } ] } }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `home` | 登录后的落地路由（学员 `/problems`、教师 `/teacher/problems`、员工 `/admin/users`）。「进屋先看哪儿」也是权限语义，故由后端下发 |
+| `menus[].group` | `primary` 顶栏 / `teach` 教学下拉 / `system` 系统下拉。**只决定画在哪一栏，不承担权限语义** |
+| `menus[].perm` | 打开该入口所需的能力码；后端已按当前账号过滤，前端无需再筛 |
+| `perms[].code` | 能力码，按目录声明序输出，保证同一账号每次拿到完全相同的顺序 |
+
+| 角色 | `perms` | `menus` |
+|---|---|---|
+| 学员（`2`） | 6 | 3 |
+| 教师（`3`） | 16 | 6 |
+| 员工（`1`） | 20 | 10 |
+
+层次为严格嵌套 学员 ⊂ 教师 ⊂ 员工；**未知 `user.type` 返回空集**（fail-closed，
+不是"给满"—— 给满会在 `type` 出现脏值时把管理面按钮画给学员）。
+契约由 `python scripts/verify-authz.py`（56 项断言）守住。
+
 ### RBAC（管理端）
+
+> ⚠ **这些端点不参与鉴权判定**。`role` / `menu` / `privilege` 等六张表在 `sql/seed.sql` 里
+> **没有任何种子数据**，当前系统一律以 `user.type` 为权限唯一权威（见 §0.3 与 §1 的能力码）。
+> 下面的端点仍保留为管理面 CRUD（现状不变），但**不要拿它们当作权限来源** ——
+> 启用会引入 `user.type` 与 `account_role` 双源，一旦漂移就表现为「按钮画了但接口 403」。
+> 前端导航也不查 `/menus/me`，而是取 `GET /accounts/me/capabilities` 的 `menus`。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|

@@ -42,9 +42,13 @@ public class EmbeddingService {
 
     public EmbeddingService(LlmProperties properties) {
         this.properties = properties;
+        // responseTimeout：Embedding 接口挂起时，无上限的 block() 会永久占住调用线程
+        reactor.netty.http.client.HttpClient httpClient = reactor.netty.http.client.HttpClient.create()
+                .responseTimeout(java.time.Duration.ofSeconds(30));
         this.webClient = WebClient.builder()
                 .baseUrl(properties.getBaseUrl())
                 .defaultHeader("Authorization", "Bearer " + properties.getApiKey())
+                .clientConnector(new org.springframework.http.client.reactive.ReactorClientHttpConnector(httpClient))
                 .build();
     }
 
@@ -72,7 +76,8 @@ public class EmbeddingService {
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block();
+                    // 双保险：WebClient 已配 responseTimeout，这里再设 block 上限防挂死
+                    .block(java.time.Duration.ofSeconds(30));
             return parse(resp);
         } catch (Exception e) {
             logFallbackOnce(e);

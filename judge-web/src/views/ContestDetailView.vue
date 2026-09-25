@@ -54,15 +54,16 @@
       </div>
     </div>
 
-    <!-- ================= 管理操作（教师/管理员） ================= -->
-    <div v-if="user.canManage && detail" class="cj-card">
+    <!-- ================= 管理操作（contest:manage） ================= -->
+    <div v-if="detail" v-perm="'contest:manage'" class="cj-card">
       <div class="cj-card__head">
         <span>赛务操作</span>
         <span class="cj-dim">手动封榜 / 终榜重建 / 快照留档</span>
       </div>
       <div class="cj-card__body">
         <div class="cj-row">
-          <el-checkbox v-model="fullView" :disabled="!user.canManage" @change="resubscribe">
+          <!-- 卡片本身已按能力码渲染，此处无需再判一次；原来的 :disabled 是重复门槛 -->
+          <el-checkbox v-model="fullView" @change="resubscribe">
             full=true 订阅实时全量榜（绕开封榜）
           </el-checkbox>
 
@@ -85,12 +86,14 @@
               <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="快照时刻">
-            <template #default="{ row }">{{ fmtTime(row.snapshotAt) }}</template>
+          <el-table-column label="快照时刻" width="200" align="right">
+            <template #default="{ row }">
+              <span class="cj-num-dim">{{ fmtTime(row.snapshotAt) }}</span>
+            </template>
           </el-table-column>
           <el-table-column label="JSON 字节数" width="140" align="right">
             <template #default="{ row }">
-              <span class="cj-mono cj-dim">{{ row.size }}</span>
+              <span class="cj-num cj-dim">{{ row.size }}</span>
             </template>
           </el-table-column>
         </el-table>
@@ -148,7 +151,6 @@
             v-loading="!rank"
             :data="rank?.entries || []"
             size="small"
-            stripe
             :empty-text="rank ? '暂无榜单数据（可能还没有人提交）' : '加载中…'"
             :row-class-name="rowClass"
           >
@@ -164,18 +166,21 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="解决 / 得分" width="110" align="center">
+            <el-table-column label="解决 / 得分" width="118" align="right">
               <template #default="{ row }">
-                <span class="v-ac">{{ row.weight }}</span>
-                <div class="cj-dim">
-                  {{ rank?.rule === 'IOI' ? `总分 ${row.totalScore}` : `过 ${row.solvedCount} 题` }}
+                <!-- 两行同一条右边缘：主值（权重）与副说明（总分/过题数） -->
+                <div class="cj-cell-stack cj-cell-stack--end">
+                  <span class="cj-cell-stack__v cj-num">{{ row.weight }}</span>
+                  <span class="cj-cell-stack__sub">
+                    {{ rank?.rule === 'IOI' ? `总分 ${row.totalScore}` : `过 ${row.solvedCount} 题` }}
+                  </span>
                 </div>
               </template>
             </el-table-column>
 
-            <el-table-column label="罚时" width="100" align="right">
+            <el-table-column label="罚时" width="110" align="right">
               <template #default="{ row }">
-                <span class="cj-mono">{{ fmtPenalty(row.penaltySeconds) }}</span>
+                <span class="cj-num">{{ fmtPenalty(row.penaltySeconds) }}</span>
               </template>
             </el-table-column>
 
@@ -231,7 +236,27 @@ const router = useRouter();
 const user = useUserStore();
 const { rank, status: wsStatus, subscribe, isFrozenView, inFreezeWindow, isFullView } = useContestRank();
 
-const contestId = computed(() => Number(route.params.id));
+/**
+ * 路由里的竞赛 id —— **必须保持字符串，绝不能 `Number()`**。
+ *
+ * 竞赛 id 是 19 位雪花号（`2102698982248611841`），远超 JS 的安全整数上限
+ * `Number.MAX_SAFE_INTEGER = 9007199254740991`（约 9.0e15）。`Number()` 会把它
+ * 静默截断到最近的 2 的幂的倍数上：
+ *
+ *     Number('2102698982248611841') === 2102698982248611800   // 差 41
+ *
+ * 后端为此专门在 judge-common 里配了 `SafeLongSerializer`，把 Long 序列化成
+ * **字符串**下发 —— 精度原本是保住的，是这里主动把它毁掉了。截断后两个症状同源：
+ *
+ *   ① `GET /contests/2102698982248611800` → ContestService 查不到 → 404
+ *      `竞赛不存在：2102698982248611800`（界面弹出该提示）；
+ *   ② WebSocket 订阅 `/ws/contests/2102698982248611800/rank` 被
+ *      ContestRankWsHandler 以 `fail()` 关闭 → `rank` 永远是 null →
+ *      榜单表格的 `v-loading="!rank"` 就一直转，也就是"一直停留在加载界面"。
+ *
+ * `useContestRank.subscribe()` 的签名本来就是 `{number|string}`，直接传字符串即可。
+ */
+const contestId = computed(() => route.params.id);
 const detail = ref(null);
 const snapshots = ref([]);
 const rebuildReport = ref(null);
@@ -266,7 +291,7 @@ const chartOption = computed(() => {
         type: 'bar',
         data: acByLabel.map((d) => d.count),
         barMaxWidth: 34,
-        itemStyle: { color: '#3b6ef6', borderRadius: [4, 4, 0, 0] },
+        // 不写 itemStyle.color：系列色由 EChartPanel 从 CSS 变量 --chart-1 注入
         label: { show: true, position: 'top' },
       },
     ],
@@ -355,31 +380,47 @@ onMounted(() => {
   subscribe(contestId.value, user.accessToken, { full: false });
 });
 
+// 同路由不同竞赛的跳转会复用组件实例：不重载详情、不重订阅 WS 就一直显示上一场比赛
+watch(() => route.params.id, (nv, ov) => {
+  if (nv && nv !== ov) {
+    loadDetail();
+    subscribe(route.params.id, user.accessToken, { full: false });
+  }
+});
+
 onBeforeUnmount(() => undefined); // 断连由 composable 的 onBeforeUnmount 统一处理
 </script>
 
 <style scoped>
 .desc {
-  margin-top: 12px;
-  line-height: 1.7;
+  margin-top: var(--sp-3);
+  line-height: var(--lh-read);
 }
 
 .chart-wrap {
-  margin-bottom: 14px;
+  margin-bottom: var(--sp-4);
 }
 
+/* 名次徽标：定宽等高，1 位与 2 位名次的圆点大小一致，
+   否则第 9 名与第 10 名会差出半个字符宽，整列看起来是歪的 */
 .rank-no {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
+  min-width: 26px;
   height: 24px;
-  padding: 0 6px;
-  border-radius: 12px;
-  font-weight: 700;
-  font-size: 12.5px;
-  background: var(--cj-panel-2);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-full);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-sm);
+  background: var(--surface-2);
+  color: var(--fg);
 }
+/* 金银铜是**材质色**（金属的固有色），不是主题色：
+   它们在任何主题下都必须是同一种金黄色，故刻意不走主题变量。
+   三者的前景色都取深色，与亮底配出足够对比 */
 .rank-no--gold {
   background: #f6c343;
   color: #3d2b00;
@@ -394,21 +435,21 @@ onBeforeUnmount(() => undefined); // 断连由 composable 的 onBeforeUnmount �
 }
 
 .is-me {
-  font-weight: 700;
-  color: var(--cj-accent);
+  font-weight: var(--fw-semi);
+  color: var(--accent);
 }
 
 .my-rank {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px dashed var(--cj-accent);
-  border-radius: 8px;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px dashed var(--accent);
+  border-radius: var(--r-md);
 }
 
 :deep(.is-my-row) {
-  background: color-mix(in srgb, var(--cj-accent) 10%, transparent) !important;
+  background: color-mix(in srgb, var(--accent) 10%, transparent) !important;
 }
 </style>

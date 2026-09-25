@@ -42,7 +42,7 @@ public class TeacherController {
     /**
      * 开通教师账号（仅员工/管理员）。
      * <p>
-     * ⚠️ 与 zx-learn 底座的差异（安全加固）：底座此处是「教师自助注册」且位于网关白名单，
+     * 与 zx-learn 底座的差异（安全加固）：底座此处是「教师自助注册」且位于网关白名单，
      * 任何人都能不登录就把自己注册成教师 —— 而教师可创建题目、查看隐藏测试用例，
      * 在判题平台里等于公开题库存取权。CodeJudge 改为仅员工可开通，
      * 同时把 {@code /teachers/register} 移出网关白名单（见 {@code JwtProperties}）。

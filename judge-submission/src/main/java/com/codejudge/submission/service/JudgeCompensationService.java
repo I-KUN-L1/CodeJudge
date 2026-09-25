@@ -205,9 +205,14 @@ public class JudgeCompensationService {
                 new LambdaQueryWrapper<JudgeTask>()
                         .eq(JudgeTask::getId, task.getId())
                         .in(JudgeTask::getStatus, List.of("PENDING", "JUDGING")));
-        if (updated == 1) {
-            log.error("任务转死信：taskId={} submissionId={} reason={}", task.getId(), task.getSubmissionId(), reason);
+        // CAS 失败 = 任务已被 worker 判完置 SUCCESS（worker 先写提交终态再写任务）。
+        // 此时绝不能把已 SUCCESS 的提交改写成 FAILED/SE 并投死信 —— 会污染榜单与前端展示。
+        if (updated != 1) {
+            log.warn("任务转死信跳过：CAS 未命中（任务已非 PENDING/JUDGING）taskId={} submissionId={}",
+                    task.getId(), task.getSubmissionId());
+            return;
         }
+        log.error("任务转死信：taskId={} submissionId={} reason={}", task.getId(), task.getSubmissionId(), reason);
         Submission submission = submissionMapper.selectById(task.getSubmissionId());
         if (submission != null && !"FAILED".equals(submission.getStatus())) {
             submission.setStatus(SubmissionService.ST_FAILED);

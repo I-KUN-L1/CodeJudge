@@ -9,6 +9,10 @@
 > 当前进度：**P6 已完成（前端 + Prometheus/Grafana 监控 + JMeter 压测 + 文档收口）**，
 > 六个阶段全部交付。阶段验收结果见 [docs/CONTEXT.md](docs/CONTEXT.md)。
 > **8 个可运行服务**（9080–9087）+ 前端 5174 + 监控栈 9090/9093/3001。
+>
+> 另完成一轮**鉴权收敛**：登录收敛为单一入口（角色由 `user.type` 决定，不选角色）、
+> 按钮渲染改由后端下发的**能力码**驱动（无权限不渲染）、前端**零鉴权推导**、
+> 登录页不再外显默认账密。契约见 §5.2.1，验收 `python scripts/verify-authz.py`（56 项）。
 
 ---
 
@@ -32,7 +36,7 @@
 | 模块 | 端口 | 职责 | 阶段 |
 |---|---|---|---|
 | judge-gateway | 9080 | 路由、鉴权、限流、CORS、SSE 超时放宽 | P1 ✅ |
-| judge-auth | 9081 | 登录、双 Token、RBAC、首个管理员安全引导 | P1 ✅ |
+| judge-auth | 9081 | 统一登录（按 `user.type` 自动判定角色）、双 Token、**能力码下发**、首个管理员安全引导 | P1 ✅ |
 | judge-user | 9082 | 学员/教师/管理员基础信息 | P1 ✅ |
 | judge-problem | 9083 | 题目、题面版本、测试用例、标签 | P2 ✅ |
 | judge-submission | 9084 | 提交落库 + 幂等 + MQ 投递 + 结果查询 + 判题进度 WS | P3 ✅ |
@@ -76,7 +80,8 @@ codejudge/
 │   ├── mysql|redis|rocketmq|pgvector   中间件配置
 │   └── monitoring/     Prometheus / Alertmanager / Grafana 独立可部署栈  ← P6
 ├── sql/                init.sql（全量 schema）+ seed.sql（幂等种子数据）
-├── scripts/            dev-start-backend.py + verify-p{1..6}.py + build-sandbox-images.py
+├── scripts/            start-all.py（一键启动）+ dev-start-backend.py
+│                       + verify-p{1..6}.py + verify-authz.py + build-sandbox-images.py
 ├── docs/               PLAN / CONTEXT / ARCHITECTURE / API-REFERENCE / DEPLOYMENT
 │                       PERF / P1~P6-REPORT.md
 └── docker-compose.yml
@@ -127,15 +132,41 @@ python scripts/build-sandbox-images.py     # 4 个镜像：java21 / python312 / 
 
 ### 5. 启动服务
 
-**推荐：看护模式一次拉起全部 8 个服务**
+**推荐：一条命令拉起全部**
 
 ```bash
-python scripts/dev-start-backend.py --wait
+python scripts/start-all.py            # 基础设施 + 8 个后端服务（逐个等待 /actuator/health）
+python scripts/start-all.py --all      # 再加 监控栈 + 前端 dev server
+python scripts/start-all.py --no-infra # 基础设施已在跑，只起服务
+python scripts/start-all.py --wait     # 看护模式，常驻并回收子进程
 ```
 
-> `--wait` 为看护模式，父进程驻留期间子 JVM 存活；**必须**在支持后台常驻的终端中运行 ——
-> 不加 `--wait` 时子进程会随父 shell 退出被 Job Object 回收。
-> 也可只拉指定模块：`python scripts/dev-start-backend.py judge-gateway judge-auth judge-user`。
+启动顺序与依赖关系（详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) §3.0.1）：
+
+| 阶段 | 组件 | 端口 | 为什么在这个位置 |
+|---|---|---|---|
+| 0 | MySQL / Redis / PostgreSQL / RocketMQ | 3307 / 6380 / 5433 / 9877+10921 | 任何服务连不上库都起不来 |
+| 1 | **judge-user** | 9082 | 只连 MySQL；**必须早于 judge-auth**（见下） |
+| 2 | **judge-auth** | 9081 | 启动期管理员引导 + 登录校验都要 Feign 调 user |
+| 3–5 | judge-problem / judge-submission / judge-contest / judge-worker / judge-ai | 9083 / 9084 / 9086 / 9085 / 9087 | 这些之间**并列**，分组只为输出好读 |
+| 6 | **judge-gateway** | 9080 | 路由指向上面全部 → 必须最后 |
+| 7 | judge-web · 监控栈 | 5174 · 9090/9093/3001 | 呈现层与可观测性，可后置 |
+
+> ⚠ **硬顺序只有三条**：基础设施先于任何服务；`judge-user` 先于 `judge-auth`；网关最后。
+> `judge-user` 排在前面的原因是实测踩出来的：`judge-auth` 的首个管理员引导一启动就经 Feign
+> 问 `judge-user`「有没有管理员」，顺序反了会被 catch 吞成一行 error ——
+> **症状是「服务全绿、健康检查全过，但没有管理员账号也没有凭据文件」**，
+> 像极了引导功能坏掉。`start-all.py` 把它变成启动期的一次明确失败。
+
+**也可只起后端（看护模式）**
+
+```bash
+python scripts/dev-start-backend.py --wait            # 全部 8 个服务，按依赖顺序
+python scripts/dev-start-backend.py judge-problem     # 只起指定模块
+```
+
+> `--wait` 为看护模式，父进程驻留期间子 JVM 存活；**必须**在支持后台常驻的终端（或受管后台任务）中运行
+> —— 不加 `--wait` 时子进程会随父 shell 退出被 Job Object 回收。
 > ⚠️ 本机 **`.sh` 一律无法执行**（被路由到黑名单 wsl.exe），`python` 须用绝对路径（见 [docs/CONTEXT.md](docs/CONTEXT.md) §7）。
 
 **前端（开发态）**
@@ -148,7 +179,9 @@ cd judge-web && npm run dev        # http://127.0.0.1:5174，/api 代理到 9080
 
 ```bash
 cd deploy/monitoring
-docker compose -f docker-compose.monitoring.yml up -d
+# ⚠ 必须带 --env-file：该 compose 的 Grafana 口令为 fail-closed 形式，漏带会直接拒绝启动
+#   （本机的 docker-compose 不读 shell 环境变量做插值，故不能靠 export）
+docker-compose --env-file ../../.env -f docker-compose.monitoring.yml up -d
 # Grafana http://localhost:3001   Prometheus http://localhost:9090
 ```
 
@@ -163,7 +196,7 @@ for p in 9080 9081 9082 9083 9084 9085 9086 9087; do
 done
 ```
 
-### 5.2 学员登录（经网关）
+### 5.2 登录（统一入口，无需选角色）
 
 ```bash
 curl -s -X POST http://localhost:9080/accounts/login \
@@ -171,12 +204,43 @@ curl -s -X POST http://localhost:9080/accounts/login \
   -d '{"cellPhone":"13900000001","password":"123456"}'
 ```
 
-返回 `R<LoginResultVO>`，含 `accessToken` / `refreshToken` / `userId` / `expireTime`(1800s)；
-`refreshToken` 同时以 HttpOnly Cookie 下发（`judge-refresh-token`），不进入响应体。
+**只有一个登录入口**，前端不需要也不允许指定「我是学员还是管理员」——角色由账号自身的
+`user.type`（1 员工 / 2 学员 / 3 教师）决定，后端据此签发对应的 token 与 refresh cookie：
+
+| 响应字段 | 说明 |
+|---|---|
+| `accessToken` / `refreshToken` / `userId` / `expireTime`(1800s) | 双 Token；`refreshToken` 只以 HttpOnly Cookie 下发，**不进响应体** |
+| `role` / `roleLabel` | `user.type` 与其中文名（管理员/学员/教师），由后端下发，前端不维护映射表 |
+| `mustChangePassword` | 引导期初始凭据文件是否仍在 —— 前端据此提示改密，**不阻断登录** |
+
+Cookie 名按角色区分：学员/教师 `judge-refresh-token`，员工 `judge-admin-refresh-token`
+（登录时写一枚并**清掉另一枚**，否则续签会读到过期身份导致「刚登录就被踢下线」）。
+
 种子账号：学员 `13900000001`~`13900000005`、教师 `13900000011`~`13900000012`，密码均为 `123456`。
+> 旧端点 `POST /accounts/admin/login` 保留为**兼容别名**（额外要求账号为员工，已标 `@Deprecated`），
+> 新代码请一律用 `/accounts/login`。
 
 > ⚠ 登录接口有令牌桶限流（2 req/s，突发 5，防爆破）。批量压测请用独立账号池，见 §5.8；
 > 压测前需按 `perf-test/README.md` §3.3 放宽限流，否则登录吞吐恒被钳在 2 req/s。
+
+### 5.2.1 当前账号的能力码（前端的全部鉴权依据）
+
+```bash
+curl -s http://localhost:9080/accounts/me/capabilities -H "Authorization: Bearer $TOKEN"
+```
+
+返回 `{role, roleAlias, roleLabel, home, menus[], perms[]}`：
+
+| 角色 | `perms` 数量 | `home` | `menus` |
+|---|---|---|---|
+| 学员 | 6 | `/problems` | 3（题库/竞赛/提交记录） |
+| 教师 | 16 | `/teacher/problems` | 6（含题目管理/创建竞赛/AI 知识库） |
+| 员工 | 20 | `/admin/users` | 10（含用户/标签/判题集群/系统监控） |
+
+**前端不参与任何鉴权推导**：它只把 `perms` 展平成 Set 供 `v-perm` 指令与 `user.can()` 查表，
+把 `menus` 按 `group` 分栏渲染。无权限的按钮**直接不渲染**（不是隐藏）；路由 `meta.perm`
+同样写能力码。能力集层次是严格的 学员 ⊂ 教师 ⊂ 员工，未知 `user.type` 一律给**空集**（fail-closed）。
+契约由 `python scripts/verify-authz.py`（56 项）守。
 
 ### 5.3 携带 Token 访问当前用户
 
@@ -218,15 +282,20 @@ Grafana 打开 <http://localhost:3001>（匿名只读；账号 `admin` / 密码�
 
 ### 5.6 管理员登录
 
-首个管理员由 judge-auth 启动时**安全引导生成**（不在 SQL 中硬编码）：
-凭据写入仓库根目录 `.bootstrap-credentials`，首次改密后自动删除。
+首个管理员由 judge-auth 启动时**安全引导生成**（不在 SQL 中硬编码，`sql/seed.sql` 里也确实没有管理员）：
+无管理员且凭据文件不存在时创建，凭据写入**仓库根目录** `.bootstrap-credentials`，首次改密后自动删除。
 
 ```bash
-cat .bootstrap-credentials                     # 查看初始凭据
-curl -s -X POST http://localhost:9080/accounts/admin/login \
+cat .bootstrap-credentials                     # 查看初始凭据（改密成功即消失）
+curl -s -X POST http://localhost:9080/accounts/login \
   -H 'Content-Type: application/json' \
-  -d '{"cellPhone":"13800000000","password":"123456"}'
+  -d '{"cellPhone":"13800000000","password":"<从凭据文件读取>"}'
 ```
+
+> ⚠ 凭据文件默认是**相对路径，按进程工作目录解析**。上面两条受支持的启动方式都把 cwd
+> 固定为仓库根，故落点就是 `<仓库根>/.bootstrap-credentials`；`judge-auth` 启动时会**无条件打印
+> 解析后的绝对路径**，找不到文件时以那行日志为准。
+> 手工 `java -jar` 时请自行保证 cwd，否则凭据会落到别处（并且登录响应里的改密提示会静默消失）。
 
 ### 5.7 接口文档
 
@@ -256,7 +325,8 @@ python perf-test/run-perf.py --plan load -J tgSubmit.threads=40 -J tgBrowse.thre
 ### 5.10 各阶段验收脚本（需基础设施 + 对应服务已启动）
 
 ```bash
-python scripts/verify-p1-login.py     # P1 登录链路，41 项断言
+python scripts/verify-p1-login.py     # P1 登录链路，43 项断言
+python scripts/verify-authz.py        # 统一登录 + 能力码（按钮级权限）契约，56 项断言（只读）
 python scripts/verify-p2.py           # P2 题目域与可见性隔离，20 项断言
 python scripts/verify-p3.py           # P3 判题全链路（需 4 个沙箱镜像），20 项断言
 python scripts/verify-p3-failover.py  # P3 故障转移混沌测试
@@ -323,6 +393,10 @@ judge-* 服务跑在**宿主机**上，不在监控栈的 Docker 网络内。抓
 - 仓库**零硬编码**：所有密码、JWT 密钥、LLM Key 一律走环境变量（`.env`，已 gitignore）。
 - `.bootstrap-credentials` 承载首个管理员初始凭据，改密后自动删除，不入库。
 - 网关白名单只放行必须匿名的端点，写操作一律不放行，由后端 `@RequireRole` fail-closed 兜底。
+- **鉴权信息只从后端来**：角色与能力码由 `judge-auth` 计算下发，前端只做渲染，不做任何
+  「角色 → 能做什么」的推导（`scripts/verify-authz.py` 有静态断言守着）。
+  能力码以 `user.type` 为唯一权威，**不启用 DB 里那六张 RBAC 表**（它们无种子数据，
+  启用会引入双源，一旦漂移就表现为「按钮画了但接口 403」）。
 - `/actuator/**` **不经网关暴露**（网关路由表不含该前缀），指标端点仅宿主机/监控网可达。
 - AI 点评的内部契约 `review-context` 要求学员侧 `maskHidden=true`，防止套出隐藏用例期望输出。
 

@@ -13,7 +13,7 @@
     而不是去读 `.env`。这样脚本自身不构成凭据泄露面，也可在任意机器上安全执行。
     凭据强度审计是另一件事，见 `scripts/rotate-credentials.py --audit`（需授权读取 .env）。
 
-    ⚠ 探针用的"默认密码"**不写死在代码里**，而是从 `deploy/monitoring/docker-compose.monitoring.yml`
+    探针用的"默认密码"**不写死在代码里**，而是从 `deploy/monitoring/docker-compose.monitoring.yml`
       的 `${GRAFANA_ADMIN_PASSWORD:-<默认值>}` 表达式解析 —— 该表达式才是"不配 .env 会怎样"
       的唯一权威。写死一份副本的后果是：以后改了 compose 默认值，这里会变成一条**恒真**的
       检查（探针密码永远登不进去，于是永远 PASS），把"没改默认密码"这个真问题悄悄放过去。
@@ -89,6 +89,22 @@ def _compose_default(var: str, fallback: str) -> str:
         return fallback
     m = re.search(r"\$\{" + re.escape(var) + r":-([^}]*)\}", text)
     return m.group(1) if m else fallback
+
+
+def _compose_is_fail_closed(var: str) -> bool:
+    """判断变量在监控 compose 里是否写成 fail-closed 形式（`${VAR:?提示}`）。
+
+    与「带默认值」（可缺省）相对：fail-closed 表示"不配就不给启动"，
+    因此**结构上已不存在默认凭据**。两者必须分开判定 —— 否则 fail-closed
+    会被上面的 `_compose_default()` 当成"解析不到默认值"，进而误报一条
+    "结论仅供参考"的 WARN；而此时的真正问题其实变成了
+    「运行中的容器是不是还停留在旧默认口令上，需要重建才生效」。
+    """
+    try:
+        text = _COMPOSE_MON.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return re.search(r"\$\{" + re.escape(var) + r":\?", text) is not None
 
 
 def grafana_probe_credentials() -> tuple[str, str]:
@@ -220,18 +236,28 @@ def check_exposure(base: str) -> None:
 
     # B4 Grafana 默认密码是否仍在使用
     gf_user, gf_pass = grafana_probe_credentials()
-    if not _compose_default("GRAFANA_ADMIN_PASSWORD", ""):
+    gf_fail_closed = _compose_is_fail_closed("GRAFANA_ADMIN_PASSWORD")
+    if not gf_fail_closed and not _compose_default("GRAFANA_ADMIN_PASSWORD", ""):
         add("WARN", "B4 Grafana 默认密码已更换",
             "无法从 docker-compose.monitoring.yml 解析出默认密码表达式，"
             "\n          本次使用内置 fallback 作为探针 —— 结论仅供参考。")
     code, _, _ = http("http://127.0.0.1:3001/api/user",
                       headers=basic_auth(gf_user, gf_pass), timeout=4)
     if code == 200:
-        add("FAIL", "B4 Grafana 默认密码已更换",
-            f"{gf_user}/{gf_pass} 仍可登录 —— .env 未覆盖 GRAFANA_ADMIN_PASSWORD，"
-            "\n          走的是 compose 默认值。生产必须覆盖（见 scripts/rotate-credentials.py）。")
+        if gf_fail_closed:
+            add("FAIL", "B4 Grafana 默认密码已更换",
+                f"{gf_user}/{gf_pass} 仍可登录 —— compose 已改为 fail-closed（不再有默认口令），"
+                "\n          但**正在运行的容器仍是旧默认值**：环境变量只在容器创建时注入一次，"
+                "\n          必须重建才生效 —— cd deploy/monitoring && docker-compose"
+                " --env-file ../../.env -f docker-compose.monitoring.yml up -d --force-recreate grafana")
+        else:
+            add("FAIL", "B4 Grafana 默认密码已更换",
+                f"{gf_user}/{gf_pass} 仍可登录 —— .env 未覆盖 GRAFANA_ADMIN_PASSWORD，"
+                "\n          走的是 compose 默认值。生产必须覆盖（见 scripts/rotate-credentials.py）。")
     elif code == 401:
-        add("PASS", "B4 Grafana 默认密码已更换", "默认凭据登录被拒（401）")
+        add("PASS", "B4 Grafana 默认密码已更换",
+            "默认凭据登录被拒（401）"
+            + ("；compose 已 fail-closed，结构上不再存在默认口令" if gf_fail_closed else ""))
     else:
         add("SKIP", "B4 Grafana 默认密码已更换", f"Grafana 不可达（{code}）")
 
@@ -280,7 +306,9 @@ def check_runtime(base: str) -> None:
         elif workers < 2:
             add("WARN", "C2 判题机在线",
                 f"judge_workers_online = {workers}（单实例）。"
-                "\n          实测单 worker 判题吞吐约 1.5 题/秒，扩容优先级：判题机实例数 > Web 副本数。")
+                "\n          实测单实例判题吞吐约 0.95 题/秒（2026-09-22 重标，旧值 1.5 已证伪）。"
+                "\n          ⚠ 但**不要想当然扩容**：本机实测 3 实例吞吐几乎不变（0.96 题/s），"
+                "\n          且未限制消费并发时会让正确解被判假 TLE —— 先读 docs/PERF.md §3.7。")
         else:
             add("PASS", "C2 判题机在线", f"judge_workers_online = {workers}")
 

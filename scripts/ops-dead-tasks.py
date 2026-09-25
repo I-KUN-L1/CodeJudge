@@ -12,7 +12,7 @@
     数据库口令从**容器内**的环境变量取，不经过本脚本、不落日志、不进 shell 历史。
     这是本项目处理数据库凭据的既定方式（对比 `scripts/rotate-credentials.py` 说明）。
 
-⚠ `purge` 是**软删**（`deleted=1`）而不是 DELETE：
+ `purge` 是**软删**（`deleted=1`）而不是 DELETE：
     · 记录仍在表里，`restore` 可一键回滚；
     · `judge_dead_tasks` 指标由 MyBatis-Plus 逻辑删除自动过滤（`logic-delete-field: deleted`），
       所以 purge 后指标立即归零，`JudgeDeadTasksPresent` 这条 critical 告警随之熄灭；

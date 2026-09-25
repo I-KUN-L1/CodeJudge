@@ -22,7 +22,7 @@
 #     cd deploy/monitoring && docker-compose -f docker-compose.monitoring.yml \
 #         up -d --force-recreate alertmanager
 #
-# ⚠ **webhook 的坑（务必先读）**：Alertmanager 原生 webhook 发的是**自家 JSON 结构**
+# **webhook 的坑（务必先读）**：Alertmanager 原生 webhook 发的是**自家 JSON 结构**
 #   （{version, groupKey, alerts:[...]}），而企业微信机器人要的是
 #   {"msgtype":"markdown","markdown":{"content":"..."}}、钉钉要
 #   {"msgtype":"text","text":{"content":"..."}}。**直接把机器人 URL 填进来是收不到消息的**，

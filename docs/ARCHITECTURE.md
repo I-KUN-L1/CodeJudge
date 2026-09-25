@@ -62,10 +62,10 @@ judge-auth  judge-user  judge-problem  judge-submission judge-contest judge-ai
 | 网关 → 服务 | `uri: ${GW_*_URI}` 静态 http 直连（**单值**） | 改配置 + **重启网关**（入口瞬断） |
 | 服务 → 服务 | `@FeignClient(value="judge-xxx")` **服务名** → `SimpleDiscoveryClient` 的 `simple.instances` 静态列表 | 改配置 + 重启该服务（网关不动） |
 
-> 📌 **2026-09-22 更正**：本段原写「服务间 Feign 也走静态 `url` 配置」，与实况不符 ——
-> 实测 5 个 `@FeignClient` 全部使用**服务名**而非硬编码 `url`（地址来自 `simple.instances`）。
-> 这个差别很重要：正因为代码里是服务名、走的是 `DiscoveryClient` 抽象，**将来若切注册中心，
-> Java 代码零改动**。
+> 📌 **东西向调用用的是服务名，不是静态 `url`**：实测 5 个 `@FeignClient` 全部使用
+> `value = "judge-xxx"`，地址来自 `SimpleDiscoveryClient` 的 `simple.instances`。
+> 这个差别很重要：正因为代码里是服务名、走的是 `DiscoveryClient` 抽象，
+> **将来若切注册中心，Java 代码零改动**。
 
 **代价**：新增实例必须改配置并重启。判题机多实例（9085/9185/9285）靠 MQ 消费组天然分流，
 **不需要服务发现** —— 这是本决策最有力的论据：最需要扩容的组件恰好落在服务发现的作用域之外。

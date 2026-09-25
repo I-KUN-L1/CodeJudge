@@ -9,13 +9,21 @@ import { http } from '@/api/http';
 
 /* ============================ 认证（judge-auth :9081） ============================ */
 export const authApi = {
+  /**
+   * 登录 —— **唯一入口**。角色由后端按账号自身属性判定，前端不传、也不需要知道。
+   * 旧的 /accounts/admin/login 已废弃（保留在服务端只为兼容外部调用方），前端不再引用。
+   */
   login: (data) => http.post('/accounts/login', data),
-  adminLogin: (data) => http.post('/accounts/admin/login', data),
   logout: () => http.post('/accounts/logout'),
   refresh: () => http.post('/accounts/refresh'),
   firstChangePassword: (data) => http.post('/accounts/password/first-change', data),
-  myMenus: () => http.get('/menus/me'),
-  jwks: () => http.get('/jwks'),
+
+  /**
+   * 当前账号的能力画像：可见导航项 + 已授权能力码 + 登录落地路由。
+   * 这是前端渲染按钮/菜单的**唯一**依据 —— 前端不再有「角色 → 能做什么」的推导。
+   */
+  capabilities: () => http.get('/accounts/me/capabilities'),
+
 };
 
 /* ============================ 用户（judge-user :9082） ============================ */

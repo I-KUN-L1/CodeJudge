@@ -9,6 +9,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,12 +46,16 @@ public class LlmClient {
 
     public LlmClient(LlmProperties properties) {
         this.properties = properties;
+        // responseTimeout：LLM 网关挂起时若无上限，MQ 消费线程与 boundedElastic 会被无限占用
+        reactor.netty.http.client.HttpClient httpClient = reactor.netty.http.client.HttpClient.create()
+                .responseTimeout(Duration.ofSeconds(120));
         this.webClient = WebClient.builder()
                 .baseUrl(properties.getBaseUrl())
                 .defaultHeader("Authorization", "Bearer " + properties.getApiKey())
                 // 显式声明接受 SSE 流，避免部分厂商按普通 JSON 聚合响应
                 .defaultHeader("Accept", "text/event-stream")
                 .codecs(c -> c.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .clientConnector(new org.springframework.http.client.reactive.ReactorClientHttpConnector(httpClient))
                 .build();
     }
 

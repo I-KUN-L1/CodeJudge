@@ -3,7 +3,7 @@
     <div class="cj-card">
       <div class="cj-card__head">
         <span class="cj-title">个人中心</span>
-        <el-tag size="small" effect="plain">{{ user.typeLabel }}</el-tag>
+        <el-tag size="small" effect="plain">{{ user.roleLabel }}</el-tag>
       </div>
 
       <div class="cj-card__body">
@@ -86,7 +86,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { userApi } from '@/api';
+import { authApi, userApi } from '@/api';
 import { useUserStore } from '@/stores/user';
 import { fmtTime } from '@/utils/format';
 
@@ -148,7 +148,32 @@ async function changePwd() {
   }
   changing.value = true;
   try {
-    await userApi.changePassword({ oldPassword: pwd.oldPassword, newPassword: pwd.newPassword });
+    // ── 两条改密路径，按是否处于引导态分流 ────────────────────────────────
+    // 必须分流的原因：删除 `.bootstrap-credentials` 的职责在 judge-auth，
+    // 而 `PUT /students/password`（judge-user）只改库里的 BCrypt 摘要、碰不到那个文件。
+    // 若引导态下走后者，密码是改了，但明文初始口令文件会永久留在磁盘上，
+    // 且 isBootstrapPending() 恒真 ⇒ 每次 STAFF 登录都被提示改密 —— 需求
+    // 「改密后该文件自动消失」在这条路径上静默失效。
+    // 故引导态一律走 judge-auth 的 first-change（改库 + 删文件，见
+    // AdminBootstrapService#changeBootstrapPassword）。
+    if (user.mustChangePassword) {
+      // 该接口靠手机号定位账号（走网关白名单、不带登录态），取不到就早失败，
+      // 不要等后端回一句「账号不存在」让人去查登录态
+      const cellPhone = profile.value?.cellPhone || user.profile?.cellPhone;
+      if (!cellPhone) {
+        ElMessage.error('未能取到本账号手机号，请刷新页面后重试');
+        return;
+      }
+      await authApi.firstChangePassword({
+        cellPhone,
+        oldPassword: pwd.oldPassword,
+        newPassword: pwd.newPassword,
+      });
+      // 文件已删除，提醒条随之撤下（不要等下次登录才消失）
+      user.setMustChangePassword(false);
+    } else {
+      await userApi.changePassword({ oldPassword: pwd.oldPassword, newPassword: pwd.newPassword });
+    }
     ElMessage.success('密码已修改，请重新登录');
     await user.logout();
     router.push({ name: 'login' });

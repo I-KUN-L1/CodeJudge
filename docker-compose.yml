@@ -4,7 +4,7 @@
 # 组件：MySQL 8 / Redis 7 / PostgreSQL + pgvector / RocketMQ 4.9.7 (+Dashboard) / MinIO
 # 用法：cp .env.example .env && 填写密码 && docker compose up -d
 #
-# ⚠ 端口避让：本机同时存在 zx-learn（占用 3306/6379/5432/9876/10909/10911/10912/18080），
+# 端口避让：本机同时存在 zx-learn（占用 3306/6379/5432/9876/10909/10911/10912/18080），
 #   CodeJudge 整体换段，其中 **RocketMQ broker 的三个端口最容易漏改**，
 #   与 deploy/rocketmq/broker.conf 的 listenPort 必须一致：
 #     namesrv 9877 ｜ broker 10919(fast) / 10921(main) / 10922(HA) ｜ dashboard 18081
@@ -15,15 +15,33 @@ services:
     image: mysql:8.0
     container_name: codejudge-mysql
     restart: always
+    # 入口点包装：MySQL 8 启动时**会拒绝加载"全局可写"的配置文件**
+    #    （`World-writable config file '/etc/mysql/conf.d/my.cnf' is ignored.`），
+    #    而 Windows 宿主的 bind-mount 文件权限位固定为 0777、在容器内 chmod 也不生效
+    #    （9p/virtiofs 不落权限位）。
+    #    后果极隐蔽：容器照常 healthy、服务照常连接，但 my.cnf 里**一项配置都没生效**
+    #    —— 实测曾长期停留在 REPEATABLE-READ / buffer_pool 128M / max_connections 151。
+    #    对策：把 my.cnf 挂到**非自动加载路径**，启动时用 install 复制成 0644 落到 conf.d
+    #    再交回原入口点，让 `!includedir /etc/mysql/conf.d/` 正常加载它。
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        install -m 0644 /opt/codejudge/my.cnf /etc/mysql/conf.d/my.cnf
+        exec /usr/local/bin/docker-entrypoint.sh mysqld
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中配置 MYSQL_ROOT_PASSWORD}
       TZ: Asia/Shanghai
     ports:
       # 宿主机 3306 已被 zx-learn 占用，默认映射 3307；如仍冲突可在 .env 配 MYSQL_BIND_PORT
-      - "${MYSQL_BIND_PORT:-3307}:3306"
+      # 绑定回环：中间件不对局域网暴露（root 口令的 MySQL/Redis/PG 挂在 0.0.0.0 上，
+      # 接入不可信 Wi-Fi 即全网可访问）。确需局域网访问时用 .env 的 BIND_IP 覆盖
+      - "${BIND_IP:-127.0.0.1}:${MYSQL_BIND_PORT:-3307}:3306"
     volumes:
       - codejudge-mysql-data:/var/lib/mysql
-      - ./deploy/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+      # 挂到非 includedir 路径，理由见上方 entrypoint 注释
+      - ./deploy/mysql/my.cnf:/opt/codejudge/my.cnf:ro
       # 01/02 前缀保证执行顺序：先建库建表，再灌种子数据
       - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
@@ -41,7 +59,7 @@ services:
     restart: always
     ports:
       # 宿主机 6379 已被 zx-learn 占用，映射 6380
-      - "${REDIS_BIND_PORT:-6380}:6379"
+      - "${BIND_IP:-127.0.0.1}:${REDIS_BIND_PORT:-6380}:6379"
     command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD:?请在 .env 中配置 REDIS_PASSWORD}
     volumes:
       - codejudge-redis-data:/data
@@ -64,7 +82,7 @@ services:
       TZ: Asia/Shanghai
     ports:
       # 宿主机 5432 已被 zx-learn 占用，映射 5433
-      - "${POSTGRES_BIND_PORT:-5433}:5432"
+      - "${BIND_IP:-127.0.0.1}:${POSTGRES_BIND_PORT:-5433}:5432"
     volumes:
       - codejudge-pg-data:/var/lib/postgresql/data
       - ./deploy/pgvector/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -81,7 +99,7 @@ services:
     restart: always
     ports:
       # 宿主机 9876 已被 zx-learn 占用，映射 9877
-      - "${ROCKETMQ_NAMESRV_BIND_PORT:-9877}:9876"
+      - "${BIND_IP:-127.0.0.1}:${ROCKETMQ_NAMESRV_BIND_PORT:-9877}:9876"
     command: sh mqnamesrv
 
   rocketmq-broker:
@@ -98,12 +116,12 @@ services:
     ports:
       # 与 deploy/rocketmq/broker.conf 的 listenPort=10921 严格对应：
       #   fastRemotingPort = 10919，主端口 = 10921，HA 端口 = 10922
-      - "10919:10919"
-      - "10921:10921"
-      - "10922:10922"
+      - "${BIND_IP:-127.0.0.1}:10919:10919"
+      - "${BIND_IP:-127.0.0.1}:10921:10921"
+      - "${BIND_IP:-127.0.0.1}:10922:10922"
     volumes:
       - ./deploy/rocketmq/broker.conf:/home/rocketmq/rocketmq-4.9.7/conf/broker.conf:ro
-      # ⚠ 这里**故意不挂载 /home/rocketmq/store**（踩坑记录 2026-09-20）：
+      # 这里**故意不挂载 /home/rocketmq/store**（踩坑记录 2026-09-20）：
       #   apache/rocketmq 镜像内并不存在该目录，容器进程以 uid=3000(rocketmq) 运行，
       #   而 Docker 为命名卷创建的挂载点是 root:root(drwxr-xr-x) —— 进程无写权限，
       #   broker 会在打印任何日志之前直接退出（ExitCode=253，日志为空，极难定位）。
@@ -124,10 +142,10 @@ services:
     ports:
       # 宿主机 8080 预留给 judge-gateway 统一入口，控制台映射到 18081
       # 访问：http://localhost:18081
-      - "${ROCKETMQ_CONSOLE_BIND_PORT:-18081}:8080"
+      - "${BIND_IP:-127.0.0.1}:${ROCKETMQ_CONSOLE_BIND_PORT:-18081}:8080"
 
   # ---------- MinIO：判题代码（超长代码）与题目附件的对象存储 ----------
-  # ⚠ 放在 `storage` profile 下，**默认不随 `docker compose up -d` 启动**，原因见下：
+  # 放在 `storage` profile 下，**默认不随 `docker compose up -d` 启动**，原因见下：
   #   · MinIO 不是 P1 链路（登录/RBAC/用户）的依赖，P3 才用于存放超长判题代码；
   #   · 部分受限网络环境下 `minio/minio` 镜像拉取会被仓库拒绝（实测 error from registry: denied），
   #     若不加 profile，一个非关键组件会把整条 `docker compose up -d` 拖失败。
@@ -144,8 +162,8 @@ services:
       TZ: Asia/Shanghai
     ports:
       # 9000 = S3 API（应用访问），9001 = Web 控制台（浏览器访问）
-      - "${MINIO_API_BIND_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_BIND_PORT:-9001}:9001"
+      - "${BIND_IP:-127.0.0.1}:${MINIO_API_BIND_PORT:-9000}:9000"
+      - "${BIND_IP:-127.0.0.1}:${MINIO_CONSOLE_BIND_PORT:-9001}:9001"
     volumes:
       - codejudge-minio-data:/data
     command: server /data --console-address ":9001"

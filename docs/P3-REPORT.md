@@ -5,6 +5,36 @@
 
 ---
 
+> ## 首次投递（Tag `CREATED`）缺失缺陷及修复
+>
+> **首次投递在提交主路径上整条缺失**：
+> `SubmissionService.createSubmissionWithTask()` 在 `judgeTaskMapper.insert(task)` 之后直接返回，
+> 从未调用 `JudgeEventPublisher.publishTaskCreated()`（该方法零调用点）。
+>
+> **实测后果**：任务只能等 `JudgeCompensationService` 的「滞留重发」兜底
+> （`fixedDelay=10s` + `pending-rescue-delay-ms=15000` + `RETRY_DELAY_LEVEL=2`=5s），
+> 判题端到端从 **~3.4s 恶化到 ~30s**（DB 实测 `update_time − submit_time` = 27 000/29 000/30 000 ms，
+> 而同期沙箱内 `time_ms` 仅 23–30ms）。worker 侧日志 1158/1158 条均为 `source=RETRY`。
+>
+> **为何 P3/P6 验收未拦住**：`verify-p3.py` 断言的是「最终能出 AC」，**不设时限** ——
+> 补偿路径让它照样通过（只是慢 10×）。属「假绿」家族：功能断言通过 ≠ 设计路径生效。
+>
+> **修复方式**（2026-09-22，1 行附加式，未改动任何既有逻辑）：
+>
+> ```java
+> // SubmissionService.createSubmissionWithTask()，judgeTaskMapper.insert(task) 之后
+> TxSupport.afterCommit(() -> eventPublisher.publishTaskCreated(submission.getId(), task.getId(), 0));
+> ```
+>
+> 修复后实测：`投递判题任务：ok=true` 出现、worker 侧 `source=CREATED`、端到端 **3.4–4.5s**。
+> 滞留重发**保留**为兜底（覆盖"MQ 发送失败"这一真实场景），二者是主路径与兜底的关系，不是二选一。
+>
+> 📌 连带更正：`docs/PERF.md` §3.3 的「单实例判题吞吐 ≈1.5 题/秒」是在该缺陷路径下测得的
+> **积压排空速率**（被 10s 扫描周期限流），并非 worker 的真实处理能力 ——
+> 该项待 1 vs 3 worker 对比轮次重新标定。
+
+---
+
 ## 一、交付物总览
 
 | 模块 / 资产 | 说明 |

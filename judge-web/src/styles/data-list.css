@@ -1,0 +1,358 @@
+/* ==========================================================================
+   数据列表页 —— 共享骨架
+   --------------------------------------------------------------------------
+   本项目有 12 个「列表页」（题库 / 提交 / 竞赛 / 榜单 / 用户 / 标签 / 判题集群
+   / 监控明细 …）。它们此前各自在 <style scoped> 里手写间距、圆角、对齐，
+   于是同一个东西在四五个文件里有四五种写法 —— 这是"标签与数据行不对齐"
+   这类缺陷的**土壤**：修一个文件不影响另一个，漏一个就长期存在。
+
+   本文件把列表页拆成四层，每层只解决一件事：
+
+     §1 页头     标题 + 读数 + 操作        —— 先回答"这是什么、有多少"
+     §2 工具条   筛选控件                   —— 只放筛选，不放操作
+     §3 数据面板 表格 + 分页                —— 表格需要比页面底更亮的表面
+     §4 单元格   对齐契约                   —— 全篇最重要的一节，见下
+
+   ⚠️ 对齐契约（§4）是硬约定，新增列表页必须遵守：
+     · 基准    同一张表里的「数据列」一律**右对齐** —— 基准实现见题库的
+               「通过率」与「操作」两列。列间混着左/中/右三种对齐是缺陷
+               （题库的 标签/难度/限制/通过率/操作 曾同时存在三种）
+     · 数字列   align="right" + .cj-num（或 .cj-num-dim）—— 从右边缘对齐才能竖着比大小
+     · 标识列   ID / 手机号 / 哈希 一律等宽 + `.cj-cell-id` 禁折行，数值型右对齐
+     · 标签列   **独立成列**，绝不内联在标题/名称后面（原因见 §4.3 注释）；
+               列加 align="right" 的同时，TagCell 要传 `align="end"`
+               （flex 容器不响应 text-align，只加列属性推不动标签）
+     · 状态列   居中；同一页里所有状态列用同一种对齐方式
+     · 单元格每一行都必须对齐到同一条边（左或右），不允许混排
+     · 两行堆叠  主值用 `.cj-cell-stack__v`，单值数据列用 `.cj-cell-num`；
+               两者共用同一条 CSS 规则，防止各自漂移
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   §1 页头
+   标题区不套卡片：页头是"页面"的属性，不是"卡片"的属性。
+   -------------------------------------------------------------------------- */
+.cj-pagehead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.cj-pagehead__title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-display);
+  letter-spacing: var(--ls-none); /* 中文不加负字距 */
+  color: var(--fg);
+}
+
+/* 元数据（共 N 条 / 探测于 …）用等宽小字挂在标题右侧 */
+.cj-pagehead__meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+}
+.cj-pagehead__meta b {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semi);
+  color: var(--fg-2);
+}
+
+/* 操作区固定在页头右端（靠 .cj-spacer 推开），不与标题抢位置 */
+.cj-pagehead__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   §2 工具条
+   -------------------------------------------------------------------------- */
+.cj-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding: var(--sp-3) 0;
+}
+/* 宽度用固定值而不是 flex：筛选控件的宽度变化会让整条工具条重排 */
+.cj-toolbar__kw {
+  width: 232px;
+}
+/* 数字过滤框（按 ID 过滤）比关键字框窄一档：数值有明确长度上界 */
+.cj-toolbar__num {
+  width: 168px;
+}
+.cj-toolbar__sel {
+  width: 140px;
+}
+.cj-toolbar__chk {
+  margin-left: var(--sp-1);
+}
+
+/* --------------------------------------------------------------------------
+   §3 数据面板
+   表格单独放在一块面板上：它需要一块比页面底更亮的表面承载密集文字。
+   页头与工具条则直接坐在页面底上 —— 不给"外壳"也套卡片。
+   -------------------------------------------------------------------------- */
+.cj-panel {
+  background: var(--surface-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+/* 面板内的表格：左右各留 4px，让首列文字与面板边线不至于贴死 */
+.cj-panel__table {
+  width: 100%;
+  overflow-x: auto;
+  padding: 0 var(--sp-1);
+}
+.cj-panel__table .el-table {
+  min-width: 640px;
+}
+
+/* 面板内的说明/读数区（可选） */
+.cj-panel__note {
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--line-1);
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+}
+
+/* 分页条：坐在地板（surface-2）上，用一条刻线与表体分开。
+   刻意**不**用 margin 把它推出面板 —— 分页属于这张表，不属于页面 */
+.cj-pager {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-3);
+  border-top: 1px solid var(--line-1);
+  background: var(--surface-2);
+}
+
+/* 面板之间的竖直间距：用相邻兄弟选择器，避免每处手写 margin-top */
+.cj-panel + .cj-panel,
+.cj-card + .cj-panel,
+.cj-panel + .cj-card {
+  margin-top: var(--sp-4);
+}
+
+/* --------------------------------------------------------------------------
+   §4 单元格 —— 对齐契约
+   -------------------------------------------------------------------------- */
+
+/* §4.1 标识 + 名称：用 grid 固定 ID 列宽。
+   否则 #12 与 #1234 宽度不同，名称的左边缘会参差不齐，整列就没法扫
+
+   ⚠️ ID 轨道用 `max-content`，**不能再写死 `3.6em`**。
+   `3.6em` 是按 4 位题目号（`#4001`）算的：约 5 字符 ≈ 44px。但本项目的竞赛 id /
+   提交 id 是**雪花号**（19 位），渲染成字符串是 `#2102698982248611841` 共 20 字符。
+   实测（logs/tmp/probe-hide-sm.cjs）：ID 轨道宽 50.4px，而文字墨迹宽 120px ——
+   溢出 69.6px **直接压在右侧标题的起始位置上**，这就是"竞赛界面文字重叠"。
+   （注意：量的是元素盒子会得出"无重叠"的假结论，必须量文字墨迹的 Range 矩形。）
+
+   `max-content` 让轨道随最长 ID 自适应：同一页里 ID 位数一致（题目都是 4 位、
+   竞赛都是 19 位），所以各行标题的左边缘仍然共用同一条线，扫读性不受影响。
+
+   第 2 列必须是 `minmax(0, 1fr)` 而不是裸 `1fr`：grid 里 `1fr` 的下限是
+   `auto`(= min-content)，长标题会把轨道**撑破**而不是走 `__name` 的省略号，
+   必须显式把下限压到 0，ellipsis 才生效。 */
+.cj-cell-idname {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  /* 行间距 1px（与 .cj-cell-stack 一致），列间距 8px。
+     这里**必须**分开写 `column-gap` —— 之前写的是 `row-gap: 1px; gap: 8px;`，
+     而 `gap` 是 row+column 的简写且写在后面，会把 row-gap 覆盖回 8px，
+     于是竞赛标题与副行的行距比其他两行堆叠单元格大一档，行高节奏对不上 */
+  column-gap: var(--sp-2);
+  row-gap: 1px;
+}
+.cj-cell-idname__id {
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+  text-align: right; /* 右对齐：位数增长时左边位空出来，名称列纹丝不动 */
+  white-space: nowrap;
+  /* 兜底：只有在单元格窄到连 ID 都放不下时才会触发（正常列宽下 max-content
+     已经装得下），此时宁可走省略号，也不要溢出到标题上。完整 ID 见 title 属性 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cj-cell-idname__name {
+  min-width: 0; /* 允许被压缩，否则上面的 minmax(0,1fr) 仍挡不住长标题撑破轨道 */
+  font-weight: var(--fw-medium);
+  color: var(--fg);
+  line-height: var(--lh-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 可选副行（如竞赛的赛程说明）。
+   **必须显式占第 2 列** —— 否则它会落到第 1 列（ID 那一栏），
+   副行文字就会比标题行左凸出 3.6em，正是"同一列里左右不齐"的典型形态。
+   没有副行内容时组件渲染 "—" 占位，保证同行各行的行高一致 */
+.cj-cell-idname__sub {
+  grid-column: 2;
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* §4.2 主值 + 副值两行：两行必须对齐到同一条边，
+   否则主数字在右、副说明在左，眼睛要来回跳。
+
+   注意 `align-items` 控制的是**行盒**，文字内部的对齐靠 text-align ——
+   两者都要写，只写一个会出现"盒子右对齐、文字左对齐"的错位 */
+.cj-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: var(--lh-tight);
+}
+.cj-cell-stack--end {
+  align-items: flex-end;
+  text-align: right;
+}
+.cj-cell-stack--start {
+  align-items: flex-start;
+  text-align: left;
+}
+/* 主值排版。**单值数字列（.cj-cell-num）与它共用同一份声明** ——
+   像竞赛的「题目 / 报名」这种只有一个数字的列，没有副值可堆，不需要 stack 包装，
+   但必须和两行堆叠列的主值长得一样（同字号、同字重、同色），
+   否则同一张表里"赛程的日期是半粗、题目数是常规"，读起来是两套数字。
+   合并成一条规则是为了让这两处**不可能各自漂移** */
+.cj-cell-stack__v,
+.cj-cell-num {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--fg);
+}
+.cj-cell-stack__v--null {
+  font-weight: var(--fw-normal);
+  color: var(--fg-3);
+}
+.cj-cell-stack__sub {
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+}
+
+/* §4.3 标签列
+   **标签必须独立成列，绝不内联在标题后面。** 两个理由：
+     ① 标签是筛选维度，独立成列后才可沿列扫读；
+     ② 内联 + flex-wrap 会让有标签的行高 64px、无标签的 50px，
+        同一张表的行距节奏被打断（实测行高分布 [50,64]）。
+   列内一律 nowrap：换行会把行高撑开，正是要消掉的问题。
+   超出 N 个时由组件折成 +N，见 components/TagCell.vue */
+.cj-cell-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-wrap: nowrap;
+  overflow: hidden;
+  min-height: 20px; /* = el-tag--small 的高度，保证无标签行与有标签行等高 */
+}
+/* 标签靠右：与同一张表里其余数据列的右对齐基准一致。
+   flex 容器**不响应 `text-align`**，光给列加 align="right" 也推不动标签，
+   必须显式改主轴对齐 —— 这是"标签列看起来没跟着对齐"的原因 */
+.cj-cell-tags--end {
+  justify-content: flex-end;
+}
+.cj-cell-tags__more {
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+
+/* §4.4 数字：等宽 + 右对齐。
+   任何一个会出现两次以上的数字都应加 .cj-num 或 .cj-num-dim。
+   注意 .cj-num-dim 是**既有** .cj-dim 的等宽版（原先是 cj-mono + cj-dim 两个类
+   一起写，散落在 20 多处），含义是"次要的数字"：既降色又缩小字号，
+   但保持等宽 —— 否则同一列里数字与非数字的字宽不同，右边缘会错开 */
+.cj-num-dim {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+}
+
+/* §4.5 标识类数字（雪花号 / 手机号 / 哈希）：**绝不折行**。
+   el-table 的 `.cell` 默认 `white-space: normal; word-break: break-all`，
+   会把 19 位雪花号从中间劈成两行 —— 实测提交列表**每一行**的提交号都断了：
+       #2102699920
+       8152733985
+   数字断行之后既读不出量级，也不再看得出"这两行是同一个 id"。
+   配套约束：列宽必须按 `#` + 19 位留够（等宽 12px 下约 168px），
+   只加 nowrap 不加宽只会把文字挤到裁切边界上。 */
+.cj-cell-id {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   §5 读数卡片（规模概览）
+   监控页 / 知识库页 / 判题集群页各有一组"大数字 + 小标题"的方块。
+   此前三处各写了一份（字号 24/26、圆角 10px、内边距 12px 16px 各不相同）。
+   -------------------------------------------------------------------------- */
+.cj-stats {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.cj-stat {
+  flex: 1 1 160px;
+  min-width: 148px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.cj-stat__v {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-display);
+  color: var(--fg);
+}
+.cj-stat__v--bad {
+  color: var(--wa);
+}
+.cj-stat__k {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+}
+/* 说明型方块：不参与读数比较，故去掉底色与实线边 */
+.cj-stat--note {
+  flex: 1 1 380px;
+  background: transparent;
+  border-style: dashed;
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  line-height: var(--lh-base);
+}
+
+/* --------------------------------------------------------------------------
+   §6 窄屏
+   断点沿用既有约定（1100 / 900 / 640）
+   -------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .cj-toolbar__kw,
+  .cj-toolbar__num,
+  .cj-toolbar__sel {
+    width: 100%;
+  }
+  .cj-pagehead__actions {
+    width: 100%;
+  }
+}

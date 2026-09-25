@@ -1,0 +1,504 @@
+/* ==========================================================================
+   Element Plus 主题对齐
+   --------------------------------------------------------------------------
+   在 element-plus/dist/index.css 与 theme-chalk/dark/css-vars.css **之后**引入。
+
+   策略：不动任何 EP 组件的模板用法，只覆盖它的 CSS 变量与少量结构样式。
+   这样 25 个视图零改动即可继承新设计语言，也不存在功能回归风险。
+
+   一处刻意的分歧（不是疏漏）：
+     --el-color-primary  保持 = 强调色（链接 / 焦点环 / 复选框选中 / 标签页激活）
+     .el-button--primary  单独改为石墨色
+   理由：「外壳无色、数据有色」—— 按钮是大面积外壳元素，应保持无彩度；
+   而勾选态、焦点、链接是小面积**状态指示**，才配用强调色。
+   这也是 60-30-10 法则的正确落法：强调色稀有才有力。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   浅色
+   -------------------------------------------------------------------------- */
+:root {
+  /* 形态 */
+  --el-font-family: var(--font-sans);
+  --el-font-size-base: var(--fs-md);
+  --el-border-radius-base: var(--r-md);
+  --el-border-radius-small: var(--r-sm);
+  --el-border-radius-round: var(--r-lg);
+
+  /* 文字：占位符同样按正文标准要求 4.5:1 */
+  --el-text-color-primary: var(--fg);
+  --el-text-color-regular: var(--fg-2);
+  --el-text-color-secondary: var(--fg-3);
+  --el-text-color-placeholder: var(--fg-3);
+  --el-text-color-disabled: var(--fg-3);
+  --el-text-color-primary-inverse: var(--fg-on-ink);
+
+  /* 边框：EP 的 light/lighter 系当作发丝线，base 起才是可交互控件边界 */
+  --el-border-color-extra-light: var(--line-1);
+  --el-border-color-lighter: var(--line-1);
+  --el-border-color-light: var(--line-1);
+  --el-border-color: var(--line-2);
+  --el-border-color-dark: var(--line-3);
+  --el-border-color-darker: var(--line-3);
+
+  /* 填充 */
+  --el-fill-color-blank: var(--surface-1);
+  --el-fill-color-extra-light: var(--surface-1);
+  --el-fill-color-lighter: var(--surface-2);
+  --el-fill-color-light: var(--surface-2);
+  --el-fill-color: var(--surface-3);
+  --el-fill-color-dark: var(--surface-3);
+  --el-fill-color-darker: var(--surface-4);
+
+  /* 背景 */
+  --el-bg-color: var(--surface-1);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface-1);
+
+  /* 主色与状态色
+     light-N 的 EP 语义：向"稀释伙伴"插值 N×10%，light-3 最浓、light-8 最淡。
+     这里**不写死 oklch 数值** —— 写死会在基色改动后静默漂移（改一个色要记得改 40 处，
+     必然漏）。一律用 color-mix 从基色派生，基色一动，整条色阶自动跟随。
+     深色模式的伙伴不是纯黑：向黑插值会让浅色阶落到页面底之下（实测 L≈0.14 < bg 0.17），
+     表现为"hover 背景消失"。故深色改为向 surface-3 稀释 —— 语义即"比面板亮一档"。 */
+  --tint-partner: #fff;
+  --shade-partner: #000;
+
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in oklab, var(--tint-partner) 30%, var(--accent));
+  --el-color-primary-light-5: color-mix(in oklab, var(--tint-partner) 50%, var(--accent));
+  --el-color-primary-light-7: color-mix(in oklab, var(--tint-partner) 70%, var(--accent));
+  --el-color-primary-light-8: color-mix(in oklab, var(--tint-partner) 80%, var(--accent));
+  --el-color-primary-light-9: var(--accent-soft);
+  --el-color-primary-dark-2: color-mix(in oklab, var(--shade-partner) 20%, var(--accent));
+
+  --el-color-success: var(--ac);
+  --el-color-success-light-3: color-mix(in oklab, var(--tint-partner) 30%, var(--ac));
+  --el-color-success-light-5: color-mix(in oklab, var(--tint-partner) 50%, var(--ac));
+  --el-color-success-light-7: color-mix(in oklab, var(--tint-partner) 70%, var(--ac));
+  --el-color-success-light-8: color-mix(in oklab, var(--tint-partner) 80%, var(--ac));
+  --el-color-success-light-9: var(--ac-soft);
+
+  --el-color-warning: var(--tle);
+  --el-color-warning-light-3: color-mix(in oklab, var(--tint-partner) 30%, var(--tle));
+  --el-color-warning-light-5: color-mix(in oklab, var(--tint-partner) 50%, var(--tle));
+  --el-color-warning-light-7: color-mix(in oklab, var(--tint-partner) 70%, var(--tle));
+  --el-color-warning-light-8: color-mix(in oklab, var(--tint-partner) 80%, var(--tle));
+  --el-color-warning-light-9: var(--tle-soft);
+
+  --el-color-danger: var(--wa);
+  --el-color-danger-light-3: color-mix(in oklab, var(--tint-partner) 30%, var(--wa));
+  --el-color-danger-light-5: color-mix(in oklab, var(--tint-partner) 50%, var(--wa));
+  --el-color-danger-light-7: color-mix(in oklab, var(--tint-partner) 70%, var(--wa));
+  --el-color-danger-light-8: color-mix(in oklab, var(--tint-partner) 80%, var(--wa));
+  --el-color-danger-light-9: var(--wa-soft);
+
+  --el-color-error: var(--wa);
+  --el-color-error-light-3: color-mix(in oklab, var(--tint-partner) 30%, var(--wa));
+  --el-color-error-light-5: color-mix(in oklab, var(--tint-partner) 50%, var(--wa));
+  --el-color-error-light-7: color-mix(in oklab, var(--tint-partner) 70%, var(--wa));
+  --el-color-error-light-8: color-mix(in oklab, var(--tint-partner) 80%, var(--wa));
+  --el-color-error-light-9: var(--wa-soft);
+
+  --el-color-info: var(--ce);
+  --el-color-info-light-3: color-mix(in oklab, var(--tint-partner) 30%, var(--ce));
+  --el-color-info-light-5: color-mix(in oklab, var(--tint-partner) 50%, var(--ce));
+  --el-color-info-light-7: color-mix(in oklab, var(--tint-partner) 70%, var(--ce));
+  --el-color-info-light-8: color-mix(in oklab, var(--tint-partner) 80%, var(--ce));
+  --el-color-info-light-9: var(--ce-soft);
+
+  /* 投影：EP 默认投影偏重，与刻线分层冲突，压低 */
+  --el-box-shadow: var(--elev-2);
+  --el-box-shadow-light: var(--elev-1);
+  --el-box-shadow-lighter: var(--elev-1);
+  --el-box-shadow-dark: var(--elev-3);
+
+  /* 禁用态 */
+  --el-disabled-bg-color: var(--surface-2);
+  --el-disabled-text-color: var(--fg-3);
+  --el-disabled-border-color: var(--line-1);
+
+  /* 遮罩：低彩度、不用纯黑。用 color-mix 从 --fg 派生，避免与 --fg 脱钩 */
+  --el-overlay-color-lighter: color-mix(in oklab, var(--fg) 45%, transparent);
+  --el-mask-color: color-mix(in oklab, var(--surface-1) 85%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   深色（EP 的 dark/css-vars.css 也挂在 html.dark 上，靠加载顺序覆盖）
+
+   这里**不需要**重写 light-N 色阶：上面那些声明含 var()，会在计算时按
+   html.dark 作用域内的 --accent / --tint-partner 重新解析，整条色阶自动跟随。
+   只需替换两个"稀释伙伴"。
+   -------------------------------------------------------------------------- */
+html.dark {
+  /* 深色不能向纯黑稀释：色阶会落到页面底之下（L≈0.14 < bg 0.17），
+     hover 背景等于消失。改为向 surface-3 稀释，语义是"比面板亮一档" */
+  --tint-partner: var(--surface-3);
+  --shade-partner: #fff;
+
+  --el-overlay-color-lighter: oklch(0 0 0 / 0.6);
+  --el-mask-color: oklch(0.170 0.006 var(--h-neutral) / 0.85);
+}
+
+/* ==========================================================================
+   组件级精修
+   ========================================================================== */
+
+/* -------------------------------------------------------------- 按钮
+   主按钮 = 石墨底（外壳无色）。次按钮 = 透明底 + 发丝边。
+   不用胶囊圆角，不用彩色填充 */
+.el-button {
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--ls-none);
+  transition: background-color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--ink);
+  --el-button-border-color: var(--ink);
+  --el-button-text-color: var(--fg-on-ink);
+  --el-button-hover-bg-color: var(--ink-hover);
+  --el-button-hover-border-color: var(--ink-hover);
+  --el-button-hover-text-color: var(--fg-on-ink);
+  --el-button-active-bg-color: var(--ink);
+  --el-button-active-border-color: var(--ink);
+  --el-button-active-text-color: var(--fg-on-ink);
+  --el-button-disabled-bg-color: var(--surface-3);
+  --el-button-disabled-border-color: var(--line-1);
+  --el-button-disabled-text-color: var(--fg-3);
+}
+
+.el-button--default {
+  --el-button-bg-color: var(--surface-1);
+  --el-button-border-color: var(--line-2);
+  --el-button-text-color: var(--fg);
+  --el-button-hover-bg-color: var(--surface-2);
+  --el-button-hover-border-color: var(--line-3);
+  --el-button-hover-text-color: var(--fg);
+  --el-button-active-bg-color: var(--surface-3);
+  --el-button-active-border-color: var(--line-3);
+  --el-button-active-text-color: var(--fg);
+}
+
+/* 链接按钮（表格里的「查看 / 编辑」）：走强调色，面积小，允许有色 */
+.el-button.is-link {
+  font-weight: var(--fw-medium);
+  text-underline-offset: 3px;
+}
+.el-button.is-link:hover {
+  text-decoration: underline;
+}
+
+/* -------------------------------------------------------------- 输入 / 选择
+   控件边界必须能被看清（WCAG 1.4.11 要求 ≥3:1），
+   故输入框用 line-2 而非 line-1 —— 这是刻意的，不是错用了重色 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  background-color: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--line-2) inset;
+  border-radius: var(--r-md);
+  transition: box-shadow var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
+}
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--line-3) inset;
+}
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 2px var(--accent) inset;
+  background-color: var(--surface-1);
+}
+.el-input.is-disabled .el-input__wrapper,
+.el-textarea.is-disabled .el-textarea__inner {
+  background-color: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--line-1) inset;
+}
+
+/* 数字输入用等宽，避免位数变化时宽度跳动 */
+.el-input-number .el-input__inner {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- 表格
+   密集表格是本品类的核心界面。表头做成刻线标签条，行高收紧，
+   单元格数字用等宽对齐 —— 用户在扫的是列，列不对齐等于没扫 */
+.el-table {
+  --el-table-border-color: var(--line-1);
+  --el-table-header-bg-color: var(--surface-2);
+  --el-table-header-text-color: var(--fg);
+  --el-table-text-color: var(--fg);
+  --el-table-row-hover-bg-color: var(--surface-2);
+  --el-table-current-row-bg-color: var(--accent-soft);
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  font-size: var(--fs-sm);
+}
+
+.el-table th.el-table__cell {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: var(--ls-wide);
+  color: var(--fg-2);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.el-table td.el-table__cell {
+  padding: var(--sp-2) 0;
+}
+
+/* 表格里的数字列对齐用等宽：EP 的 .cell 默认居中于单元格，
+   这里只改字体，不改对齐 —— 列宽由列定义控制 */
+.el-table .cell {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 斑马纹在密集表格里制造视觉噪音，改用 hover 提示行位 */
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: transparent;
+}
+
+.el-table__body tr:hover > td.el-table__cell {
+  background-color: var(--surface-2);
+}
+
+.el-table::before,
+.el-table__inner-wrapper::before {
+  background-color: var(--line-1);
+}
+
+/* -------------------------------------------------------------- 标签
+   去掉胶囊形，改硬边小圆角 —— 胶囊是「友好 SaaS」的语言，不是仪表的。
+   同时在密集表格里收一档高度：默认 24px 的小标签会让含标签的行
+   比不含标签的行高出一截，破坏行距节奏 */
+.el-tag {
+  border-radius: var(--r-sm);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--ls-none);
+  --el-tag-border-radius: var(--r-sm);
+}
+.el-tag--small {
+  height: 20px;
+  padding: 0 var(--sp-2);
+}
+
+/* 难度标签的等宽数字：五档难度需要能一眼横向比较 */
+.el-tag.cj-num,
+.el-tag .cj-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- 分段控件
+   登录页的「学员/教师 | 管理员」切换 */
+.el-radio-button__inner {
+  border-radius: var(--r-sm);
+  font-weight: var(--fw-medium);
+}
+.el-radio-button:first-child .el-radio-button__inner {
+  border-top-left-radius: var(--r-sm);
+  border-bottom-left-radius: var(--r-sm);
+}
+.el-radio-button:last-child .el-radio-button__inner {
+  border-top-right-radius: var(--r-sm);
+  border-bottom-right-radius: var(--r-sm);
+}
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  box-shadow: -1px 0 0 0 var(--accent);
+}
+
+/* -------------------------------------------------------------- 下拉 / 菜单
+   导航的「教学 / 系统」下拉与用户菜单 */
+.el-dropdown-menu,
+.el-popper.is-light,
+.el-select-dropdown__list {
+  border-radius: var(--r-md);
+}
+.el-popper.is-light {
+  border-color: var(--line-1);
+  box-shadow: var(--elev-2);
+}
+.el-dropdown-menu__item {
+  font-size: var(--fs-sm);
+  border-radius: var(--r-xs);
+  margin: 0 var(--sp-1);
+  padding: 6px var(--sp-3);
+  line-height: var(--lh-base);
+}
+.el-dropdown-menu__item:not(.is-disabled):hover,
+.el-dropdown-menu__item:not(.is-disabled):focus {
+  background-color: var(--surface-2);
+  color: var(--fg);
+}
+.el-dropdown-menu__item--divided {
+  border-top-color: var(--line-1);
+  margin-top: var(--sp-1);
+}
+.el-dropdown-menu__item--divided::before {
+  background-color: transparent;
+}
+
+/* 顶栏导航的下拉面板：加等宽数字/小字排版的一致性 */
+.nav-dropdown .el-dropdown-menu {
+  padding: var(--sp-1) 0;
+}
+
+/* -------------------------------------------------------------- 弹窗 / 抽屉 */
+.el-dialog {
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-1);
+  padding: var(--sp-5);
+}
+.el-dialog__header {
+  padding-bottom: var(--sp-3);
+  margin-right: 0;
+  border-bottom: 1px solid var(--line-1);
+}
+.el-dialog__title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-tight);
+  color: var(--fg);
+}
+.el-dialog__body {
+  padding: var(--sp-4) 0 0;
+  color: var(--fg);
+}
+.el-dialog__footer {
+  padding-top: var(--sp-5);
+}
+.el-drawer {
+  --el-drawer-bg-color: var(--surface-1);
+}
+.el-drawer__header {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--fg);
+}
+
+/* -------------------------------------------------------------- 其它
+   复选框 / 单选 / 开关 / 分页 / 提示条 / 加载 */
+.el-checkbox__label,
+.el-radio__label {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+}
+
+.el-alert {
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  align-items: flex-start;
+}
+.el-alert__title {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+  color: var(--fg);
+}
+.el-alert--error.is-light {
+  background-color: var(--wa-soft);
+  border: 1px solid oklch(0.86 0.065 var(--h-wa));
+}
+.el-alert--error.is-light .el-alert__icon,
+.el-alert--error.is-light .el-alert__title {
+  color: var(--wa);
+}
+
+.el-pagination {
+  --el-pagination-font-size: var(--fs-sm);
+  --el-pagination-bg-color: transparent;
+  --el-pagination-button-bg-color: transparent;
+  font-variant-numeric: tabular-nums;
+}
+.el-pagination.is-background .el-pager li,
+.el-pagination.is-background .btn-prev,
+.el-pagination.is-background .btn-next {
+  border-radius: var(--r-sm);
+  background-color: var(--surface-2);
+  border: 1px solid var(--line-1);
+}
+.el-pagination.is-background .el-pager li.is-active {
+  background-color: var(--ink);
+  border-color: var(--ink);
+  color: var(--fg-on-ink);
+}
+
+.el-loading-mask {
+  background-color: oklch(0.993 0.002 var(--h-neutral) / 0.7);
+}
+html.dark .el-loading-mask {
+  background-color: oklch(0.170 0.006 var(--h-neutral) / 0.7);
+}
+.el-loading-spinner .path {
+  stroke: var(--accent);
+}
+
+.el-message {
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-1);
+  box-shadow: var(--elev-2);
+  min-width: 260px;
+}
+.el-message__content {
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.el-message-box {
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-1);
+  padding: var(--sp-5);
+}
+.el-message-box__title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  color: var(--fg);
+}
+.el-message-box__content {
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+}
+
+.el-tooltip__popper,
+.el-popper.is-dark {
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+}
+
+/* 桌面端表单标签：EP 默认 14px，与我们的 --fs-sm(13) 统一，
+   让密集表单的行距更稳 */
+.el-form-item__label {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-base);
+}
+.el-form-item__error {
+  font-size: var(--fs-xs);
+  padding-top: var(--sp-1);
+}
+
+/* 空状态 */
+.el-empty__description p {
+  color: var(--fg-3);
+  font-size: var(--fs-sm);
+}
+
+/* 描述列表 / 统计：数字一律等宽 */
+.el-descriptions__label,
+.el-statistic__content {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 骨架屏：工业观感用平面块而非渐变流光 —— 流光在密集布局里很吵 */
+.el-skeleton__item {
+  background: var(--surface-3);
+  background-image: none;
+  border-radius: var(--r-sm);
+}

@@ -25,7 +25,7 @@
          WrapperResponseBodyAdvice / MvcConfig 全部带 @ConditionalOnWebApplication(SERVLET)），
          注释里直接点名 judge-ai，说明这是既定设计。
 
-      ⚠️ 光「排除 spring-boot-starter-web」**不足以**落到响应式栈：
+      光「排除 spring-boot-starter-web」**不足以**落到响应式栈：
          knife4j-openapi3-jakarta-spring-boot-starter → springdoc-openapi-starter-webmvc-ui
          → spring-webmvc（DispatcherServlet）仍会进入类路径（已实测：judge-contest 成品 jar 中
          同时存在 spring-webmvc-6.1.14.jar 与 springdoc-openapi-starter-webmvc-*.jar）。
@@ -118,10 +118,10 @@
           RocketMQ：**只消费不生产**（订阅 ai_review 的 REQUESTED 做异步预生成）。
           不配置 rocketmq.producer-group → RocketMqAutoConfiguration 不装配生产者
           （空 group 会让 DefaultMQProducer 启动直接报 "the specified group is blank"）。
-          ⚠️ 显式声明而非依赖 judge-common 的传递依赖：本模块直接 import
+          显式声明而非依赖 judge-common 的传递依赖：本模块直接 import
              org.apache.rocketmq.common.message.MessageExt，直接使用的类必须直接声明依赖，
              否则一旦 judge-common 调整依赖范围就会在编译期炸。
-          ⚠️ 消费者是否启用由 cj.review.mq-enabled 控制（默认 false），见 AiReviewMqConsumer。
+          消费者是否启用由 cj.review.mq-enabled 控制（默认 false），见 AiReviewMqConsumer。
         -->
         <dependency>
             <groupId>org.apache.rocketmq</groupId>

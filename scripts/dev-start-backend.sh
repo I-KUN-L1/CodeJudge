@@ -9,7 +9,7 @@
 #
 # 为什么需要这个脚本？（后端"无法启动"的根因）
 # ----------------------------------------------------------
-# 某些宿主/IDE 环境（例如 WorkBuddy 沙箱终端）会向子进程注入：
+# 某些宿主/IDE 终端环境会向子进程注入：
 #     SERVER__PORT=<宿主自身占用的端口>
 #     SERVER__HOST=127.0.0.1
 # Spring Boot 的"松散绑定"会把 SERVER__PORT 解析为 server.port，
@@ -18,7 +18,7 @@
 # 表现：不指定端口时必然启动失败，报 "Identify and stop the process
 #        that's listening on port <xxxxx>"。
 #
-# 已实测确证（2026-09-20）：在 WorkBuddy 终端内转储子 JVM 环境，
+# 已实测确证（2026-09-20）：在本机 IDE 终端内转储子 JVM 环境，
 #     SERVER__PORT = 56298   ← 与宿主进程实际监听端口一致
 #     SERVER__HOST = 127.0.0.1
 # 且不 unset 直接 `java -jar` 时，Tomcat 确实绑定到 56298 而非 yml 的 9082。
@@ -27,7 +27,7 @@
 # 并把 java.io.tmpdir 指向仓库内可写目录（沙箱下 %TMP% 可能指向 C:\Windows\
 # 导致 AccessDenied），从而保证各服务按自己 application.yml 的端口正常启动。
 #
-# ⚠ 绕开本脚本直接 `java -jar` 时，务必二选一，否则必踩此坑：
+# 绕开本脚本直接 `java -jar` 时，务必二选一，否则必踩此坑：
 #     ① 先 `unset SERVER__PORT SERVER__HOST SERVER_PORT SERVER_HOST`
 #     ② 或显式传参：`java -jar target/judge-xxx.jar --server.port=9082`
 #        （命令行参数优先级高于环境变量，最稳）

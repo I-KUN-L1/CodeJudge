@@ -1,101 +1,114 @@
 <template>
   <div class="cj-page">
-    <div class="cj-card">
-      <div class="cj-card__head">
-        <span class="cj-title">用户管理</span>
-        <div class="cj-row">
-          <el-button type="primary" :icon="Plus" @click="openCreate">新建用户</el-button>
-          <el-button :icon="Refresh" @click="load">刷新</el-button>
-        </div>
+    <!-- ============ 页头 ============ -->
+    <header class="cj-pagehead">
+      <h1 class="cj-pagehead__title">用户管理</h1>
+      <span class="cj-pagehead__meta">
+        共 <b>{{ total }}</b> 位
+      </span>
+      <div class="cj-spacer" />
+      <div class="cj-pagehead__actions">
+        <el-button type="primary" :icon="Plus" @click="openCreate">新建用户</el-button>
+        <el-button :icon="Refresh" @click="load">刷新</el-button>
+      </div>
+    </header>
+
+    <!-- 三类角色分目录查询：/students/page、/teachers/page、/staffs/page 是各自独立的端点。
+         页签属于"筛选维度"，故与搜索框同处一条工具带 -->
+    <div class="cj-tabs-row">
+      <el-tabs v-model="tab" @tab-change="onTabChange">
+        <el-tab-pane label="学员" name="students" />
+        <el-tab-pane label="教师" name="teachers" />
+        <el-tab-pane label="管理员" name="staffs" />
+      </el-tabs>
+
+      <div class="cj-tabs-row__filter">
+        <el-input
+          v-model.trim="keyword"
+          placeholder="按姓名 / 用户名 / 手机号搜索"
+          clearable
+          class="cj-toolbar__kw"
+          @keyup.enter="applyFilter"
+          @clear="applyFilter"
+        />
+        <el-button @click="applyFilter">查询</el-button>
+      </div>
+    </div>
+
+    <div class="cj-panel">
+      <div class="cj-panel__table">
+        <el-table v-loading="loading" :data="rows" row-key="id" empty-text="暂无数据">
+          <!-- ID 是 19 位雪花号：右对齐 + 等宽，位数相同的行右边缘才在同一条线上 -->
+          <el-table-column label="ID" width="190" align="right">
+            <template #default="{ row }">
+              <span class="cj-num cj-dim">{{ row.id }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="姓名" width="130">
+            <template #default="{ row }">
+              <span class="cj-dim">{{ row.name || '—' }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="用户名" width="140" class-name="cj-hide-sm">
+            <template #default="{ row }">
+              <span class="cj-mono cj-dim">{{ row.username || '—' }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="手机号" width="140" align="right">
+            <template #default="{ row }">
+              <span class="cj-num">{{ row.cellPhone }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="角色" width="96" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain">{{ userTypeLabel(row.type) }}</el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="状态" width="96" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.status === 1 ? 'success' : 'danger'" effect="plain">
+                {{ userStatusLabel(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="注册时间" width="164" align="right" class-name="cj-hide-sm">
+            <template #default="{ row }">
+              <span class="cj-num-dim">{{ fmtTime(row.createTime) }}</span>
+            </template>
+          </el-table-column>
+
+          <!-- 四个操作挤在 240px 里会折行、导致该单元格比相邻行高一倍。
+               宽度放到 268px（四个两字链接 + 间距的最小值），并统一右对齐 -->
+          <el-table-column label="操作" width="268" align="right" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="warning" @click="onResetPwd(row)">重置密码</el-button>
+              <el-button link :type="row.status === 1 ? 'info' : 'success'" @click="onToggleStatus(row)">
+                {{ row.status === 1 ? '禁用' : '启用' }}
+              </el-button>
+              <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
 
-      <div class="cj-card__body">
-        <!-- 三类角色分目录查询：/students/page、/teachers/page、/staffs/page 是各自独立的端点 -->
-        <el-tabs v-model="tab" @tab-change="onTabChange">
-          <el-tab-pane label="学员" name="students" />
-          <el-tab-pane label="教师" name="teachers" />
-          <el-tab-pane label="管理员" name="staffs" />
-        </el-tabs>
-
-        <div class="cj-row" style="margin-bottom: 12px">
-          <el-input
-            v-model.trim="keyword"
-            placeholder="按姓名 / 用户名 / 手机号搜索"
-            clearable
-            class="filters__kw"
-            @keyup.enter="applyFilter"
-            @clear="applyFilter"
-          />
-          <el-button @click="applyFilter">查询</el-button>
-          <span class="cj-dim">
-            当前页 {{ rows.length }} 条 / 共 {{ total }} 条
-          </span>
-        </div>
-
-        <div class="cj-scroll-x">
-          <el-table v-loading="loading" :data="rows" stripe row-key="id" empty-text="暂无数据">
-            <el-table-column label="ID" width="190">
-              <template #default="{ row }">
-                <span class="cj-mono cj-dim">{{ row.id }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="姓名" width="120">
-              <template #default="{ row }">
-                <span>{{ row.name || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="用户名" width="140" class-name="cj-hide-sm">
-              <template #default="{ row }">
-                <span class="cj-mono">{{ row.username || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="手机号" width="140">
-              <template #default="{ row }">
-                <span class="cj-mono">{{ row.cellPhone }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="角色" width="96" align="center">
-              <template #default="{ row }">
-                <el-tag size="small" effect="plain">{{ userTypeLabel(row.type) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="96" align="center">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.status === 1 ? 'success' : 'danger'" effect="plain">
-                  {{ userStatusLabel(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="注册时间" width="160" class-name="cj-hide-sm">
-              <template #default="{ row }">
-                <span class="cj-dim">{{ fmtTime(row.createTime) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="240" align="center" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-                <el-button link type="warning" @click="onResetPwd(row)">重置密码</el-button>
-                <el-button link :type="row.status === 1 ? 'info' : 'success'" @click="onToggleStatus(row)">
-                  {{ row.status === 1 ? '禁用' : '启用' }}
-                </el-button>
-                <el-button link type="danger" @click="onDelete(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-
-        <div class="pager">
-          <el-pagination
-            v-model:current-page="pageNo"
-            v-model:page-size="pageSize"
-            :total="total"
-            :page-sizes="[10, 20, 50]"
-            layout="total, sizes, prev, pager, next"
-            background
-            @current-change="load"
-            @size-change="onSizeChange"
-          />
-        </div>
+      <div class="cj-pager">
+        <el-pagination
+          v-model:current-page="pageNo"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          background
+          @current-change="load"
+          @size-change="onSizeChange"
+        />
       </div>
     </div>
 
@@ -201,20 +214,24 @@ const endpointFor = {
   staffs: (p) => userApi.staffsPage(p),
 };
 
+let reqSeq = 0;
 async function load() {
+  const seq = ++reqSeq;
   loading.value = true;
   try {
     const params = { pageNo: pageNo.value, pageSize: pageSize.value };
     if (keyword.value) params.keyword = keyword.value;
     const page = await endpointFor[tab.value](params);
+    if (seq !== reqSeq) return; // 快速切页签/翻页时丢弃过期响应，避免数据与页签不一致
     rows.value = page?.list || [];
     total.value = Number(page?.total || 0);
   } catch (e) {
+    if (seq !== reqSeq) return;
     rows.value = [];
     total.value = 0;
     ElMessage.error(e.message || '加载用户列表失败');
   } finally {
-    loading.value = false;
+    if (seq === reqSeq) loading.value = false;
   }
 }
 
@@ -337,12 +354,31 @@ onMounted(load);
 </script>
 
 <style scoped>
-.filters__kw {
-  width: 280px;
-}
-.pager {
+/* 页签与搜索框同处一条工具带：页签在下沿有 1px 刻线，
+   把搜索框抬到与页签文字同一行（-1px 抵消刻线占位） */
+.cj-tabs-row {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  padding-top: var(--sp-2);
+}
+.cj-tabs-row :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+.cj-tabs-row :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+}
+.cj-tabs-row__filter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+@media (max-width: 900px) {
+  .cj-tabs-row__filter {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 </style>

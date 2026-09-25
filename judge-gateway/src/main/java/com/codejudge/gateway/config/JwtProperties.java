@@ -22,7 +22,7 @@ public class JwtProperties {
      * <p>
      * 原则：只放行「必须匿名」的端点，写操作一律不放行，由后端 {@code @RequireRole} fail-closed 兜底。
      * <p>
-     * ⚠️ 与 zx-learn 底座的差异（安全加固）：底座白名单含 {@code /teachers/register}，
+     * 与 zx-learn 底座的差异（安全加固）：底座白名单含 {@code /teachers/register}，
      * 意味着任何人都能自助注册成教师账号 —— 教师可创建题目、查看隐藏测试用例，
      * 这在判题平台里等于把题库存取权公开。CodeJudge 已将其移出白名单，
      * 并在 {@code TeacherController#register} 上补 {@code @RequireRole(STAFF)}，
@@ -35,9 +35,8 @@ public class JwtProperties {
             "/accounts/password/first-change",
             // 学员自助注册：判题平台允许学员自行注册后刷题
             "/students/register",
-            // JWK 公钥集：供其他服务/前端校验证书链，公开无敏感信息
-            "/jwks",
-            "/jwks/**",
+            // 注：原白名单含 /jwks —— HMAC 对称签名没有"公钥"，该端点匿名返回的就是签名密钥
+            // 本体（可伪造任意身份 token），2026-09-25 加固时随 JwkController 一并删除。
             // 接口文档（仅开发态使用，生产建议由运维按环境关闭）
             "/v3/api-docs",
             "/v3/api-docs/**",

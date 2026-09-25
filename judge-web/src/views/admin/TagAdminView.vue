@@ -1,56 +1,65 @@
 <template>
   <div class="cj-page">
-    <div class="cj-card">
-      <div class="cj-card__head">
-        <span class="cj-title">标签管理</span>
-        <div class="cj-row">
-          <el-button type="primary" :icon="Plus" @click="dialog = true">新建标签</el-button>
-          <el-button :icon="Refresh" @click="load">刷新</el-button>
-        </div>
+    <!-- ============ 页头 ============ -->
+    <header class="cj-pagehead">
+      <h1 class="cj-pagehead__title">标签管理</h1>
+      <span class="cj-pagehead__meta">
+        共 <b>{{ rows.length }}</b> 个
+      </span>
+      <div class="cj-spacer" />
+      <div class="cj-pagehead__actions">
+        <el-button type="primary" :icon="Plus" @click="dialog = true">新建标签</el-button>
+        <el-button :icon="Refresh" @click="load">刷新</el-button>
+      </div>
+    </header>
+
+    <!-- ============ 说明 + 筛选条 ============ -->
+    <div class="cj-toolbar">
+      <el-radio-group v-model="typeFilter" @change="load">
+        <el-radio-button value="">全部</el-radio-button>
+        <el-radio-button value="ALGORITHM">算法</el-radio-button>
+        <el-radio-button value="SOURCE">来源</el-radio-button>
+        <el-radio-button value="DIFFICULTY_TAG">难度</el-radio-button>
+      </el-radio-group>
+    </div>
+
+    <div class="cj-panel">
+      <div class="cj-panel__table">
+        <el-table v-loading="loading" :data="rows" row-key="id" empty-text="暂无标签">
+          <el-table-column label="ID" width="112" align="right">
+            <template #default="{ row }">
+              <span class="cj-num cj-dim">{{ row.id }}</span>
+            </template>
+          </el-table-column>
+
+          <!-- 标签名直接用标签渲染：这里看到的就是它在题库/题目详情里的样子 -->
+          <el-table-column label="标签名" min-width="200">
+            <template #default="{ row }">
+              <div class="cj-cell-tags">
+                <el-tag size="small" effect="plain">{{ row.name }}</el-tag>
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="类型" width="200">
+            <template #default="{ row }">
+              <span class="cj-mono cj-dim">{{ row.type || '—' }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="操作" width="110" align="right">
+            <template #default="{ row }">
+              <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
 
-      <div class="cj-card__body">
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 14px"
-          title="标签是全局共享字典，增删收敛到管理员；教师建题时从已有标签里挑选。删除采用物理删除，因此被删标签名可以重新创建（逻辑删除会因唯一键不含 deleted 列而永久锁死复用）。"
-        />
-
-        <div class="cj-row" style="margin-bottom: 12px">
-          <el-radio-group v-model="typeFilter" @change="load">
-            <el-radio-button value="">全部</el-radio-button>
-            <el-radio-button value="ALGORITHM">算法</el-radio-button>
-            <el-radio-button value="SOURCE">来源</el-radio-button>
-            <el-radio-button value="DIFFICULTY_TAG">难度</el-radio-button>
-          </el-radio-group>
-        </div>
-
-        <div class="cj-scroll-x">
-          <el-table v-loading="loading" :data="rows" stripe row-key="id" empty-text="暂无标签">
-            <el-table-column label="ID" width="120">
-              <template #default="{ row }">
-                <span class="cj-mono cj-dim">{{ row.id }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="标签名" min-width="180">
-              <template #default="{ row }">
-                <el-tag effect="plain">{{ row.name }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="类型" width="160">
-              <template #default="{ row }">
-                <span class="cj-mono cj-dim">{{ row.type || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="110" align="center">
-              <template #default="{ row }">
-                <el-button link type="danger" @click="onDelete(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
+      <!-- 面板脚注：把原先那个占了整屏宽度的 el-alert 收成一行脚注。
+           它是"说明"不是"告警"，用告警条表达会让每次进页面都像出了问题 -->
+      <div class="cj-panel__note">
+        标签是全局共享字典，增删收敛到管理员；教师建题时从已有标签里挑选。
+        删除采用**物理删除**，因此被删标签名可以重新创建（逻辑删除会因唯一键不含 deleted 列而永久锁死复用）。
       </div>
     </div>
 
@@ -140,3 +149,5 @@ async function onDelete(row) {
 
 onMounted(load);
 </script>
+
+<!-- 无 scoped 样式：一律用全局 data-list.css 的列表骨架 -->

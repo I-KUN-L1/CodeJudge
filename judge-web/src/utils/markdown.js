@@ -6,7 +6,7 @@ import 'highlight.js/styles/github-dark.css';
 /**
  * Markdown 渲染（题面 / 题解 / AI 点评正文都用它）
  *
- * ⚠️ 必须消毒：AI 点评正文来自 LLM，是**不可信内容**。
+ * 必须消毒：AI 点评正文来自 LLM，是**不可信内容**。
  * 直接 v-html 注入等于把 XSS 的口子开在"别人给你的文本"上
  * （提示注入 + HTML 注入的组合拳）。
  * DOMPurify 默认会剥掉 script/on* 事件/iframe/javascript: 协议。

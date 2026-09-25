@@ -66,6 +66,7 @@ mybatis-plus:
 
 springdoc:
   api-docs:
-    enabled: true
+    # 生产置 CJ_SPRINGDOC_ENABLED=false 关闭 /v3/api-docs 与 doc.html（knife4j 在 judge-common，全服务暴露）
+    enabled: ${CJ_SPRINGDOC_ENABLED:true}
   swagger-ui:
-    enabled: true
+    enabled: ${CJ_SPRINGDOC_ENABLED:true}

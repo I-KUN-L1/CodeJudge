@@ -90,7 +90,7 @@ def ts(title, targets, x, y, w=8, h=8, unit="none", legend_mode="table",
 def table(title, targets, x, y, w=12, h=8, renames=None, unit="none"):
     """
     表格面板。
-    ⚠ 必须显式放行 `Value` 列：Grafana 默认会把 Table 格式下的 `Value #A`
+    必须显式放行 `Value` 列：Grafana 默认会把 Table 格式下的 `Value #A`
     重命名为 `Value`，若在 organize 里排除它，整张表就只剩 label 列 —— 看起来「表是空的」。
     """
     renames = renames or {}

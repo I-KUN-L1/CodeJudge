@@ -14,10 +14,10 @@ import java.util.Map;
  * <table border="1">
  *   <caption>可见性矩阵</caption>
  *   <tr><th>字段</th><th>学员 / 其他教师</th><th>题目归属教师 / 管理员</th></tr>
- *   <tr><td>题面、输入输出说明、模板代码</td><td>✅（已发布题目）</td><td>✅</td></tr>
- *   <tr><td>{@link #samples}（is_hidden=0）</td><td>✅</td><td>✅</td></tr>
- *   <tr><td>{@link #testCases}（含 is_hidden=1）</td><td>❌ 恒为 null</td><td>✅</td></tr>
- *   <tr><td>{@link #hiddenCaseCount}</td><td>❌ 恒为 null</td><td>✅</td></tr>
+ *   <tr><td>题面、输入输出说明、模板代码</td><td>可见（已发布题目）</td><td>可见</td></tr>
+ *   <tr><td>{@link #samples}（is_hidden=0）</td><td>可见</td><td>可见</td></tr>
+ *   <tr><td>{@link #testCases}（含 is_hidden=1）</td><td>恒为 null</td><td>可见</td></tr>
+ *   <tr><td>{@link #hiddenCaseCount}</td><td>恒为 null</td><td>可见</td></tr>
  * </table>
  *
  * <p>{@code testCases} 用 null 而非空数组表达"无权限"：空数组会被误读为"这题没有隐藏用例"，

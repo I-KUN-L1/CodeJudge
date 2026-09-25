@@ -30,10 +30,29 @@ export const http = axios.create({
 /** 供 store 注入的登录态访问器（避免 api 层反向依赖 store 造成循环 import） */
 let tokenProvider = () => localStorage.getItem(TOKEN_STORAGE_KEY);
 let onAuthExpired = () => {};
+/** 「后端判定无权限」回调：由 main.js 注入 router，跳 /403 */
+let onForbidden = () => {};
 
-export function configureAuth({ getToken, onExpired }) {
+export function configureAuth({ getToken, onExpired, onForbidden: forbiddenHandler }) {
   if (getToken) tokenProvider = getToken;
   if (onExpired) onAuthExpired = onExpired;
+  if (forbiddenHandler) onForbidden = forbiddenHandler;
+}
+
+/**
+ * 后端拒绝（403）的统一出口。
+ *
+ * 鉴权**只在后端**：前端不判"你有没有权限"，只在被后端明确拒绝时把用户带到 403 页。
+ * 两处形态都要接：业务服务的 403 走 HTTP 200 + `body.code=403`（judge-common 的
+ * 统一异常处理把 `R` 原样返回），网关自身的拒绝才是真的 HTTP 403。
+ */
+function notifyForbidden() {
+  try {
+    onForbidden();
+  } catch (e) {
+    // 回调只为导航服务，失败不能反过来影响请求错误的传递
+    console.warn('[http] onForbidden 回调异常', e);
+  }
 }
 
 http.interceptors.request.use((config) => {
@@ -122,6 +141,11 @@ http.interceptors.response.use(
     if (body.code === 200) {
       return body.data;
     }
+    // 业务码 403：后端明确拒绝（@RequireRole / 归属校验失败）。先跳 403 页再抛错，
+    // 顺序不能反过来 —— 抛错后调用方的 catch 往往只弹一个 toast，用户会留在原地反复点。
+    if (body.code === 403) {
+      notifyForbidden();
+    }
     const e = new Error(body.msg || '请求失败');
     e.code = body.code;
     e.httpStatus = resp.status;
@@ -132,6 +156,12 @@ http.interceptors.response.use(
     const status = error?.response?.status;
     const original = error?.config;
     const url = original?.url || '';
+
+    // 网关层的 403（真实 HTTP 状态码）：与业务码 403 走同一个出口
+    if (status === 403) {
+      notifyForbidden();
+      return Promise.reject(normalizeError(error));
+    }
 
     const refreshable =
       status === 401 &&
@@ -158,6 +188,17 @@ http.interceptors.response.use(
       original.headers.Authorization = `Bearer ${newToken}`;
       return http.request(original);
     } catch (e) {
+      // 区分「刷新被明确拒绝」与「网络故障」：网关短暂重启/超时时把用户本地登出、
+      // 丢失页面，与服务故障 ≠ 登录过期的设计原则相悖。仅明确的拒绝才清登录态；
+      // 网络类错误保留 token，下次请求再重试刷新
+      const isNetworkish =
+        e?.code === 'ECONNABORTED' || e?.code === 'ERR_NETWORK' || e?.message === 'Network Error';
+      if (isNetworkish) {
+        const err = new Error('网络异常，请稍后重试');
+        err.code = 'NETWORK';
+        err.__normalized = true;
+        return Promise.reject(err);
+      }
       // 刷新失败 = 登录态彻底失效，交给 store 清理并跳登录页
       onAuthExpired('expired');
       const err = new Error('登录已过期，请重新登录');

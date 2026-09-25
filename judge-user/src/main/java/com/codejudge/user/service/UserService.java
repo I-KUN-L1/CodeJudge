@@ -19,6 +19,7 @@ import com.codejudge.user.domain.po.UserDetail;
 import com.codejudge.user.domain.vo.UserVO;
 import com.codejudge.user.mapper.UserDetailMapper;
 import com.codejudge.user.mapper.UserMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,21 +41,36 @@ public class UserService {
     /** 用户类型：员工 / 管理员 */
     private static final int TYPE_STAFF = 1;
 
-    /** 管理员重置密码后的统一初始密码；环境变量 CJ_USER_DEFAULT_PASSWORD 可覆盖 */
-    private static final String FALLBACK_DEFAULT_PASSWORD = "123456";
-
     private final UserMapper userMapper;
     private final UserDetailMapper userDetailMapper;
 
     /**
-     * 管理员重置密码的默认值。
+     * 管理员重置密码后的统一初始口令，取自环境变量 {@code CJ_USER_DEFAULT_PASSWORD}。
      * <p>
-     * 优先取环境变量 {@code CJ_USER_DEFAULT_PASSWORD}（已在 .env 中配置为 123456）；
-     * 环境变量缺失时兜底为 {@value #FALLBACK_DEFAULT_PASSWORD}，不再抛"未配置"错误 ——
-     * 重置密码是管理员的高频运维动作，不应因为漏配一个环境变量而不可用。
+     * <b>刻意不给默认值</b>（历史实现里兜底为 123456）。重置密码的本质是把一个已知字符串
+     * 写进<i>别人的</i>账号 —— 一旦这个字符串可预测，等于给全站用户留了统一后门。
+     * 因此未配置时不做静默降级，而是让重置动作 fail-closed 并返回可读原因
+     * （见 {@link #resetPassword(Long)}）。若运维脚本依赖"重置后必为某固定值"，
+     * 必须显式在 .env 中配置之。
      */
-    @Value("${CJ_USER_DEFAULT_PASSWORD:" + FALLBACK_DEFAULT_PASSWORD + "}")
+    @Value("${CJ_USER_DEFAULT_PASSWORD:}")
     private String defaultPassword;
+
+    /**
+     * 启动期一次性自检：重置口令是否可用、强度是否足够。
+     * <p>只报告"是否已配置 / 长度"，不打印口令本身（日志会长期留存）。
+     */
+    @PostConstruct
+    void reportDefaultPasswordAvailability() {
+        if (StringUtils.isBlank(defaultPassword)) {
+            log.warn("⚠ CJ_USER_DEFAULT_PASSWORD 未配置：管理员「重置密码」接口将直接返回 400，"
+                            + "不再降级为固定弱口令。如需启用该功能，请在 .env 配置随机强口令后重启。");
+        } else if (defaultPassword.trim().length() < 8) {
+            log.warn("⚠ CJ_USER_DEFAULT_PASSWORD 已配置但长度仅 {}，强度不足（建议 ≥ 16 位随机串）；"
+                            + "自检脚本：python scripts/check-hardcoded-defaults.py",
+                    defaultPassword.trim().length());
+        }
+    }
 
     /**
      * 登录校验（供认证服务调用）
@@ -150,16 +166,43 @@ public class UserService {
     }
 
     /**
-     * 管理员重置密码：统一重置为 {@value #FALLBACK_DEFAULT_PASSWORD}
-     * （或环境变量 CJ_USER_DEFAULT_PASSWORD 指定的值），BCrypt 加密后落库。
+     * 用户自助更新个人资料：只放行展示性字段，永不触碰 password/status/type/cellPhone/username。
+     * <p>与 {@link #updateUser}（STAFF 管理端点）刻意分离 —— 自助入口若复用管理逻辑，
+     * "加字段顺手带上密码"这类回归会直接变成越权写。
+     */
+    public void updateProfile(Long userId, UserFormDTO form) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BadRequestException("用户不存在");
+        }
+        if (StringUtils.isNotBlank(form.getName())) {
+            user.setName(form.getName());
+        }
+        if (StringUtils.isNotBlank(form.getIcon())) {
+            user.setIcon(form.getIcon());
+        }
+        if (StringUtils.isNotBlank(form.getEmail())) {
+            user.setEmail(form.getEmail());
+        }
+        userMapper.updateById(user);
+    }
+
+    /**
+     * 管理员重置密码：统一重置为环境变量 {@code CJ_USER_DEFAULT_PASSWORD} 指定的值，
+     * BCrypt 加密后落库。
+     * <p>未配置该变量时<b>拒绝执行</b>并返回可读原因（fail-closed）—— 见
+     * {@link #defaultPassword} 的说明：静默写一个可预测的口令，比一次明确的 400 危险得多。
      */
     public void resetPassword(Long id) {
         User user = userMapper.selectById(id);
         if (user == null) {
             throw new BadRequestException("用户不存在");
         }
-        String raw = StringUtils.isBlank(defaultPassword)
-                ? FALLBACK_DEFAULT_PASSWORD : defaultPassword.trim();
+        String raw = StringUtils.isBlank(defaultPassword) ? "" : defaultPassword.trim();
+        if (raw.isEmpty()) {
+            throw new BizIllegalException(
+                    "重置密码功能未启用：请先在 .env 中配置 CJ_USER_DEFAULT_PASSWORD 并重启服务");
+        }
         user.setPassword(BCrypt.hashpw(raw));
         userMapper.updateById(user);
         log.info("管理员重置密码：targetUserId={}, operatorId={}", id, UserContext.getUserId());
@@ -249,7 +292,20 @@ public class UserService {
         }
     }
 
+    /**
+     * 用户自助改密：显式判空（原实现 null 直接进 BCrypt.checkpw 抛 NPE → 500），
+     * 新密码强度与注册规则对齐（≥6 位），并设上限 64 位（hutool BCrypt 对超 72 字节口令静默截断）。
+     */
     public void changePassword(String oldPassword, String newPassword) {
+        if (StringUtils.isBlank(oldPassword) || StringUtils.isBlank(newPassword)) {
+            throw new BadRequestException("原密码与新密码不能为空");
+        }
+        if (newPassword.trim().length() < 6) {
+            throw new BadRequestException("新密码至少 6 位");
+        }
+        if (newPassword.trim().length() > 64) {
+            throw new BadRequestException("新密码最长 64 位");
+        }
         Long userId = UserContext.getUserId();
         User user = userMapper.selectById(userId);
         if (user == null) {

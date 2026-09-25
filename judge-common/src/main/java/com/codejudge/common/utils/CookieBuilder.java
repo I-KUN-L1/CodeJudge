@@ -71,13 +71,28 @@ public class CookieBuilder {
     }
 
     public void write(HttpServletResponse response) {
-        Cookie cookie = build();
+        // SameSite 不是 Servlet Cookie 的标准属性，必须手拼 Set-Cookie 头。
+        // 历史实现有两个缺陷：① 格式串里没有 Secure/Domain 的位置，调 .secure(true)/.domain(...)
+        // 会被静默丢弃；② setHeader 会覆盖整个 Set-Cookie 头，多枚 cookie 时先写的被吞。
+        // 现统一 addHeader 并按需拼接全部属性。
         if (StringUtils.isNotBlank(sameSite)) {
-            response.setHeader("Set-Cookie", String.format(
-                    "%s=%s; Path=%s; Max-Age=%d; HttpOnly; SameSite=%s",
-                    name, value, path, maxAge, sameSite));
+            StringBuilder sb = new StringBuilder();
+            sb.append(name).append('=').append(value == null ? "" : value)
+              .append("; Path=").append(path)
+              .append("; Max-Age=").append(maxAge);
+            if (StringUtils.isNotBlank(domain)) {
+                sb.append("; Domain=").append(domain);
+            }
+            if (httpOnly) {
+                sb.append("; HttpOnly");
+            }
+            if (secure) {
+                sb.append("; Secure");
+            }
+            sb.append("; SameSite=").append(sameSite);
+            response.addHeader("Set-Cookie", sb.toString());
         } else {
-            response.addCookie(cookie);
+            response.addCookie(build());
         }
     }
 }

@@ -28,8 +28,20 @@ public class WorkerProperties {
     /** 每容器 CPU 限额 */
     private double cpus = 1.0;
 
-    /** 单容器进程数上限（防 fork 炸弹） */
+    /** **运行阶段**单容器进程数上限（防 fork 炸弹；只约束用户代码） */
     private int pidsLimit = 64;
+
+    /**
+     * **编译阶段**单容器进程数上限。
+     *
+     * <p>为什么必须放宽：编译器自身是重度 fork 的程序 —— Go 工具链一次构建会并发调起
+     * 数十个 {@code compile/asm/link} 子进程，实测 {@code --pids-limit 64} 下稳定失败：
+     * <pre>go: error obtaining buildID for go tool compile:
+     * fork/exec /usr/local/go/pkg/tool/linux_amd64/compile: resource temporarily unavailable</pre>
+     * 实测 256 起可正常构建。放宽只作用于**编译阶段**：那时跑的是编译器而不是用户代码，
+     * fork 炸弹风险远低于运行期；运行期仍用 {@link #pidsLimit}（64）严守。
+     */
+    private int compilePidsLimit = 256;
 
     /** 输出上限 KB（stdout/stderr 各自截断，防输出爆炸） */
     private int maxOutputKb = 64;

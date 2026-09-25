@@ -45,7 +45,7 @@
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <hutool.version>5.8.36</hutool.version>
         <knife4j.version>4.5.0</knife4j.version>
-        <mysql.version>8.0.23</mysql.version>
+        <mysql.version>8.3.0</mysql.version>
         <jjwt.version>0.12.6</jjwt.version>
         <lombok.version>1.18.34</lombok.version>
         <rocketmq.version>4.9.7</rocketmq.version>
@@ -100,15 +100,16 @@
                 <version>${knife4j.version}</version>
             </dependency>
 
-            <!-- MySQL -->
+            <!-- MySQL：2026-09-25 由废弃坐标 mysql:mysql-connector-java 8.0.23（2021 年版本）
+                 升级为 com.mysql:mysql-connector-j 8.3.0（本地仓库已有，可离线构建） -->
             <dependency>
-                <groupId>mysql</groupId>
-                <artifactId>mysql-connector-java</artifactId>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
                 <version>${mysql.version}</version>
             </dependency>
 
             <!-- PostgreSQL + pgvector：judge-ai 的 RAG 向量库（P5 启用）。
-                 ⚠️ 必须显式给版本：本 dependencyManagement 段会**覆盖** Spring Boot BOM 的托管版本，
+                 必须显式给版本：本 dependencyManagement 段会**覆盖** Spring Boot BOM 的托管版本，
                  若此处留空，子模块引用时不报「unmanaged」而是报「version is missing」，构建直接失败。 -->
             <dependency>
                 <groupId>org.postgresql</groupId>

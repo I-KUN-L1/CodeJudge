@@ -1,6 +1,7 @@
 package com.codejudge.submission.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.codejudge.api.client.contest.ContestClient;
 import com.codejudge.api.client.problem.ProblemClient;
@@ -123,8 +124,11 @@ public class SubmissionService {
             throw new BadRequestException("不支持的语言：" + form.getLanguage() + "（可选 JAVA/PYTHON/CPP/GO）");
         }
         String code = form.getCode();
-        if (code.length() > MAX_CODE_LENGTH) {
-            throw new BadRequestException("代码过长，上限 32KB（当前 " + code.length() + " 字节）");
+        // 按字节校验（TEXT 列上限是字节而非字符）：32K 个 CJK 字符按字符数能过校验，
+        // 落库时却超 TEXT 64KB 上限 → MysqlDataTruncation → 用户收到 500
+        int codeBytes = code.getBytes(StandardCharsets.UTF_8).length;
+        if (codeBytes > MAX_CODE_LENGTH) {
+            throw new BadRequestException("代码过长，上限 32KB（当前 " + codeBytes + " 字节）");
         }
         long contestId = form.getContestId() == null ? 0L : form.getContestId();
 
@@ -218,6 +222,14 @@ public class SubmissionService {
         task.setMaxAttempt(judgeProperties.getMaxAttempt());
         task.setTimeoutMs((int) judgeProperties.getTaskTimeoutMs());
         judgeTaskMapper.insert(task);
+
+        // 首次投递（Tag CREATED）挂在事务 afterCommit：
+        //   ① 若早于提交发送，worker 可能在事务可见前就认领，认领 CAS 查不到任务；
+        //   ② 发送失败不抛 —— 任务已落库，由 JudgeCompensationService 的滞留重发兜底（最终一致）。
+        // 缺少这一步的后果（2026-09-22 实测）：任务只能等滞留重发扫描捞取
+        //   （fixedDelay 10s + pending-rescue-delay 15s + 5s 延迟）⇒ 判题端到端从 ~3.4s 恶化到 ~30s。
+        com.codejudge.common.utils.TxSupport.afterCommit(() ->
+                eventPublisher.publishTaskCreated(submission.getId(), task.getId(), 0));
 
         submission.setTaskId(task.getId());
         log.info("提交落库成功 submissionId={} taskId={} user={} problem={} language={} round={}",
@@ -485,8 +497,10 @@ public class SubmissionService {
     /**
      * 重判：教师须为题目归属人，管理员不受限。
      * 复位提交/任务/清空历史结果，attempt 归零后投递 RETRY 消息。
+     * <p>远程校验（Feign）放在事务外 —— 事务一旦开启即占用连接池连接，
+     * judge-problem 慢/超时会把这些连接白白占住，高并发下放大成 Hikari 枯竭；
+     * 真正的复位写库收拢在 {@link #doRejudgeReset(Long, Long)}（经自代理调用，保证事务生效）。
      */
-    @Transactional(rollbackFor = Exception.class)
     public void rejudge(Long submissionId) {
         Long operator = UserContext.getUserId();
         Integer role = UserContext.getRole();
@@ -508,15 +522,29 @@ public class SubmissionService {
             throw new BizIllegalException("判题任务不存在，无法重判");
         }
 
+        self.getObject().doRejudgeReset(submissionId, task.getId());
+        log.info("重判已受理 submissionId={} operator={} role={}", submissionId, operator, role);
+    }
+
+    /**
+     * 重判的复位写库（须在事务内执行）。
+     * <p>历史实现用 {@code updateById} 复位 —— MyBatis-Plus 默认策略跳过 null 字段，
+     * {@code verdict/time_ms/memory_kb/worker_id/lease_*} 全部残留旧值：详情页出现
+     * "PENDING + 旧 verdict"，且竞态窗口内旧 worker 的 CAS 可能命中残留租约。
+     * 现改用 {@code LambdaUpdateWrapper} 显式 {@code set(null)}。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void doRejudgeReset(Long submissionId, Long taskId) {
         // 复位任务（含 JUDGING 中的任务 —— 管理员强制重判）
-        task.setStatus(ST_PENDING);
-        task.setAttempt(0);
-        task.setWorkerId(null);
-        task.setLeaseOwner(null);
-        task.setLeaseExpireAt(null);
-        task.setNextRetryAt(null);
-        task.setErrorMsg("管理员/教师触发重判");
-        judgeTaskMapper.updateById(task);
+        judgeTaskMapper.update(null, new LambdaUpdateWrapper<JudgeTask>()
+                .eq(JudgeTask::getId, taskId)
+                .set(JudgeTask::getStatus, ST_PENDING)
+                .set(JudgeTask::getAttempt, 0)
+                .set(JudgeTask::getWorkerId, null)
+                .set(JudgeTask::getLeaseOwner, null)
+                .set(JudgeTask::getLeaseExpireAt, null)
+                .set(JudgeTask::getNextRetryAt, null)
+                .set(JudgeTask::getErrorMsg, "管理员/教师触发重判"));
 
         // 清空历史结果与编译信息（逻辑删除）
         judgeResultMapper.delete(new LambdaQueryWrapper<JudgeResult>()
@@ -525,21 +553,21 @@ public class SubmissionService {
                 .eq(CompileInfo::getSubmissionId, submissionId));
 
         // 复位提交
-        submission.setStatus(ST_PENDING);
-        submission.setVerdict(null);
-        submission.setScore(0);
-        submission.setTimeMs(null);
-        submission.setMemoryKb(null);
-        submission.setCompileInfoId(null);
-        submissionMapper.updateById(submission);
+        submissionMapper.update(null, new LambdaUpdateWrapper<Submission>()
+                .eq(Submission::getId, submissionId)
+                .set(Submission::getStatus, ST_PENDING)
+                .set(Submission::getVerdict, null)
+                .set(Submission::getScore, 0)
+                .set(Submission::getTimeMs, null)
+                .set(Submission::getMemoryKb, null)
+                .set(Submission::getCompileInfoId, null));
 
         redis.opsForZSet().add(JudgeRedisKeys.JUDGE_QUEUE_ZSET, String.valueOf(submissionId),
                 System.currentTimeMillis());
 
         // 事务提交后投递 —— 通过 TransactionSynchronization 保证
         com.codejudge.common.utils.TxSupport.afterCommit(() ->
-                eventPublisher.publishRetry(submissionId, task.getId(), 0, "manual-rejudge"));
-        log.info("重判已受理 submissionId={} operator={} role={}", submissionId, operator, role);
+                eventPublisher.publishRetry(submissionId, taskId, 0, "manual-rejudge"));
     }
 
     // ==================== 内部工具 ====================
@@ -565,11 +593,17 @@ public class SubmissionService {
     private void checkRateLimit(Long userId) {
         String key = JudgeRedisKeys.SUBMISSION_RATE_PREFIX + userId;
         Long count = redis.opsForValue().increment(key);
-        if (count != null && count == 1) {
-            redis.expire(key, Duration.ofSeconds(60));
-        }
-        if (count != null && count > judgeProperties.getSubmitRateLimitPerMin()) {
-            throw new BadRequestException("提交过于频繁，每分钟最多 " + judgeProperties.getSubmitRateLimitPerMin() + " 次");
+        if (count != null) {
+            if (count == 1) {
+                redis.expire(key, Duration.ofSeconds(60));
+            } else if (redis.getExpire(key) < 0) {
+                // INCR 与 EXPIRE 两步非原子：进程在两步之间重启会留下永不过期的 key，
+                // 该用户被永久限流。此处补偿补上 TTL（getExpire：-1 无 TTL / -2 键不存在）
+                redis.expire(key, Duration.ofSeconds(60));
+            }
+            if (count > judgeProperties.getSubmitRateLimitPerMin()) {
+                throw new BadRequestException("提交过于频繁，每分钟最多 " + judgeProperties.getSubmitRateLimitPerMin() + " 次");
+            }
         }
     }
 

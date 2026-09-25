@@ -10,7 +10,7 @@
 -- ============================================================
 
 -- ------------------------------------------------------------------
--- ⚠ 必须首先执行：显式声明会话字符集（原因见 sql/init.sql 顶部同段注释）。
+-- 必须首先执行：显式声明会话字符集（原因见 sql/init.sql 顶部同段注释）。
 -- 容器内 `docker exec mysql < file.sql` 在 LANG 未设置时客户端字符集会退化为
 -- latin1，把 UTF-8 字节双重编码：'数组' 存成 'æ•°ç»„'，CHAR_LENGTH 2 → 6。
 -- 本行让脚本自身免疫载入方式，不必依赖调用者加 --default-character-set=utf8mb4。
@@ -33,7 +33,7 @@ INSERT IGNORE INTO `user` (`id`, `cell_phone`, `username`, `password`, `name`, `
 (2005, '13900000005', 'student005', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示学员五', 2, 1, NOW(), NOW(), 0);
 
 -- 教师（type=3）：用于创建题目、查看隐藏用例、组织竞赛
--- ⚠ 教师账号不开放自助注册（见 TeacherController 的安全加固说明），仅能由员工/管理员开通
+-- 教师账号不开放自助注册（见 TeacherController 的安全加固说明），仅能由员工/管理员开通
 INSERT IGNORE INTO `user` (`id`, `cell_phone`, `username`, `password`, `name`, `type`, `status`, `create_time`, `update_time`, `deleted`) VALUES
 (2101, '13900000011', 'teacher001', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示教师一', 3, 1, NOW(), NOW(), 0),
 (2102, '13900000012', 'teacher002', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示教师二', 3, 1, NOW(), NOW(), 0);
@@ -74,7 +74,7 @@ INSERT IGNORE INTO `tag` (`id`, `name`, `type`, `create_time`, `update_time`, `d
 --   RE  —— 4004 含 n=0 / 访问下标 n 的边界用例，越界或除零直接非零退出
 --   CE  —— 与题目内容无关，提交语法非法的代码即触发（编译阶段先于用例执行）
 --
--- ⚠️ template_code 是 JSON 列：换行必须写成 \\n（两个字符 \ 与 n），
+-- template_code 是 JSON 列：换行必须写成 \\n（两个字符 \ 与 n），
 --    MySQL 会解析成 JSON 的合法转义序列；若只写 \n，MySQL 会替换成真实换行，
 --    而 JSON 字符串内不允许裸换行，插入会直接报 3140 Invalid JSON text。
 
@@ -158,7 +158,14 @@ INSERT IGNORE INTO `test_case`
 (4207, 4002, 3, '1', '1', 1, 40, NULL, 0, NOW(), NOW(), 0),
 -- 4003 内存受限：大数据量用例用于触发 MLE
 (4208, 4003, 1, '3\n1 2 3', '6', 0, 10, NULL, 0, NOW(), NOW(), 0),
-(4209, 4003, 2, '10000000\n1 1 1 1 1 1 1 1 1 1', '10000000', 1, 45, NULL, 0, NOW(), NOW(), 0),
+-- ⚠️ 修正（2026-09-23）：本行原为 expected_stdout='10000000'（恰等于声明的 n），与 stdin 自相矛盾 ——
+--    stdin 声明 n=10000000 却只给了 10 个 1，任何**正确**解法（跳过 n、读完其余数求和）都得 10，
+--    于是被判 WA，即"4003 在本题数据下无解"。想按原意补足 1e7 个数字也不行：
+--    `test_case.stdin` 是 `text`（上限 64KB），1e7 个数字约 20MB 根本存不下。
+--    而 MLE 演示并不依赖这行输入的长度：MLE 片段是**按声明的 n 硬分配**大数组
+--    （如 vector<long long>(8e6) = 64MB），输入只有 28 字节也照样超限。
+--    故把期望改为实际输入的和（10），语义明确为「声明量与实供量不一致」的健壮性用例。
+(4209, 4003, 2, '10000000\n1 1 1 1 1 1 1 1 1 1', '10', 1, 45, NULL, 0, NOW(), NOW(), 0),
 (4210, 4003, 3, '1\n-5', '-5', 1, 45, NULL, 0, NOW(), NOW(), 0),
 -- 4004 边界：n=1 与单元素用例用于触发 RE / 边界 WA
 (4211, 4004, 1, '3\n1 5 3', '4', 0, 10, NULL, 0, NOW(), NOW(), 0),
@@ -194,7 +201,7 @@ INSERT IGNORE INTO `problem_tag`
 --   contest_problem      5101–5199
 --   contest_registration 5201–5299
 --
--- ⚠️ 时间均以 **NOW() 为基准**写入，因此「进行中/已结束」只相对**灌数据那一刻**成立。
+-- 时间均以 **NOW() 为基准**写入，因此「进行中/已结束」只相对**灌数据那一刻**成立。
 --    若要在很久以后重新演示，重放本文件即可（INSERT IGNORE 不会重复插入，
 --    需要刷新时间窗口时先 DELETE 这三张表或改用手动建赛接口）。
 --

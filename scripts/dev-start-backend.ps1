@@ -10,7 +10,7 @@
 # server.port / server.host，覆盖 application.yml 导致端口冲突而启动失败；
 # 同时 %TMP% 可能指向不可写的 C:\Windows\。本脚本启动前统一清理/修正。
 #
-# ⚠ 绕开本脚本直接 `java -jar` 时务必二选一：先 unset 上述变量，或显式传
+# 绕开本脚本直接 `java -jar` 时务必二选一：先 unset 上述变量，或显式传
 #    `--server.port=<端口>`（命令行参数优先级最高）。
 # ==========================================================
 
@@ -38,7 +38,7 @@ New-Item -ItemType Directory -Force -Path $TmpLocal | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $Root "logs") | Out-Null
 
 # ---------- 关键：清除宿主注入的端口变量 ----------
-# 已实测确证（2026-09-20）：WorkBuddy 终端会向子 JVM 注入
+# 已实测确证（2026-09-20）：本机 IDE 终端会向子 JVM 注入
 #   SERVER__PORT = 56298（= 宿主自身监听端口）  SERVER__HOST = 127.0.0.1
 # Spring 松散绑定会把它解析为 server.port，优先级高于 application.yml。
 # 同时清掉单下划线变体，兼容其他宿主/CI 的命名。

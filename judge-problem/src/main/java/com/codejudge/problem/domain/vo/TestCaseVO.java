@@ -6,7 +6,7 @@ import lombok.Data;
 /**
  * 测试用例视图
  *
- * <p>⚠️ 下发给**学员**时只会出现 {@code isHidden = 0} 的样例（由 Service 过滤），
+ * <p>下发给**学员**时只会出现 {@code isHidden = 0} 的样例（由 Service 过滤），
  * 隐藏用例的 stdin / expectedStdout 绝不能出现在非归属教师或学员的响应体里。
  */
 @Data

@@ -5,7 +5,7 @@ P5 端到端验收脚本：AI 代码点评（LLM + pgvector RAG + SSE 流式）�
 
 前置条件：
   1. 基础设施容器运行中（mysql / redis / pgvector / mq-*）；
-     ⚠️ judge_ai 是 **PostgreSQL**（5433），与其余 5 个 MySQL 库不同；
+     judge_ai 是 **PostgreSQL**（5433），与其余 5 个 MySQL 库不同；
   2. 8 个服务已启动：gateway 9080 / auth 9081 / user 9082 / problem 9083
      / submission 9084 / worker 9085 / contest 9086 / ai 9087；
   3. 沙箱镜像已构建（scripts/build-sandbox-images.py）—— D/E 段需要真实判题；
@@ -28,7 +28,7 @@ P5 端到端验收脚本：AI 代码点评（LLM + pgvector RAG + SSE 流式）�
 用法（需 8 服务已启动，**耗时约 3~8 分钟**，取决于是否配置 LLM）：
     python scripts/verify-p5.py
 
-⚠️ 关于身份头（最容易踩的坑）：
+ 关于身份头（最容易踩的坑）：
    judge-ai **不解析 JWT**，它只信任网关注入的 `user-info` / `role-info`
    （网关验签后会先**剥离**客户端伪造的同名头再注入，防伪造）。因此：
      · 经网关的调用（K 段）用 `Authorization: Bearer <token>`；
@@ -46,7 +46,7 @@ P5 端到端验收脚本：AI 代码点评（LLM + pgvector RAG + SSE 流式）�
     CJ_P5_PROBLEM_ID       用于点评的题目 id（默认 4001）
     CJ_P5_SKIP_SLOW        =1 时跳过需要真实判题的 E/F/G/H/I/J 段
 
-⚠️ 关于 LLM：未配置 CJ_LLM_API_KEY 时点评走**结构化降级**路径。
+ 关于 LLM：未配置 CJ_LLM_API_KEY 时点评走**结构化降级**路径。
    本脚本会自动探测并断言对应分支，不把「未配置 LLM」判为失败。
 """
 
@@ -451,7 +451,7 @@ def sec_efghijk(stu1_headers, stu2_headers, teacher_headers, stu1_gateway_header
             skip(f"E/F/G/H 断言 {i}", "CJ_P5_SKIP_SLOW=1")
         return None
 
-    # ⚠️ 提交与轮询走**网关**（/submissions 需要 Authorization 头，网关不认 user-info），
+    # 提交与轮询走**网关**（/submissions 需要 Authorization 头，网关不认 user-info），
     # 而后续点评走**直连 9087**（需要 user-info/role-info）。两套头不可混用。
     sid, verdict = prepare_submission(stu1_gateway_headers or stu1_headers)
     if not sid:
@@ -504,7 +504,7 @@ def sec_efghijk(stu1_headers, stu2_headers, teacher_headers, stu1_gateway_header
     check("E9 增量正文非空", len(body.strip()) > 0, f"累计 {len(body)} 字符")
 
     # seq / id 单调
-    # ⚠️ all() 对**空序列**返回 True —— 若不校验样本数，零事件时这两条会「假绿」，
+    # all() 对**空序列**返回 True —— 若不校验样本数，零事件时这两条会「假绿」，
     # 把「SSE 根本没跑起来」误报成「单调性正确」。故必须带 len >= 2 前置。
     seqs = [v.get("seq") for v in vos if v.get("seq") is not None]
     ids = [int(e["id"]) for e in events if e.get("id") not in (None, "")]

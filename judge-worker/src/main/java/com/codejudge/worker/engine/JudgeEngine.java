@@ -70,9 +70,15 @@ public class JudgeEngine {
     private final StringRedisTemplate redis;
     /** 判题进度事件发布器（生产端限流，见 ProgressPublisher） */
     private final ProgressPublisher progressPublisher;
+    /** 终态回写的事务模板：插结果行与 CAS 必须同生共死（Boot 自动装配该 Bean） */
+    private final org.springframework.transaction.support.TransactionTemplate txTemplate;
 
     /**
      * 判题主流程。调用方保证任务已被认领（status=JUDGING 且租约归本 worker）。
+     *
+     * <p><b>为什么主体抽到 {@link #judgeOnce}</b>：编译产物需要在**编译容器与各用例容器之间**
+     * 存活（沙箱每次都起独立的 {@code --rm} 容器），故这里按「判题任务」申请一个共享产物目录，
+     * 并保证**任何出口**（正常终态、CE 早退、沙箱故障抛出）都会在 finally 里释放它。
      */
     public JudgeReport judge(JudgeTask task, Submission submission, String workerId, JudgeInfoDTO problemInfo) {
         Language language = Language.of(submission.getLanguage());
@@ -88,14 +94,34 @@ public class JudgeEngine {
 
         int memoryMb = problemInfo.getMemoryLimitMb() == null ? 256 : problemInfo.getMemoryLimitMb();
 
+        String artifactKey = submission.getId() + "-" + task.getId();
+        try {
+            return judgeOnce(task, submission, workerId, problemInfo, language, image, memoryMb, artifactKey);
+        } finally {
+            // 释放共享产物目录；releaseArtifactDir 幂等且不抛（缓存目录不在 finally 里漏）
+            sandbox.releaseArtifactDir(artifactKey);
+        }
+    }
+
+    /**
+     * 判题主体：编译 → 逐用例执行。
+     *
+     * @param artifactKey 共享编译产物目录的键；非空时编译产物跨用例复用
+     */
+    private JudgeReport judgeOnce(JudgeTask task, Submission submission, String workerId,
+                                  JudgeInfoDTO problemInfo, Language language, String image,
+                                  int memoryMb, String artifactKey) {
         // ---------- 编译阶段 ----------
         publishStage(submission, task, SubmissionProgressMessage.ST_JUDGING, 0,
                 problemInfo.getTestCases() == null ? 0 : problemInfo.getTestCases().size(),
                 0, null, "正在评测，已进入判题机 " + workerId, 5, true);
 
+        // PYTHON 无编译阶段、无产物可复用 —— 传 null 让它继续用容器内 tmpfs（少一次宿主挂载）
+        String sharedWork = language.isCompiled() ? artifactKey : null;
+
         CompileInfo compileInfo = null;
         if (language.isCompiled()) {
-            CompileOutcome compile = compileInSandbox(image, language, submission.getCode(), memoryMb);
+            CompileOutcome compile = compileInSandbox(image, language, submission.getCode(), memoryMb, sharedWork);
             if (compile.isSandboxFailed()) {
                 throw new SandboxException("编译沙箱故障：" + compile.getSandboxError());
             }
@@ -129,7 +155,7 @@ public class JudgeEngine {
 
         for (int i = 0; i < cases.size(); i++) {
             JudgeCaseDTO testCase = cases.get(i);
-            CaseOutcome outcome = runCase(image, language, testCase, memoryMb, submission.getCode());
+            CaseOutcome outcome = runCase(image, language, testCase, memoryMb, submission.getCode(), sharedWork);
             if (outcome.getVerdict().isSystemError()) {
                 throw new SandboxException("运行沙箱故障：caseId=" + testCase.getCaseId());
             }
@@ -198,12 +224,16 @@ public class JudgeEngine {
 
     // ==================== 编译 ====================
 
-    private CompileOutcome compileInSandbox(String image, Language language, String code, int memoryMb) {
+    private CompileOutcome compileInSandbox(String image, Language language, String code, int memoryMb,
+                                            String artifactKey) {
         long start = System.currentTimeMillis();
         SandboxResult result = sandbox.execute(new SandboxSpec(
                 image, languageProfiles.compileCommand(language), language.getSourceFile(), code, null,
                 (int) properties.getCompileTimeoutMs(), properties.getCompileMemoryMb(),
-                properties.getCompileTimeoutMs() + properties.getWallClockGraceMs()));
+                properties.getCompileTimeoutMs() + properties.getWallClockGraceMs(),
+                // 编译阶段进程数放宽：编译器自己就是重度 fork 的程序（Go 工具链尤甚），
+                // 用运行期的 64 会让 Go 构建稳定失败；运行阶段仍严守 pidsLimit。
+                properties.getCompilePidsLimit(), artifactKey));
         long duration = System.currentTimeMillis() - start;
 
         if (result.isSandboxFailed()) {
@@ -228,14 +258,16 @@ public class JudgeEngine {
     // ==================== 单用例 ====================
 
     private CaseOutcome runCase(String image, Language language, JudgeCaseDTO testCase, int memoryMb,
-                                String code) {
+                                String code, String artifactKey) {
         int timeLimit = testCase.getTimeLimitMs() != null ? testCase.getTimeLimitMs() : 1000;
         String runCmd = languageProfiles.runCommand(language, memoryMb);
 
         SandboxResult result = sandbox.execute(new SandboxSpec(
                 image, runCmd, language.getSourceFile(), code,
                 testCase.getStdin() == null ? "" : testCase.getStdin(),
-                timeLimit, memoryMb, timeLimit + properties.getWallClockGraceMs()));
+                timeLimit, memoryMb, timeLimit + properties.getWallClockGraceMs(),
+                // 运行阶段用严格值：防用户代码 fork 炸弹
+                properties.getPidsLimit(), artifactKey));
 
         CaseOutcome outcome = new CaseOutcome();
         outcome.setCaseId(testCase.getCaseId());
@@ -288,17 +320,25 @@ public class JudgeEngine {
     private JudgeReport finishTerminal(JudgeTask task, Submission submission, String workerId,
                                        Verdict verdict, int score, Integer timeMs, Integer memKb,
                                        Long compileInfoId, List<JudgeResult> results, JudgeInfoDTO problemInfo) {
-        for (JudgeResult row : results) {
-            judgeResultMapper.insert(row);
-        }
-
-        int submitUpdated = submissionMapper.finishSuccess(submission.getId(), verdict.name(),
-                score, timeMs, memKb, compileInfoId);
-        int taskUpdated = taskMapper.markSuccess(task.getId(), workerId);
-        if (submitUpdated != 1 || taskUpdated != 1) {
-            // CAS 失败：说明任务在执行期间被接管/重判 —— 放弃本次结果，避免脏写
-            log.warn("终态 CAS 失败（任务已被接管或重判），丢弃结果 taskId={} submissionId={} rows=({},{})",
-                    task.getId(), submission.getId(), submitUpdated, taskUpdated);
+        // 历史实现先插结果行、后做 CAS 且无事务：CAS 失败（任务已被接管/重判）时已插入的行
+        // 成为脏行，自动重试/故障转移也不清理 → 详情页出现重复用例记录。
+        // 现在把「CAS + 插结果」放进同一事务并先 CAS：失败则整体回滚，一个脏行都不会留下。
+        Boolean committed = txTemplate.execute(tx -> {
+            int submitUpdated = submissionMapper.finishSuccess(submission.getId(), verdict.name(),
+                    score, timeMs, memKb, compileInfoId);
+            int taskUpdated = taskMapper.markSuccess(task.getId(), workerId);
+            if (submitUpdated != 1 || taskUpdated != 1) {
+                // CAS 失败：说明任务在执行期间被接管/重判 —— 放弃本次结果，避免脏写
+                log.warn("终态 CAS 失败（任务已被接管或重判），丢弃结果 taskId={} submissionId={} rows=({},{})",
+                        task.getId(), submission.getId(), submitUpdated, taskUpdated);
+                return Boolean.FALSE;
+            }
+            for (JudgeResult row : results) {
+                judgeResultMapper.insert(row);
+            }
+            return Boolean.TRUE;
+        });
+        if (!Boolean.TRUE.equals(committed)) {
             return JudgeReport.discarded();
         }
 

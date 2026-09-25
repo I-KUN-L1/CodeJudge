@@ -63,7 +63,7 @@ import java.util.stream.Collectors;
  * 若名次由各消费端自行二次排序，不同语言/版本的前端会因排序稳定性差异给出不同名次，
  * 而榜单的权威性正建立在「所有人看到同一份名次」上。
  *
- * <p>⚠️ <b>精度边界</b>：分值经 IEEE-754 double 传递，仅 ≤ 2^53 的整数可精确表示。
+ * <p><b>精度边界</b>：分值经 IEEE-754 double 传递，仅 ≤ 2^53 的整数可精确表示。
  * 本编码上限 ≈ (权重+1)×10^12，故 <b>权重须 ≤ 8999</b>（通过题数 / 总分，实际远低于此）。
  * 调整 {@link #WEIGHT_FACTOR} 等常量时必须同步修改 Lua 脚本内的同名常量。
  *
@@ -84,11 +84,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ContestRankService {
 
-    /** 编码基数：权重段移位（10^12）。⚠️ 与 lua/contest_rank_update.lua 的 RANK_SHIFT 必须一致 */
+    /** 编码基数：权重段移位（10^12）。与 lua/contest_rank_update.lua 的 RANK_SHIFT 必须一致 */
     public static final long WEIGHT_FACTOR = 1_000_000_000_000L;
-    /** 编码基数：罚时段移位（10^6）。⚠️ 与 Lua 的 MID_SHIFT 必须一致 */
+    /** 编码基数：罚时段移位（10^6）。与 Lua 的 MID_SHIFT 必须一致 */
     public static final long PENALTY_FACTOR = 1_000_000L;
-    /** 段基数：段内「越优越大」，取反后保证小值胜出。⚠️ 与 Lua 的 SEG_BASE 必须一致 */
+    /** 段基数：段内「越优越大」，取反后保证小值胜出。与 Lua 的 SEG_BASE 必须一致 */
     public static final long SEGMENT_BASE = 999_999L;
     /** 权重段与罚时段之间的跨度（10^6）：解码中间段时的取模基数 */
     private static final long MID_SEGMENT_SPAN = WEIGHT_FACTOR / PENALTY_FACTOR;
@@ -226,25 +226,34 @@ public class ContestRankService {
         }
 
         long ttl = ttlSeconds(contest);
+        long copied = 0;
 
-        // ① 先冻结逐题状态副本，**必须在 ZUNIONSTORE 覆盖冻结榜之前**：
-        //    副本的「旧成员集」要靠当前冻结榜反查，一旦被覆盖就查不到了（旧副本会残留到 TTL 到期）。
-        freezeUserStates(contestId, ttl);
+        try {
+            // ① 先冻结逐题状态副本，**必须在 ZUNIONSTORE 覆盖冻结榜之前**：
+            //    副本的「旧成员集」要靠当前冻结榜反查，一旦被覆盖就查不到了（旧副本会残留到 TTL 到期）。
+            freezeUserStates(contestId, ttl);
 
-        // ② 原子快照：ZUNIONSTORE dest 1 live —— 单命令，不存在部分写入
-        Long copied = redis.opsForZSet().unionAndStore(liveKey(contestId), Collections.emptyList(),
-                frozenKey(contestId));
-        String fk = frozenKey(contestId);
-        if (copied != null && copied > 0) {
-            redis.expire(fk, Duration.ofSeconds(ttl));
-        } else {
-            // 封榜时还没有任何成绩：冻结榜为空是**正确语义**（ICPC 封榜就该是一片空白），
-            // 但要把 key 清掉，避免上一届残留数据被当成本届冻结榜
-            redis.delete(fk);
+            // ② 原子快照：ZUNIONSTORE dest 1 live —— 单命令，不存在部分写入
+            Long n = redis.opsForZSet().unionAndStore(liveKey(contestId), Collections.emptyList(),
+                    frozenKey(contestId));
+            copied = n == null ? 0 : n;
+            String fk = frozenKey(contestId);
+            if (copied > 0) {
+                redis.expire(fk, Duration.ofSeconds(ttl));
+            } else {
+                // 封榜时还没有任何成绩：冻结榜为空是**正确语义**（ICPC 封榜就该是一片空白），
+                // 但要把 key 清掉，避免上一届残留数据被当成本届冻结榜
+                redis.delete(fk);
+            }
+
+            // ③ 留档。此处渲染走冻结榜 + 冻结状态副本，因此快照里的 problemStatus 也是封榜时刻的
+            writeSnapshot(contest, ContestRankSnapshot.TYPE_FROZEN, fk);
+        } catch (Exception e) {
+            // 关键：SETNX 锁已拿到但工作失败时必须回滚锁，否则 hasSnapshot 仍为 false 而锁
+            // 占着 48h —— 封榜流程在 TTL 过期前不可自愈（快照缺失、公开榜永不冻结）
+            redis.delete(lockKey);
+            throw e;
         }
-
-        // ③ 留档。此处渲染走冻结榜 + 冻结状态副本，因此快照里的 problemStatus 也是封榜时刻的
-        writeSnapshot(contest, ContestRankSnapshot.TYPE_FROZEN, fk);
         log.info("封榜完成：contestId={} reason={} frozenEntries={} at={}",
                 contestId, reason, copied, now);
         return true;
@@ -503,7 +512,7 @@ public class ContestRankService {
     /**
      * 最后一次「通过 / 得分」距开赛的秒数；无通过记录为 null。
      *
-     * <p>⚠️ 两种状态编码的时间戳位置不同，必须分别取：
+     * <p>两种状态编码的时间戳位置不同，必须分别取：
      * ACM {@code ac:<通过时刻>:<错误数>} 取 [1]；IOI {@code s:<最高分>:<取得时刻>} 取 [2]。
      * 曾因统一取 [1] 而把 IOI 的**分数**当成时间戳，使该字段在 IOI 下恒为乱值
      * —— 榜单排序的第三关键字正是它，取错会直接写坏名次。
@@ -609,7 +618,7 @@ public class ContestRankService {
         boolean refrozen = false;
         if (refreeze && contest.frozenAt(LocalDateTime.now())) {
             // 重新生成封榜快照：清掉冻结榜留档与封榜锁，再走一次标准封榜流程。
-            // ⚠️ 这里**不要**手动 delete 冻结榜：freeze() 需要靠它反查上一次的逐题状态副本成员集
+            // 这里**不要**手动 delete 冻结榜：freeze() 需要靠它反查上一次的逐题状态副本成员集
             //    才能清干净，而且 ZUNIONSTORE 本来就会覆盖它。手动删反而制造残留。
             redis.delete(JudgeRedisKeys.CONTEST_FREEZE_LOCK_PREFIX + contestId);
             snapshotMapper.delete(new LambdaQueryWrapper<ContestRankSnapshot>()
@@ -775,6 +784,10 @@ public class ContestRankService {
                     out.put(u.getId(), name);
                     nameCache.put(u.getId(), new Object[]{name, now + NAME_CACHE_TTL_SECONDS * 1000});
                 }
+            }
+            // 过期条目不会被覆盖式写入移除，Map 随用户量单调增长；超过阈值时清理一次过期项
+            if (nameCache.size() > 10_000) {
+                nameCache.entrySet().removeIf(e -> !((long) e.getValue()[1] > now));
             }
         } catch (Exception e) {
             log.warn("批量查询用户名失败，榜单回落展示 userId：{}", e.getMessage());

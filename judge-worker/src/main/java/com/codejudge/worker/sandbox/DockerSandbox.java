@@ -106,19 +106,36 @@ public class DockerSandbox implements SandboxExecutor {
         cmd.add("docker");
         cmd.add("run");
         cmd.add("--rm");
+        // 命名容器：墙钟兜底强杀时 kill 的只是本机 docker CLI 进程，容器由 dockerd 继续运行
+        //（--rm 只在容器自行退出后生效）。有名字才能在超时路径上 docker rm -f 清理残留
+        String containerName = "cj-sbx-" + java.util.UUID.randomUUID();
+        cmd.add("--name");
+        cmd.add(containerName);
         // 运行时选择：runc（默认）/ runsc（gVisor，需本机安装）
         if (!"runc".equals(properties.getSandboxRuntime())) {
             cmd.add("--runtime");
             cmd.add(properties.getSandboxRuntime());
         }
-        // 资源限额：CPU / 内存（swap 同值即禁用 swap）/ 进程数（防 fork 炸弹）
+        // 资源限额：CPU / 内存（swap 同值即禁用 swap）/ 进程数
+        // 进程数按 spec 取值：编译阶段要放宽（Go 工具链会 fork 上百个子进程），
+        //    运行阶段必须收紧防 fork 炸弹 —— 用同一个值必有一边不达标（见 SandboxSpec#pidsLimit）。
+        int pidsLimit = spec.pidsLimit() > 0 ? spec.pidsLimit() : properties.getPidsLimit();
         cmd.add("--cpus"); cmd.add(String.valueOf(properties.getCpus()));
         cmd.add("--memory"); cmd.add(spec.memoryMb() + "m");
         cmd.add("--memory-swap"); cmd.add(spec.memoryMb() + "m");
-        cmd.add("--pids-limit"); cmd.add(String.valueOf(properties.getPidsLimit()));
-        // 文件系统：只读根 + 独立可写区（/work 可 exec 供编译产物运行；/tmp noexec）
+        cmd.add("--pids-limit"); cmd.add(String.valueOf(pidsLimit));
+        // 文件系统：只读根 + 可写区（/work 可 exec 供编译产物运行；/tmp noexec）
         cmd.add("--read-only");
-        cmd.add("--tmpfs"); cmd.add("/work:rw,nosuid,size=128m,mode=1777");
+        Path artifact = artifactDir(spec.artifactKey());
+        if (artifact != null) {
+            // 编译型语言：/work 挂宿主持久目录，编译容器写入、各用例容器读取。
+            // 若改回容器内 tmpfs，产物会随编译容器退出即销毁，编译型语言全部判不出 AC。
+            Files.createDirectories(artifact);
+            cmd.add("-v"); cmd.add(artifact.toAbsolutePath() + ":/work:rw");
+        } else {
+            // 无编译阶段（PYTHON）：容器内 tmpfs 即可，随容器销毁
+            cmd.add("--tmpfs"); cmd.add("/work:rw,nosuid,size=128m,mode=1777");
+        }
         cmd.add("--tmpfs"); cmd.add("/tmp:rw,nosuid,nodev,noexec,size=32m");
         // 网络：完全断网
         cmd.add("--network"); cmd.add("none");
@@ -152,6 +169,14 @@ public class DockerSandbox implements SandboxExecutor {
             // 墙钟兜底强杀：内层 timeout 失效（如 sh 卡死）时的最后防线
             process.destroyForcibly();
             process.waitFor(5, TimeUnit.SECONDS);
+            // destroyForcibly 杀不到容器本体（dockerd 独立进程），必须显式 rm -f，
+            // 否则失控容器长期残留、持续占用 CPU/内存（fake TLE 与宿主负载升高的隐形来源）
+            try {
+                new ProcessBuilder("docker", "rm", "-f", containerName)
+                        .start().waitFor(10, TimeUnit.SECONDS);
+            } catch (Exception cleanupErr) {
+                log.warn("沙箱容器清理失败（可能残留）：name={} err={}", containerName, cleanupErr.toString());
+            }
             log.warn("沙箱墙钟超时强杀：image={} wallClockMs={}", spec.image(), spec.wallClockMs());
         }
         long wallMs = System.currentTimeMillis() - wallStart;
@@ -240,6 +265,33 @@ public class DockerSandbox implements SandboxExecutor {
     }
 
     // ==================== 工具 ====================
+
+    /**
+     * 编译产物共享目录：{@code <workRoot>/artifacts/<key>}。
+     *
+     * <p>与每次执行即建的 {@code judge-<uuid>} 临时目录不同，它按**判题任务**持久，
+     * 使编译阶段与后续每个用例容器看到同一份 {@code /work}。
+     *
+     * @return {@code key} 为空时返回 null（调用方据此走容器内 tmpfs）
+     */
+    private Path artifactDir(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        // 键由调用方用雪花 id 拼成；此处再做一次字符白名单收敛，杜绝路径穿越
+        String safe = key.replaceAll("[^A-Za-z0-9_-]", "_");
+        return Paths.get(properties.getWorkRoot()).toAbsolutePath().resolve("artifacts").resolve(safe);
+    }
+
+    @Override
+    public void releaseArtifactDir(String artifactKey) {
+        Path dir = artifactDir(artifactKey);
+        if (dir == null) {
+            return;
+        }
+        // 幂等且不抛：调用点在 finally 中（cleanup 自身已吞掉删除异常）
+        cleanup(dir);
+    }
 
     private Path createWorkDir() throws IOException {
         Path root = Paths.get(properties.getWorkRoot()).toAbsolutePath();
