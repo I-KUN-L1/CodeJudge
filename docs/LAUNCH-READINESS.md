@@ -102,7 +102,7 @@ CJ_MQ_CONSUME_THREADS=4 python scripts/dev-start-backend.py --extra judge-worker
 | RocketMQ broker **未挂 store 卷** | **消息不持久化**，broker 重启会丢未消费消息 |
 | 沙箱运行时是 `runc` + seccomp（本机无 gVisor） | 与宿主共享内核，隔离强度弱于 gVisor。公网判题平台建议装 gVisor（preflight **D2 WARN**） |
 | Grafana 匿名只读仍开启（`GF_AUTH_ANONYMOUS_ENABLED=true`） | 生产必须置 false（preflight **B3 WARN**） |
-| `CJ_LLM_ENABLED=false` 时 AI 点评走结构化降级 | 接真实 LLM 后需复跑 `verify-p5.py` 的 G 段（切到非降级分支） |
+| `CJ_LLM_ENABLED=false` 时 AI 点评走结构化降级 | ✅ **2026-09-26 已接入真实 LLM**（智谱 glm-4.5-air，Key 在本地 `.env`）：`degraded=false` 流式输出正常，`verify-p5.py` 复跑 **PASS=46 / FAIL=0**。生产环境凭据生成（A1）时同步决定 `CJ_LLM_ENABLED` 与 `CJ_LLM_API_KEY` |
 | SSE 并发上限默认 200，未压测 | 上线后按实际并发观察（P5 遗留增强项） |
 | **判题吞吐 ≈0.95 题/s，且不随实例数增长** | 队列会以约 1 题/s 的速度排空：200 次提交 ≈ 3.5 分钟。**这是当前最紧的一环**（详见 A4 与 `docs/PERF.md` §3.7） |
 | **每题 5 个 `docker run`**（1 编译 + 4 用例） | 宿主容器启停上限约 10–11 容器/s，故理论上限约 2 题/s；且并发争抢会让**正确解被判 TLE**（已提供 `CJ_MQ_CONSUME_THREADS` 约束） |
