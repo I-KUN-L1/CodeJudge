@@ -7,6 +7,16 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+      # CORS：前端「系统监控」页从浏览器**直连**本端口读 /actuator/health 与
+      # /actuator/prometheus（actuator 不在网关路由内）。此处不配，跨源响应会被
+      # 浏览器整体拦截（CORS 由浏览器执行）→ 监控页 8 个服务全部显示「不可达」，
+      # 与服务是否存活无关。只放行前端本地来源 + GET，与网关 globalcors 同一环境变量；
+      # Prometheus/Grafana 的抓取是服务端到服务端，不受 CORS 影响，无需额外放开。
+      cors:
+        allowed-origin-patterns: ${CORS_ALLOWED_ORIGINS:http://localhost:[*],http://127.0.0.1:[*]}
+        allowed-methods: GET,OPTIONS
+        allowed-headers: "*"
+        max-age: 3600
   endpoint:
     health:
       show-details: always

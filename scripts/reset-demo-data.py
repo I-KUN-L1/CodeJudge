@@ -30,8 +30,9 @@ CodeJudge 演示数据重置：备份 → 清洗 → 灌入 → 重建榜单 →
 ────────────────────────────────────────────────────────────────────────────────
     backup  mysqldump 5 库 + pg_dump 1 库 → backups/<时间戳>/
     clean   删除压测/验收残留、清空提交域与竞赛域、清 Redis 的 judge:* 、清 PG 两表
-    seed    建 3 场竞赛（已结束/进行中/未开始）→ 报名 → **真实提交 55 次**（清单条数由
-            NON_CONTEST/CONTEST_ENDED/CONTEST_RUNNING 决定，改清单即改这个数）→
+    seed    建 4 场竞赛（ACM 已结束/进行中/未开始 + IOI 已结束）→ 报名 →
+            **真实提交 83 次**（清单条数由 NON_CONTEST/CONTEST_ENDED/CONTEST_RUNNING/
+            CONTEST_ENDED_IOI 决定，改清单即改这个数）→
             回填通过率计数 → 灌 PG 知识切片与历史点评。
             注意：这里**不**用 SQL 改竞赛状态（原因见 phase_seed 3.1 的注释）
     rank    调 `POST /contests/{id}/rank/rebuild` 从提交表回放重算 ZSet 榜单；
@@ -87,17 +88,27 @@ DEMO_TITLES = {
     "ended": "【演示】算法热身赛（已结束 · 含终榜与封榜快照）",
     "running": "【演示】周赛 #1（进行中 · 实时榜）",
     "upcoming": "【演示】新生赛（未开始）",
+    # IOI 赛制场：演示「按得分排名」与封榜禁用的组合（freezeMinutes=0）。
+    # 题目用 2026-09-27 扩充的新题（sql/seed.sql 4007–4009），顺带让题库新面孔有曝光。
+    "ended-ioi": "【演示】IOI 赛制练习赛（已结束 · 按得分排名）",
 }
-DEMO_PROBLEMS = [4001, 4002, 4003, 4004, 4005]
+DEMO_PROBLEMS = [4001, 4002, 4003, 4004, 4005, 4006,
+                 4007, 4008, 4009, 4010, 4011, 4012]
 DRAFT_PROBLEM = 4006
 
-# 学生账号（sql/seed.sql 的基线，8 个验收脚本依赖 13900000001 / 13900000011 与口令 123456）
+# 学生账号（sql/seed.sql 的基线；2026-09-27 扩充至 10 人，8 个验收脚本依赖
+# 13900000001 / 13900000011 与口令 123456）
 STUDENTS = [
     (2001, "13900000001", "演示学员一"),
     (2002, "13900000002", "演示学员二"),
     (2003, "13900000003", "演示学员三"),
     (2004, "13900000004", "演示学员四"),
     (2005, "13900000005", "演示学员五"),
+    (2006, "13900000006", "演示学员六"),
+    (2007, "13900000007", "演示学员七"),
+    (2008, "13900000008", "演示学员八"),
+    (2009, "13900000009", "演示学员九"),
+    (2010, "13900000010", "演示学员十"),
 ]
 STUDENT_PASS = "123456"
 TEACHER_PHONE = "13900000011"  # 演示教师一
@@ -383,6 +394,45 @@ public class Main {
     #    （若认为这是缺陷，修法是在沙箱里为脚本语言加一次 `python -m py_compile` 预检；
     #      这里先按实测把键名改成 RE，不做代码改动。）
     "4005:RE:PYTHON": "def main(:\n    print(1)",
+    # ---- 2026-09-27 扩充题（sql/seed.sql 4007–4012）----
+    # 新题片段刻意保持极简且只走 PYTHON：判题机才是权威（实际结论 != 期望只 WARN 不断言），
+    # 但用例与片段都按"一眼可验证"设计，把偏差概率压到最低。错误模式只复用
+    # 已实测过的两类：输出错值（WA）与未捕获异常（RE）。
+    "4007:AC:PYTHON": "import sys\ns = sys.stdin.read().strip()\nprint('YES' if s == s[::-1] else 'NO')",
+    # 只比较首尾字符：'abca' 首尾同为 a → 输出 YES，与期望 NO 相反 → WA
+    "4007:WA:PYTHON": "import sys\ns = sys.stdin.read().strip()\nprint('YES' if s[0] == s[-1] else 'NO')",
+    "4008:AC:PYTHON": ("import sys\nd = sys.stdin.read().split()\n"
+                       "n, q = int(d[0]), int(d[1])\na = list(map(int, d[2:2+n]))\nout = []\n"
+                       "for i in range(q):\n    x = int(d[2+n+i])\n    lo, hi = 0, n\n"
+                       "    while lo < hi:\n        m = (lo + hi) // 2\n        if a[m] < x: lo = m + 1\n"
+                       "        else: hi = m\n    out.append(str(lo) if lo < n and a[lo] == x else '-1')\n"
+                       "print('\\n'.join(out))"),
+    # x 不在数组时 a.index(x) 抛 ValueError → RE（隐藏用例 4223 恰是 x=3 不存在）
+    "4008:RE:PYTHON": ("import sys\nd = sys.stdin.read().split()\n"
+                       "n, q = int(d[0]), int(d[1])\na = list(map(int, d[2:2+n]))\n"
+                       "for i in range(q):\n    print(a.index(int(d[2+n+i])))"),
+    "4009:AC:PYTHON": "n = int(input())\na, b = 1, 2\nfor _ in range(n - 1):\n    a, b = b, a + b\nprint(a)",
+    # 斐波那契初始值写错（1,1 而非 1,2）：f(3) 输出 2 而非 3 → 全用例 WA
+    "4009:WA:PYTHON": "n = int(input())\na, b = 1, 1\nfor _ in range(n - 1):\n    a, b = b, a + b\nprint(a)",
+    "4010:AC:PYTHON": "m = int(input())\nc = 0\nfor v in (100, 50, 20, 10, 5, 1):\n    c += m // v\n    m %= v\nprint(c)",
+    # 贪心漏掉 50 元面额：73 → 20×3+10+1×3 = 7 张，与期望 5 不符 → WA
+    "4010:WA:PYTHON": "m = int(input())\nc = 0\nfor v in (100, 20, 10, 5, 1):\n    c += m // v\n    m %= v\nprint(c)",
+    "4011:AC:PYTHON": ("import sys\nd = sys.stdin.read().split()\n"
+                       "n, t = int(d[0]), int(d[1])\na = list(map(int, d[2:2+n]))\npos = {}\n"
+                       "for i, v in enumerate(a):\n    if t - v in pos:\n        print(pos[t - v], i)\n        break\n"
+                       "    pos[v] = i"),
+    # 下标顺序反了（先当前后历史）：4229 输出 "1 0" 而非 "0 1" → WA
+    "4011:WA:PYTHON": ("import sys\nd = sys.stdin.read().split()\n"
+                       "n, t = int(d[0]), int(d[1])\na = list(map(int, d[2:2+n]))\npos = {}\n"
+                       "for i, v in enumerate(a):\n    if t - v in pos:\n        print(i, pos[t - v])\n        break\n"
+                       "    pos[v] = i"),
+    "4012:AC:PYTHON": ("import sys\nd = sys.stdin.read().split()\nn = int(d[0])\n"
+                       "a = [d[1+i*n:1+(i+1)*n] for i in range(n)]\n"
+                       "for i in range(n):\n    print(' '.join(a[n-1-j][i] for j in range(n)))"),
+    # 逆时针旋转（new[i][j] = old[j][n-1-i]）：2×2 输出 "2 4" / "1 3" → WA
+    "4012:WA:PYTHON": ("import sys\nd = sys.stdin.read().split()\nn = int(d[0])\n"
+                       "a = [d[1+i*n:1+(i+1)*n] for i in range(n)]\n"
+                       "for i in range(n):\n    print(' '.join(a[j][n-1-i] for j in range(n)))"),
 }
 
 # 演示提交清单：字段 = (用户id, 题目id, 竞赛id, 语言, 代码键, 提交时刻偏移(分钟, 相对 NOW()) )
@@ -426,6 +476,23 @@ NON_CONTEST = [
     (2002, 4004, 0, "PYTHON", "4004:WA:PYTHON", -3000),
     (2003, 4003, 0, "PYTHON", "4003:AC:PYTHON", -3200),
     (2004, 4002, 0, "JAVA", "4002:AC:JAVA", -3400),
+    # ---- 扩充题（4007–4012）：让新题在「提交记录」「通过率」列也有真实数据 ----
+    (2002, 4007, 0, "PYTHON", "4007:AC:PYTHON", -70),
+    (2003, 4007, 0, "PYTHON", "4007:WA:PYTHON", -95),
+    (2004, 4007, 0, "PYTHON", "4007:AC:PYTHON", -130),
+    (2005, 4008, 0, "PYTHON", "4008:AC:PYTHON", -160),
+    (2006, 4008, 0, "PYTHON", "4008:RE:PYTHON", -200),
+    (2007, 4008, 0, "PYTHON", "4008:AC:PYTHON", -260),
+    (2008, 4009, 0, "PYTHON", "4009:AC:PYTHON", -310),
+    (2009, 4009, 0, "PYTHON", "4009:WA:PYTHON", -380),
+    (2010, 4009, 0, "PYTHON", "4009:AC:PYTHON", -450),
+    (2006, 4010, 0, "PYTHON", "4010:AC:PYTHON", -800),
+    (2007, 4010, 0, "PYTHON", "4010:WA:PYTHON", -1200),
+    (2008, 4011, 0, "PYTHON", "4011:AC:PYTHON", -1600),
+    (2009, 4011, 0, "PYTHON", "4011:WA:PYTHON", -2000),
+    (2010, 4011, 0, "PYTHON", "4011:AC:PYTHON", -2400),
+    (2009, 4012, 0, "PYTHON", "4012:AC:PYTHON", -2800),
+    (2010, 4012, 0, "PYTHON", "4012:WA:PYTHON", -3000),
 ]
 
 # 已结束那场（含终榜与封榜快照）：A=4001 B=4002 C=4004
@@ -457,6 +524,24 @@ CONTEST_RUNNING = [
     (2001, 4002, "PYTHON", "4002:AC:PYTHON", -8),
 ]
 
+# IOI 赛制那场（已结束 · 按得分排名）：A=4007 B=4008 C=4009。
+# IOI 榜按各题**最高得分**合计排名；提交时间窗口 [-22, -9] 分钟，
+# 竞赛窗口是 [-2880, +10]（见 plans），全部落在窗内。
+CONTEST_ENDED_IOI = [
+    (2001, 4007, "PYTHON", "4007:AC:PYTHON", -20),
+    (2001, 4008, "PYTHON", "4008:AC:PYTHON", -16),
+    (2001, 4009, "PYTHON", "4009:AC:PYTHON", -12),
+    (2002, 4007, "PYTHON", "4007:AC:PYTHON", -18),
+    (2002, 4008, "PYTHON", "4008:RE:PYTHON", -14),
+    (2003, 4007, "PYTHON", "4007:AC:PYTHON", -19),
+    (2003, 4009, "PYTHON", "4009:WA:PYTHON", -15),
+    (2004, 4007, "PYTHON", "4007:WA:PYTHON", -17),
+    (2005, 4007, "PYTHON", "4007:AC:PYTHON", -22),
+    (2006, 4008, "PYTHON", "4008:AC:PYTHON", -13),
+    (2007, 4009, "PYTHON", "4009:AC:PYTHON", -11),
+    (2008, 4007, "PYTHON", "4007:AC:PYTHON", -9),
+]
+
 ALLOWED_VERDICTS = ["AC", "WA", "TLE", "MLE", "RE", "CE"]
 
 PASS, FAIL = 0, 0
@@ -474,6 +559,7 @@ def _self_check_manifest():
         ("NON_CONTEST", NON_CONTEST, 3, 4),
         ("CONTEST_ENDED", CONTEST_ENDED, 2, 3),
         ("CONTEST_RUNNING", CONTEST_RUNNING, 2, 3),
+        ("CONTEST_ENDED_IOI", CONTEST_ENDED_IOI, 2, 3),
     ):
         for r in rows:
             lang, key = r[i_lang], r[i_key]
@@ -743,7 +829,7 @@ def phase_clean(args):
     junk_users = count(f"COUNT(*) FROM `user` WHERE {JUNK_USER_WHERE}", "judge_user")
     print("  影响面：")
     rows = [
-        ("judge_user.user", junk_users, f"压测/验收残留账号（保留 5 学员 + 2 教师 + {admin_phone}）"),
+        ("judge_user.user", junk_users, f"压测/验收残留账号（保留 10 学员 + 2 教师 + {admin_phone}）"),
         ("judge_user.user_detail", -1, "孤儿详情（所属用户已被删的行）"),
         ("judge_submission.submission", count("COUNT(*) FROM submission", "judge_submission"), "全部提交"),
         ("judge_submission.judge_task", count("COUNT(*) FROM judge_task", "judge_submission"), "全部判题任务"),
@@ -792,7 +878,7 @@ DELETE FROM judge_user.`user` WHERE {JUNK_USER_WHERE} AND cell_phone <> '{admin_
 DELETE FROM judge_user.user_detail WHERE user_id NOT IN (SELECT id FROM judge_user.`user`);
 """)
     left_users = count("COUNT(*) FROM `user`", "judge_user")
-    print(f"  ✓ MySQL 清洗完成，user 表剩 {left_users} 行（5 学员 + 2 教师 + 1 管理员 = 8 为预期）")
+    print(f"  ✓ MySQL 清洗完成，user 表剩 {left_users} 行（10 学员 + 2 教师 + 1 管理员 = 13 为预期）")
 
     n = redis_delete_prefix("judge:*")
     print(f"  ✓ Redis 删除 judge:* 共 {n} 个键")
@@ -860,12 +946,14 @@ KNOWLEDGE = [
 
 def phase_seed(args):
     print("  计划：")
-    print("    · 建 3 场竞赛（按标题幂等：同名旧竞赛先清后建）："
-          "已结束 / 进行中 / 未开始")
-    print(f"    · 报名：{len(STUDENTS)} 名演示学员 × 3 场")
+    print("    · 灌 sql/seed.sql（幂等 INSERT IGNORE）：10 名学员 + 12 道题 + 用例/标签")
+    print("    · 建 4 场竞赛（按标题幂等：同名旧竞赛先清后建）："
+          "已结束(ACM) / 进行中 / 未开始 / 已结束(IOI)")
+    print(f"    · 报名：{len(STUDENTS)} 名演示学员 × 4 场")
     print(f"    · 真实提交 {len(NON_CONTEST)} 条日常 + {len(CONTEST_ENDED)} 条（已结束场）"
-          f" + {len(CONTEST_RUNNING)} 条（进行中场）= {len(NON_CONTEST) + len(CONTEST_ENDED) + len(CONTEST_RUNNING)} 条，"
-          f"全部经网关投递、由判题机真判（预计 4–6 分钟）")
+          f" + {len(CONTEST_RUNNING)} 条（进行中场）+ {len(CONTEST_ENDED_IOI)} 条（IOI 场）"
+          f" = {len(NON_CONTEST) + len(CONTEST_ENDED) + len(CONTEST_RUNNING) + len(CONTEST_ENDED_IOI)} 条，"
+          f"全部经网关投递、由判题机真判（预计 6–9 分钟）")
     print(f"    · 回填 problem.submit_count/accepted_count 与 contest_problem 计数")
     print(f"    · PostgreSQL：{len(KNOWLEDGE)} 条知识切片 + 3 条历史点评（含 1024 维占位向量）")
     if not args.yes:
@@ -873,6 +961,13 @@ def phase_seed(args):
 
     if requests.get(f"{GATEWAY}/actuator/health", timeout=5, proxies={"http": None}).status_code >= 500:
         raise SystemExit("网关不可用，请先启动服务：python scripts/start-all.py --no-infra --wait")
+
+    # ---- 3.0 灌种子（账号/题目/用例/标签是**内容**，INSERT IGNORE 幂等）----
+    # 与提交数据不同：账号与题面不经过判题链路，SQL 种子是合法来源（seed.sql 本就是权威出处）。
+    # 这一步必须在登录之前 —— 新扩充的 5 名学员（2006–2010）只存在于 seed.sql 里。
+    seed_path = ROOT / "sql" / "seed.sql"
+    mysql_sql(seed_path.read_text(encoding="utf-8"))
+    print(f"  ✓ sql/seed.sql 已灌入（幂等；共 {mysql_sql('SELECT COUNT(*) FROM judge_user.`user` WHERE deleted = 0;').strip()} 个账号）")
 
     teacher = login(TEACHER_PHONE, STUDENT_PASS)
     now = dt.datetime.now()
@@ -895,14 +990,24 @@ def phase_seed(args):
     # 现在改成：提交灌完后**先**在"仍在赛程内"时调 rebuild?refreeze=true 生成封榜快照，
     # 再把 end_time 推回过去、让扫描任务自己把状态推进到"已结束"并写终榜。
     plans = {
-        "ended": (DEMO_TITLES["ended"],
+        "ended": (DEMO_TITLES["ended"], "ACM",
                   "2 小时赛程，赛末 30 分钟封榜。演示终榜重建、封榜快照留档，以及"
-                  "「解封后公开榜等于完整榜」。", -120, +10, 30, [4001, 4002, 4004]),
-        "running": (DEMO_TITLES["running"],
+                  "「解封后公开榜等于完整榜」。",
+                  -120, +10, 30, [4001, 4002, 4004]),
+        "running": (DEMO_TITLES["running"], "ACM",
                     "3 小时赛程，赛末 30 分钟封榜（当前未到封榜时刻）。"
-                    "演示 Redis 实时榜与 WebSocket 名次推送。", -45, +180, 30, [4001, 4002, 4003]),
-        "upcoming": (DEMO_TITLES["upcoming"],
-                     "明天开赛。演示“未开始”状态与赛前报名。", +1440, +1620, 0, [4001, 4005]),
+                    "演示 Redis 实时榜与 WebSocket 名次推送。",
+                    -45, +180, 30, [4001, 4002, 4003]),
+        "upcoming": (DEMO_TITLES["upcoming"], "ACM",
+                     "明天开赛。演示“未开始”状态与赛前报名。",
+                     +1440, +1620, 0, [4001, 4005]),
+        # IOI 场：赛制与"已结束"那场刻意不同（按得分排名 vs 按罚时排名），
+        # 且 freezeMinutes=0 —— 演示「不封榜」与「按分制」的组合。
+        # 窗口起点推到两天前，让竞赛列表页多一种"跨天"的时间形态。
+        "ended-ioi": (DEMO_TITLES["ended-ioi"], "IOI",
+                      "IOI 赛制（按各题最高得分合计排名，不罚时、不封榜）。"
+                      "题目为题库扩充的新题 A=回文判断 B=二分查找 C=爬楼梯。",
+                      -2880, +10, 0, [4007, 4008, 4009]),
     }
 
     # 幂等：先把同名旧竞赛连编排/报名/快照一起清掉再重建，
@@ -920,11 +1025,11 @@ DELETE FROM judge_contest.contest WHERE id = {old};
 
     labels = ["A", "B", "C", "D"]
     ids = {}
-    for key, (title, desc, start_off, end_off, freeze, probs) in plans.items():
+    for key, (title, rule, desc, start_off, end_off, freeze, probs) in plans.items():
         body = {
             "title": title,
             "description": desc,
-            "rule": "ACM",
+            "rule": rule,
             "startTime": (now + dt.timedelta(minutes=start_off)).strftime("%Y-%m-%dT%H:%M:%S"),
             "endTime": (now + dt.timedelta(minutes=end_off)).strftime("%Y-%m-%dT%H:%M:%S"),
             "freezeMinutes": freeze,
@@ -944,12 +1049,12 @@ DELETE FROM judge_contest.contest WHERE id = {old};
     # ---- 3.2 报名（必须在竞赛结束之前）----
     for pid, phone, _name in STUDENTS:
         h = login(phone, STUDENT_PASS)
-        for key in ("ended", "running", "upcoming"):
+        for key in ("ended", "running", "upcoming", "ended-ioi"):
             r = requests.post(f"{GATEWAY}/contests/{ids[key]}/register",
                               headers=h, timeout=TIMEOUT).json()
             if r.get("code") != 200:
                 warn(f"报名失败 user={pid} contest={ids[key]}：{r.get('msg')}")
-    print(f"  ✓ 报名完成（{len(STUDENTS)} 名学员 × 3 场）")
+    print(f"  ✓ 报名完成（{len(STUDENTS)} 名学员 × 4 场）")
 
     # ---- 3.3 真实提交 ----
     tokens = {pid: login(phone, STUDENT_PASS) for pid, phone, _n in STUDENTS}
@@ -993,6 +1098,8 @@ DELETE FROM judge_contest.contest WHERE id = {old};
         do_submit(user, problem, ids["ended"], lang, key)
     for user, problem, lang, key, _off in CONTEST_RUNNING:
         do_submit(user, problem, ids["running"], lang, key)
+    for user, problem, lang, key, _off in CONTEST_ENDED_IOI:
+        do_submit(user, problem, ids["ended-ioi"], lang, key)
     print(f"  ✓ 提交完成，耗时 {time.time() - t0:.0f}s")
 
     # ---- 3.4 提交时间回拨 ----
@@ -1109,8 +1216,9 @@ def phase_rank(args):
     ids = resolve_demo_ids()
     print("  榜单与快照：")
     print("    ① 进行中那场：POST /contests/{id}/rank/rebuild（不封榜）")
-    print("    ② 已结束那场：**先在赛程内** rebuild?refreeze=true 生成封榜快照（FROZEN）")
-    print("    ③ 再把它的 end_time 推回过去，交给 10s 扫描任务推进状态并写终榜（FINAL）")
+    print("    ② 两场已结束：**先在赛程内** rebuild —— ACM 场 refreeze=true 生成封榜快照（FROZEN），")
+    print("       IOI 场不封榜（freezeMinutes=0）只重建实时榜")
+    print("    ③ 再把两场已结束竞赛的 end_time 推回过去，交给 10s 扫描任务推进状态并写终榜（FINAL）")
     for key, cid in sorted(ids.items()):
         print(f"       · {key:<9} id={cid}")
     if not ids:
@@ -1132,19 +1240,22 @@ def phase_rank(args):
               f"participants={d.get('participants')} refrozen={d.get('refrozen')} {d.get('tookMs')}ms")
         return d
 
-    # ① / ② 先把两场的榜单（在赛程内）重算出来；"已结束"那场顺带封榜
-    for key in ("running", "ended"):
+    # ① / ② 先把各场榜单（在赛程内）重算出来；ACM 已结束场顺带封榜。
+    # IOI 场 refreeze 恒为 false：freezeMinutes=0 时封榜无意义，传 true 属于误导性调用。
+    for key in ("running", "ended", "ended-ioi"):
         if key in ids:
             rebuild(ids[key], refreeze=(key == "ended"))
 
-    # ③ 把"已结束"那场的结束时刻推回过去。**只改 end_time，不改 status** ——
+    # ③ 把两场已结束竞赛的结束时刻推回过去。**只改 end_time，不改 status** ——
     #    状态推进与终榜留档都由 ContestLifecycleService 每 10s 的扫描完成，
     #    这正是要演示的真实链路。手动把 status 置 2 会跳过它。
-    if "ended" in ids:
-        ended = ids["ended"]
+    for key in ("ended", "ended-ioi"):
+        if key not in ids:
+            continue
+        ended = ids[key]
         mysql_sql(f"UPDATE judge_contest.contest SET end_time = DATE_SUB(NOW(), INTERVAL 1 MINUTE) "
                   f"WHERE id = {ended};")
-        print(f"  · 已把竞赛 {ended} 的 end_time 推回过去，等待扫描任务推进到「已结束」并写终榜……")
+        print(f"  · 已把竞赛 {ended}（{key}）的 end_time 推回过去，等待扫描任务推进到「已结束」并写终榜……")
         snap = 0
         st = ""
         for i in range(24):                     # 最多等 ~96s（扫描周期 10s，留足余量）
@@ -1153,12 +1264,12 @@ def phase_rank(args):
                            f"WHERE id = {ended} AND deleted = 0;",
                            "judge_contest").strip().split("\n")[-1].strip()
             snap = int(mysql_sql("SELECT COUNT(*) FROM judge_contest.contest_rank_snapshot "
-                                 "WHERE deleted = 0 AND snapshot_type = 'FINAL';",
+                                 f"WHERE deleted = 0 AND snapshot_type = 'FINAL' AND contest_id = {ended};",
                                  "judge_contest").strip().split("\n")[-1])
-            if st == "2" and snap > 0:
+            if st == "2" and snap >= 1:
                 break
-        ok = st == "2" and snap > 0
-        print(f"  {'✓' if ok else '!'} 竞赛 {ended}：status={st}（期望 2）终榜快照={snap} 条（期望 >0）")
+        ok = st == "2" and snap >= 1
+        print(f"  {'✓' if ok else '!'} 竞赛 {ended}（{key}）：status={st}（期望 2）终榜快照累计={snap} 条（期望 ≥1）")
         if not ok:
             warn("扫描任务未在 96s 内完成推进；可稍后重跑 `--yes --phases rank,verify` 再验")
 
@@ -1213,10 +1324,10 @@ SELECT COUNT(*) FROM judge_problem.problem p
     check("通过率计数与真实提交一致", mism == "0", f"不一致行数={mism}")
 
     users = int(scalar("SELECT COUNT(*) FROM `user` WHERE deleted = 0;", "judge_user") or 0)
-    check("账号表只剩基线账号（5 学员 + 2 教师 + 1 管理员）", users == 8, f"user={users}")
+    check("账号表只剩基线账号（10 学员 + 2 教师 + 1 管理员）", users == 13, f"user={users}")
 
     ids = resolve_demo_ids()
-    check("三场演示竞赛齐备（按标题匹配）", len(ids) == 3, f"{sorted(ids)}")
+    check("四场演示竞赛齐备（按标题匹配）", len(ids) == 4, f"{sorted(ids)}")
     states = {k: scalar(f"SELECT status FROM judge_contest.contest "
                         f"WHERE id = {cid} AND deleted = 0;", "judge_contest")
               for k, cid in ids.items()}
@@ -1238,7 +1349,7 @@ SELECT COUNT(*) FROM judge_problem.problem p
         zcards.append((key, cid, live, frozen))
     for key, cid, live, frozen in zcards:
         print(f"    · contest={cid}（{key}）实时榜={live} 冻结榜={frozen}")
-    active = [(k, live) for k, c, live, _f in zcards if k in ("ended", "running")]
+    active = [(k, live) for k, c, live, _f in zcards if k in ("ended", "running", "ended-ioi")]
     check("已结束/进行中两场的实时榜都有数据",
           all(z.isdigit() and int(z) > 0 for _k, z in active), f"{active}")
     ended_frozen = [f for k, c, _l, f in zcards if k == "ended"]

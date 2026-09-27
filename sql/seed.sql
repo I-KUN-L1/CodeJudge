@@ -249,3 +249,128 @@ INSERT IGNORE INTO `contest_registration`
 (5211, 5001, 2001, DATE_SUB(NOW(), INTERVAL 200 MINUTE), 1, NOW(), NOW(), 0),
 (5212, 5001, 2002, DATE_SUB(NOW(), INTERVAL 199 MINUTE), 1, NOW(), NOW(), 0),
 (5213, 5001, 2003, DATE_SUB(NOW(), INTERVAL 198 MINUTE), 1, NOW(), NOW(), 0);
+
+-- ===================== 2026-09-27 扩充：更多学员与题目 =====================
+--
+-- 固定 id 段位（延续上文约定）：
+--   user / user_detail  学员 2006–2010
+--   problem             4007–4012（全部已发布）
+--   problem_version     4107–4112（一一对应，version_no = 1）
+--   test_case           4218–4232（每题 2–3 个，各题分值合计 = 100）
+--   problem_tag         4313–4324
+--
+-- 提交/榜单/竞赛数据**不在本文件**：提交必须走真实判题（结论由判题机产出，
+-- 直接 INSERT verdict 会与逐用例结果、重交幂等、Redis 榜单全面脱节），
+-- 统一由 scripts/reset-demo-data.py 的 seed/rank 阶段产生。
+
+USE `judge_user`;
+
+-- 学员（type=2）：扩充榜单与提交记录的参与面
+INSERT IGNORE INTO `user` (`id`, `cell_phone`, `username`, `password`, `name`, `type`, `status`, `create_time`, `update_time`, `deleted`) VALUES
+(2006, '13900000006', 'student006', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示学员六', 2, 1, NOW(), NOW(), 0),
+(2007, '13900000007', 'student007', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示学员七', 2, 1, NOW(), NOW(), 0),
+(2008, '13900000008', 'student008', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示学员八', 2, 1, NOW(), NOW(), 0),
+(2009, '13900000009', 'student009', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示学员九', 2, 1, NOW(), NOW(), 0),
+(2010, '13900000010', 'student010', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示学员十', 2, 1, NOW(), NOW(), 0);
+
+USE `judge_problem`;
+
+INSERT IGNORE INTO `problem`
+(`id`, `title`, `difficulty`, `time_limit_ms`, `memory_limit_mb`, `status`, `owner_id`, `current_version_id`, `submit_count`, `accepted_count`, `create_time`, `update_time`, `deleted`) VALUES
+(4007, '回文判断', 1, 1000, 256, 1, 2101, 4107, 0, 0, NOW(), NOW(), 0),
+(4008, '二分查找（首次出现下标）', 2, 1000, 256, 1, 2101, 4108, 0, 0, NOW(), NOW(), 0),
+(4009, '爬楼梯', 1, 1000, 256, 1, 2102, 4109, 0, 0, NOW(), NOW(), 0),
+(4010, '找零钱（最少张数）', 2, 1000, 256, 1, 2102, 4110, 0, 0, NOW(), NOW(), 0),
+(4011, '两数之和', 2, 1000, 256, 1, 2101, 4111, 0, 0, NOW(), NOW(), 0),
+(4012, '矩阵顺时针旋转 90°', 3, 1000, 256, 1, 2102, 4112, 0, 0, NOW(), NOW(), 0);
+
+INSERT IGNORE INTO `problem_version`
+(`id`, `problem_id`, `version_no`, `statement`, `input_spec`, `output_spec`, `hint`, `template_code`, `created_by`, `create_time`, `update_time`, `deleted`) VALUES
+(4107, 4007, 1,
+ '给定一个仅含小写字母的字符串 s，判断它是否为回文串（正读与反读完全相同）。',
+ '一行，一个字符串 s（1 ≤ |s| ≤ 1000）。',
+ '一行：是回文输出 YES，否则输出 NO。',
+ '直接比较 s 与它的逆序即可，注意不要在字符串首尾引入多余空白。',
+ '{"java":"import java.util.*;\\npublic class Main{\\n  public static void main(String[] args){\\n    Scanner sc = new Scanner(System.in);\\n    String s = sc.next().trim();\\n    StringBuilder r = new StringBuilder(s).reverse();\\n    System.out.println(s.contentEquals(r) ? \\"YES\\" : \\"NO\\");\\n  }\\n}","python":"import sys\\ns = sys.stdin.read().strip()\\nprint(\'YES\' if s == s[::-1] else \'NO\')","cpp":"#include <bits/stdc++.h>\\nusing namespace std;\\nint main(){ string s; cin >> s; string r(s.rbegin(), s.rend()); cout << (s == r ? \\"YES\\" : \\"NO\\") << endl; return 0; }"}',
+ 2101, NOW(), NOW(), 0),
+
+(4108, 4008, 1,
+ '给定一个严格按升序排列的整数数组与 q 次询问。对每个询问的整数 x：若在数组中存在，输出它**首次出现**的下标（从 0 开始）；否则输出 -1。',
+ '第一行两个整数 n、q（1 ≤ n ≤ 10^5，1 ≤ q ≤ 10^5）；第二行 n 个升序整数；随后 q 行每行一个整数 x。',
+ '共 q 行，每行一个整数：x 首次出现的下标或 -1。',
+ '数组有序，直接用二分求「第一个大于等于 x 的位置」，再校验该位置是否恰为 x。',
+ '{"java":"import java.io.*;\\npublic class Main{\\n  public static void main(String[] args) throws Exception{\\n    StreamTokenizer in = new StreamTokenizer(new BufferedInputStream(System.in));\\n    in.nextToken(); int n = (int) in.nval; in.nextToken(); int q = (int) in.nval;\\n    long[] a = new long[n];\\n    for (int i = 0; i < n; i++){ in.nextToken(); a[i] = (long) in.nval; }\\n    StringBuilder sb = new StringBuilder();\\n    while (q-- > 0){ in.nextToken(); long x = (long) in.nval;\\n      int lo = 0, hi = n;\\n      while (lo < hi){ int m = (lo + hi) >>> 1; if (a[m] < x) lo = m + 1; else hi = m; }\\n      sb.append(lo < n && a[lo] == x ? String.valueOf(lo) : \\"-1\\").append(\'\\n\');\\n    }\\n    System.out.print(sb);\\n  }\\n}","python":"import sys\\nd = sys.stdin.read().split()\\nn, q = int(d[0]), int(d[1])\\na = list(map(int, d[2:2+n]))\\nout = []\\nfor i in range(q):\\n    x = int(d[2+n+i])\\n    lo, hi = 0, n\\n    while lo < hi:\\n        m = (lo + hi) // 2\\n        if a[m] < x: lo = m + 1\\n        else: hi = m\\n    out.append(str(lo) if lo < n and a[lo] == x else \'-1\')\\nprint(\'\\\\n\'.join(out))"}',
+ 2101, NOW(), NOW(), 0),
+
+(4109, 4009, 1,
+ '你正在爬一段 n 阶的楼梯，每次可以上 1 阶或 2 阶。问：到达顶端共有多少种不同的走法？f(1)=1，f(2)=2。',
+ '一行，一个整数 n（1 ≤ n ≤ 60）。',
+ '一行，一个整数，表示走法总数。',
+ '这是斐波那契数列的变体：f(n) = f(n-1) + f(n-2)。n=45 时结果约 1.8×10^9，请使用 64 位整型。',
+ '{"java":"import java.util.*;\\npublic class Main{\\n  public static void main(String[] args){\\n    long n = new Scanner(System.in).nextLong();\\n    long a = 1, b = 2;\\n    for (long i = 1; i < n; i++){ long t = a + b; a = b; b = t; }\\n    System.out.println(a);\\n  }\\n}","python":"n = int(input())\\na, b = 1, 2\\nfor _ in range(n - 1):\\n    a, b = b, a + b\\nprint(a)","cpp":"#include <iostream>\\nusing namespace std;\\nint main(){ long long n; cin >> n; long long a = 1, b = 2;\\n  for (long long i = 1; i < n; i++){ long long t = a + b; a = b; b = t; }\\n  cout << a << endl; return 0; }"}',
+ 2102, NOW(), NOW(), 0),
+
+(4110, 4010, 1,
+ '人民币面额为 1、5、10、20、50、100。给定金额 m，求凑出 m 所需的最少纸币张数。保证 m 可以被凑出。',
+ '一行，一个整数 m（1 ≤ m ≤ 10^9）。',
+ '一行，一个整数，表示最少张数。',
+ '贪心：每次优先使用不大于剩余金额的最大面额。本题面额体系下贪心即最优。',
+ '{"java":"import java.util.*;\\npublic class Main{\\n  public static void main(String[] args){\\n    long m = new Scanner(System.in).nextLong();\\n    int c = 0;\\n    long[] d = {100, 50, 20, 10, 5, 1};\\n    for (long v : d){ c += m / v; m %= v; }\\n    System.out.println(c);\\n  }\\n}","python":"m = int(input())\\nc = 0\\nfor v in (100, 50, 20, 10, 5, 1):\\n    c += m // v\\n    m %= v\\nprint(c)","cpp":"#include <iostream>\\nusing namespace std;\\nint main(){ long long m; cin >> m; int c = 0;\\n  long long d[] = {100, 50, 20, 10, 5, 1};\\n  for (long long v : d){ c += m / v; m %= v; }\\n  cout << c << endl; return 0; }"}',
+ 2102, NOW(), NOW(), 0),
+
+(4111, 4011, 1,
+ '给定 n 个整数与目标值 target，求数组中和恰为 target 的两个整数的小下标在前、大下标在后的组合（下标从 0 开始），保证恰有一组解。',
+ '第一行两个整数 n、target（2 ≤ n ≤ 10^4）；第二行 n 个整数。',
+ '一行，两个整数 i j（i < j），用空格分隔。',
+ '用哈希表记录「值 → 首次出现的下标」，遍历时查询 target - 当前值是否已出现过。',
+ '{"java":"import java.util.*;\\npublic class Main{\\n  public static void main(String[] args){\\n    Scanner sc = new Scanner(System.in);\\n    int n = sc.nextInt(), t = sc.nextInt();\\n    int[] a = new int[n];\\n    for (int i = 0; i < n; i++) a[i] = sc.nextInt();\\n    Map<Integer, Integer> pos = new HashMap<>();\\n    for (int i = 0; i < n; i++){\\n      if (pos.containsKey(t - a[i])){ System.out.println(pos.get(t - a[i]) + \\" \\" + i); return; }\\n      pos.put(a[i], i);\\n    }\\n  }\\n}","python":"import sys\\nd = sys.stdin.read().split()\\nn, t = int(d[0]), int(d[1])\\na = list(map(int, d[2:2+n]))\\npos = {}\\nfor i, v in enumerate(a):\\n    if t - v in pos:\\n        print(pos[t - v], i)\\n        break\\n    pos[v] = i","cpp":"#include <bits/stdc++.h>\\nusing namespace std;\\nint main(){ int n, t; cin >> n >> t;\\n  vector<long long> a(n); for (auto &v : a) cin >> v;\\n  unordered_map<long long, int> pos;\\n  for (int i = 0; i < n; i++){\\n    auto it = pos.find(t - a[i]);\\n    if (it != pos.end()){ cout << it->second << \\" \\" << i << endl; return 0; }\\n    pos[a[i]] = i;\\n  }\\n  return 0; }"}',
+ 2101, NOW(), NOW(), 0),
+
+(4112, 4012, 1,
+ '给定一个 n×n 的整数矩阵，将它顺时针旋转 90° 后输出。即 new[i][j] = old[n-1-j][i]。',
+ '第一行一个整数 n（1 ≤ n ≤ 100）；随后 n 行每行 n 个整数。',
+ 'n 行，每行 n 个整数，以空格分隔，表示旋转后的矩阵。',
+ '先按主对角线转置，再每行左右翻转，等价于顺时针旋转 90°。',
+ '{"java":"import java.util.*;\\npublic class Main{\\n  public static void main(String[] args){\\n    Scanner sc = new Scanner(System.in);\\n    int n = sc.nextInt();\\n    String[][] a = new String[n][n];\\n    for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) a[i][j] = sc.next();\\n    StringBuilder sb = new StringBuilder();\\n    for (int i = 0; i < n; i++){\\n      for (int j = 0; j < n; j++){ if (j > 0) sb.append(\' \'); sb.append(a[n-1-j][i]); }\\n      sb.append(\'\\n\');\\n    }\\n    System.out.print(sb);\\n  }\\n}","python":"import sys\\nd = sys.stdin.read().split()\\nn = int(d[0])\\na = [d[1+i*n:1+(i+1)*n] for i in range(n)]\\nfor i in range(n):\\n    print(\' \'.join(a[n-1-j][i] for j in range(n)))","cpp":"#include <bits/stdc++.h>\\nusing namespace std;\\nint main(){ int n; cin >> n;\\n  vector<vector<string>> a(n, vector<string>(n));\\n  for (auto &r : a) for (auto &v : r) cin >> v;\\n  for (int i = 0; i < n; i++){\\n    for (int j = 0; j < n; j++){ if (j) cout << \' \'; cout << a[n-1-j][i]; }\\n    cout << endl;\\n  }\\n  return 0; }"}',
+ 2102, NOW(), NOW(), 0);
+
+-- 测试用例（各题分值合计 = 100；is_hidden=1 仅归属教师/管理员可见）
+INSERT IGNORE INTO `test_case`
+(`id`, `problem_id`, `seq`, `stdin`, `expected_stdout`, `is_hidden`, `score`, `time_limit_ms`, `judge_mode`, `create_time`, `update_time`, `deleted`) VALUES
+-- 4007 回文判断
+(4218, 4007, 1, 'aba', 'YES', 0, 30, NULL, 0, NOW(), NOW(), 0),
+(4219, 4007, 2, 'abca', 'NO', 0, 30, NULL, 0, NOW(), NOW(), 0),
+(4220, 4007, 3, 'abcba', 'YES', 1, 40, NULL, 0, NOW(), NOW(), 0),
+-- 4008 二分查找
+(4221, 4008, 1, '5 2\n1 3 5 7 9\n5\n9', '2\n4', 0, 30, NULL, 0, NOW(), NOW(), 0),
+(4222, 4008, 2, '3 1\n2 2 2\n2', '0', 0, 30, NULL, 0, NOW(), NOW(), 0),
+(4223, 4008, 3, '4 1\n1 2 4 8\n3', '-1', 1, 40, NULL, 0, NOW(), NOW(), 0),
+-- 4009 爬楼梯（f(45) = 斐波那契 1836311903）
+(4224, 4009, 1, '3', '3', 0, 40, NULL, 0, NOW(), NOW(), 0),
+(4225, 4009, 2, '45', '1836311903', 1, 60, NULL, 0, NOW(), NOW(), 0),
+-- 4010 找零钱（999 = 100×9 + 50 + 20×2 + 5 + 1×4 = 17 张）
+(4226, 4010, 1, '73', '5', 0, 30, NULL, 0, NOW(), NOW(), 0),
+(4227, 4010, 2, '100', '1', 0, 30, NULL, 0, NOW(), NOW(), 0),
+(4228, 4010, 3, '999', '17', 1, 40, NULL, 0, NOW(), NOW(), 0),
+-- 4011 两数之和
+(4229, 4011, 1, '4 9\n2 7 11 15', '0 1', 0, 50, NULL, 0, NOW(), NOW(), 0),
+(4230, 4011, 2, '3 6\n3 2 4', '1 2', 1, 50, NULL, 0, NOW(), NOW(), 0),
+-- 4012 矩阵旋转
+(4231, 4012, 1, '2\n1 2\n3 4', '3 1\n4 2', 0, 40, NULL, 0, NOW(), NOW(), 0),
+(4232, 4012, 2, '3\n1 2 3\n4 5 6\n7 8 9', '7 4 1\n8 5 2\n9 6 3', 1, 60, NULL, 0, NOW(), NOW(), 0);
+
+-- 题目-标签关联（标签 3001–3010 见上文）
+INSERT IGNORE INTO `problem_tag`
+(`id`, `problem_id`, `tag_id`, `create_time`, `update_time`, `deleted`) VALUES
+(4313, 4007, 3002, NOW(), NOW(), 0),
+(4314, 4007, 3010, NOW(), NOW(), 0),
+(4315, 4008, 3005, NOW(), NOW(), 0),
+(4316, 4008, 3001, NOW(), NOW(), 0),
+(4317, 4009, 3006, NOW(), NOW(), 0),
+(4318, 4009, 3009, NOW(), NOW(), 0),
+(4319, 4010, 3007, NOW(), NOW(), 0),
+(4320, 4010, 3010, NOW(), NOW(), 0),
+(4321, 4011, 3003, NOW(), NOW(), 0),
+(4322, 4011, 3001, NOW(), NOW(), 0),
+(4323, 4012, 3010, NOW(), NOW(), 0),
+(4324, 4012, 3001, NOW(), NOW(), 0);

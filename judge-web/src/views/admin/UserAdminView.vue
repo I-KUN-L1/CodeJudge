@@ -115,12 +115,13 @@
     <!-- ================= 新建 / 编辑 ================= -->
     <el-dialog v-model="dialog" :title="editRow ? '编辑用户' : '新建用户'" width="480px">
       <el-form ref="formRef" :model="form" :rules="formRules" label-width="82px">
-        <el-form-item v-if="!editRow" label="角色" prop="type">
-          <el-radio-group v-model="form.type">
-            <el-radio :value="2">学员</el-radio>
-            <el-radio :value="3">教师</el-radio>
-            <el-radio :value="1">管理员</el-radio>
-          </el-radio-group>
+        <!-- 建号策略：管理界面只产教师。学员走自助注册，管理员仅由后台引导/DBA 脚本创建；
+             后端 POST /users 同样强制 type=3（忽略客户端传值），此处固定展示是同规的 UI 面 -->
+        <el-form-item v-if="!editRow" label="角色">
+          <el-tag effect="plain">教师</el-tag>
+          <span class="cj-dim" style="margin-left: 8px; font-size: var(--fs-xs)">
+            管理界面仅可创建教师账号；学员请自助注册，管理员仅由后台初始化产生
+          </span>
         </el-form-item>
 
         <el-form-item label="手机号" prop="cellPhone">
@@ -153,7 +154,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="管理员可直接创建教师/管理员账号 —— 这是教师账号的唯一开通途径（/teachers/register 已收紧为管理员专属，取消匿名自助注册）"
+        title="此处仅创建教师账号（后端强制 type=3）。学员请使用登录页自助注册；管理员账号仅由后台引导（.bootstrap-credentials）或 DBA 脚本产生，不提供在线创建入口"
       />
 
       <template #footer>
@@ -186,7 +187,8 @@ const formRef = ref(null);
 
 const form = reactive({
   id: null,
-  type: 2,
+  // 新建固定为教师(3)：与后端 POST /users 的强制覆盖同规（见下方 openCreate）
+  type: 3,
   cellPhone: '',
   username: '',
   name: '',
@@ -196,7 +198,6 @@ const form = reactive({
 });
 
 const formRules = {
-  type: [{ required: true, message: '请选择角色', trigger: 'change' }],
   cellPhone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
     { pattern: /^1\d{10}$/, message: '手机号格式不正确', trigger: 'blur' },
@@ -255,7 +256,7 @@ function openCreate() {
   editRow.value = null;
   Object.assign(form, {
     id: null,
-    type: tab.value === 'teachers' ? 3 : tab.value === 'staffs' ? 1 : 2,
+    type: 3, // 无论当前在哪个页签，新建一律是教师（后端亦强制覆盖 type）
     cellPhone: '',
     username: '',
     name: '',
