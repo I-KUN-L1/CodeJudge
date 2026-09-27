@@ -97,9 +97,23 @@ public class UserController {
 
     // ============ 对外接口 ============
 
+    /**
+     * 新建用户（管理员权限）——**只产出教师**。
+     * <p>角色策略（与 {@link TeacherController#register} 同源）：
+     * <ul>
+     *   <li>管理员账号不开放任何在线创建路径，仅由 judge-auth 启动引导
+     *       （{@code AdminBootstrapRunner} / 内部 {@code POST /users/bootstrap/admin}）或
+     *       DBA 脚本产生；</li>
+     *   <li>学员只能自助注册（{@code POST /students/register}，网关白名单）；</li>
+     *   <li>因此本端点的唯一合法产物是教师（type=3）：后端**强制覆盖**客户端传入的
+     *       type，防止越权创建管理员/学员 —— 前端表单也只提供教师选项，两侧同规。</li>
+     * </ul>
+     */
     @PostMapping
     @RequireRole(UserRole.STAFF)
     public R<Void> addUser(@RequestBody UserFormDTO form) {
+        // 角色由后端强制指定为教师(3)，忽略客户端传入的 type —— 与 /teachers/register 一致
+        form.setType(3);
         userService.saveUser(form);
         return R.ok();
     }
