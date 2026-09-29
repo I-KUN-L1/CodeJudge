@@ -17,9 +17,6 @@ import com.codejudge.common.utils.InternalOnlyGuard;
 import com.codejudge.common.utils.OwnerAccessGuard;
 import com.codejudge.common.exceptions.UnauthorizedException;
 import com.codejudge.common.utils.UserContext;
-import com.codejudge.common.utils.OwnerAccessGuard;
-import com.codejudge.common.exceptions.UnauthorizedException;
-import com.codejudge.common.utils.UserContext;
 import com.codejudge.user.domain.dto.UserFormDTO;
 import com.codejudge.user.domain.vo.UserVO;
 import com.codejudge.user.mapper.UserMapper;
@@ -86,6 +83,18 @@ public class UserController {
     public Integer queryUserType(@PathVariable("id") Long id) {
         InternalOnlyGuard.checkInternal();
         return userService.queryUserType(id);
+    }
+
+    /**
+     * 查询用户状态（Feign 内部调用，不包装；外部经网关访问一律 403）。
+     * 供 judge-auth 在续签 token 前校验账号是否被禁用 —— 登录入口校验了状态，
+     * 续签入口若不校验，被禁用账号就能凭 30 天 refresh token 继续换新 access token。
+     */
+    @GetMapping("/{id}/status")
+    @NoWrapper
+    public Integer queryUserStatus(@PathVariable("id") Long id) {
+        InternalOnlyGuard.checkInternal();
+        return userService.queryUserStatus(id);
     }
 
     @GetMapping("/ids")

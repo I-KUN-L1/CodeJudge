@@ -21,12 +21,14 @@ public class JwtUtils {
     }
 
     /**
-     * 解析结果：一次验签同时取出身份与角色。
+     * 解析结果：一次验签同时取出身份、角色与吊销校验所需的 jti/iat。
      *
-     * @param userId 用户 id（token 必带；缺失或非法时为 {@code null}）
-     * @param roleId 角色（user.type：1员工/2学员/3教师）；旧 token 无该 claim 时为 {@code null}
+     * @param userId     用户 id（token 必带；缺失或非法时为 {@code null}）
+     * @param roleId     角色（user.type：1员工/2学员/3教师）；旧 token 无该 claim 时为 {@code null}
+     * @param jti        JWT ID（吊销黑名单的锚点）；旧 token（升级前签发）无该 claim 时为 {@code null}
+     * @param issuedAtMs 签发时刻毫秒（用户级吊销纪元比较用）；无 iat claim 时为 0
      */
-    public record Identity(Long userId, Integer roleId) {
+    public record Identity(Long userId, Integer roleId, String jti, long issuedAtMs) {
     }
 
     /**
@@ -46,7 +48,9 @@ public class JwtUtils {
             if (!"access".equals(claims.get("type"))) {
                 return null;
             }
-            return new Identity(toLong(claims.get("userId")), toInt(claims.get("roleId")));
+            java.util.Date issuedAt = claims.getIssuedAt();
+            return new Identity(toLong(claims.get("userId")), toInt(claims.get("roleId")),
+                    claims.getId(), issuedAt == null ? 0L : issuedAt.getTime());
         } catch (Exception e) {
             return null;
         }

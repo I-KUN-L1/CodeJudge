@@ -53,6 +53,12 @@ public class UserClientFallbackFactory implements FallbackFactory<UserClient> {
             }
 
             @Override
+            public Integer queryUserStatus(Long id) {
+                // 降级返回 null：调用方（judge-auth 续签校验）对 null 按 fail-closed 拒绝处理
+                return null;
+            }
+
+            @Override
             public Map<String, Long> exchangeUserId(String phone) {
                 return Map.of();
             }

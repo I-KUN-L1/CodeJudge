@@ -397,7 +397,10 @@ judge-* 服务跑在**宿主机**上，不在监控栈的 Docker 网络内。抓
   「角色 → 能做什么」的推导（`scripts/verify-authz.py` 有静态断言守着）。
   能力码以 `user.type` 为唯一权威，**不启用 DB 里那六张 RBAC 表**（它们无种子数据，
   启用会引入双源，一旦漂移就表现为「按钮画了但接口 403」）。
-- `/actuator/**` **不经网关暴露**（网关路由表不含该前缀），指标端点仅宿主机/监控网可达。
+- `/actuator/**` **不经网关路由**（路由表不含该前缀，业务流量不会转发到各服务管理端点）；
+  网关自身的 `/actuator/**` 由 `ActuatorGuardFilter` 防护：默认仅回环/内网来源可达
+  （公网一律 404，不暴露端点存在性）；设置 `CJ_ACTUATOR_TOKEN` 进入严格模式——
+  任何来源（含内网）必须持令牌（Prometheus 在 scrape_config 配 `authorization` 凭据）。
 - AI 点评的内部契约 `review-context` 要求学员侧 `maskHidden=true`，防止套出隐藏用例期望输出。
 
 ## 八、路线图

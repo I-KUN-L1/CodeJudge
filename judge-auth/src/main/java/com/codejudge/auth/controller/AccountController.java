@@ -8,6 +8,7 @@ import com.codejudge.auth.domain.vo.LoginResultVO;
 import com.codejudge.auth.service.AccountService;
 import com.codejudge.auth.service.AdminBootstrapService;
 import com.codejudge.auth.service.CapabilityService;
+import com.codejudge.auth.service.TokenRevocationService;
 import com.codejudge.common.domain.R;
 import com.codejudge.common.utils.CookieBuilder;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,6 +29,7 @@ public class AccountController {
     private final AccountService accountService;
     private final AdminBootstrapService adminBootstrapService;
     private final CapabilityService capabilityService;
+    private final TokenRevocationService tokenRevocationService;
 
     /**
      * 统一登录入口 —— <b>前端唯一使用的登录端点</b>。
@@ -83,8 +85,12 @@ public class AccountController {
     }
 
     @PostMapping("/logout")
-    @Operation(summary = "退出登录")
-    public R<Void> logout(HttpServletResponse response) {
+    @Operation(summary = "退出登录（吊销本次会话的全部 token）")
+    public R<Void> logout(HttpServletRequest request, HttpServletResponse response) {
+        // 吊销先行：把本次会话的 access/refresh jti 写入 Redis 黑名单（TTL=剩余寿命），
+        // 即使 token/cookie 已被复制也随即失效；网关与续签入口都会校验黑名单。
+        // 缺失/过期/伪造的 token 在此静默跳过 —— 登出永远成功。
+        tokenRevocationService.revokeRequestTokens(request);
         CookieBuilder.newBuilder(JwtConstants.JWT_REFRESH_COOKIE_KEY).value("").maxAge(0).write(response);
         CookieBuilder.newBuilder(JwtConstants.JWT_ADMIN_REFRESH_COOKIE_KEY).value("").maxAge(0).write(response);
         return R.ok();

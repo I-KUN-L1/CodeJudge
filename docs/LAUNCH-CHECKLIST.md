@@ -27,7 +27,7 @@
 | D2 | 网关与 judge-auth **同批重启** | 🟦 已同步契约 → 👤 执行 | 用户 | token `type` 校验两侧版本必须一致，否则合法请求被判 401 |
 | D3 | MinIO 启动（P3 超长代码存储） | 👤 待办 | 用户 | `docker compose --profile storage up -d minio`（受限网络若镜像被拒需先解决拉取） |
 | D4 | RocketMQ broker store 卷持久化 | 🟦 方案明确 → 👤 执行 | 用户 | 先建卷并 `chown 3000:3000`，再挂载 `/home/rocketmq/store`（**不可直接挂命名卷**——镜像内目录不存在 + uid 3000 无写权限，broker 会 ExitCode=253 静默退出，踩坑记录见 docker-compose.yml 注释） |
-| D5 | 接口文档生产关闭 | 🟦 **本轮已完成**（`CJ_SPRINGDOC_ENABLED` 开关铺满 7 个对外服务 + `.env.example`） | 用户（生产 `.env` 置 `CJ_SPRINGDOC_ENABLED=false`） | 匿名白名单含 `/v3/api-docs`，开着等于公开全部 API 结构 |
+| D5 | 接口文档生产关闭 | 🟦 **已完成**（① `CJ_SPRINGDOC_ENABLED` 开关铺满 7 个对外服务；② 2026-09-28 补网关层开关 `CJ_DOC_WHITELIST_ENABLED` —— `.env.example` 生产安全默认 false，开发 `.env` 显式 true） | 用户（生产 `.env` **两项都置 false**：`CJ_SPRINGDOC_ENABLED=false` + `CJ_DOC_WHITELIST_ENABLED=false`） | 两层独立防线：服务端关文档端点 + 网关关匿名放行（网关开关开着时 `/v3/api-docs`、`/doc.html` 匿名可达，等于公开全部 API 结构；置 false 后匿名访问一律 401） |
 | D6 | 日志滚动 | 🟦 **本轮核实**：`logs/*.log` 是启动脚本重定向的开发态产物，代码层无需改动 | 用户（按部署形态） | 容器部署 → json-file/local 日志驱动配 max-size/max-file；systemd → logrotate |
 | D7 | Grafana 匿名访问 | 🟦 本轮已改默认 false（fail-closed） | 用户 | 本地需匿名浏览时 `.env` 显式 `GF_AUTH_ANONYMOUS_ENABLED=true` |
 

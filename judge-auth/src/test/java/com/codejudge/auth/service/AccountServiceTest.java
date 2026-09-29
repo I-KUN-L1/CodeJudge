@@ -3,17 +3,21 @@ package com.codejudge.auth.service;
 import com.codejudge.api.client.user.UserClient;
 import com.codejudge.api.dto.user.LoginFormDTO;
 import com.codejudge.api.dto.user.UserDTO;
+import com.codejudge.auth.common.constants.JwtConstants;
 import com.codejudge.auth.common.util.JwtTool;
 import com.codejudge.auth.domain.vo.LoginResultVO;
 import com.codejudge.auth.mapper.LoginRecordMapper;
 import com.codejudge.common.exceptions.AccountDisabledException;
 import com.codejudge.common.exceptions.UnauthorizedException;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,6 +27,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +44,8 @@ class AccountServiceTest {
     private UserClient userClient;
     @Mock
     private LoginRecordMapper loginRecordMapper;
+    @Mock
+    private TokenRevocationService tokenRevocation;
     @Mock
     private HttpServletRequest request;
 
@@ -90,7 +97,7 @@ class AccountServiceTest {
     void disabledUserThrowsAccountDisabled() {
         // 账号被禁用**不再是 401**：凭据错误才归 401（前端只提示"用户名或密码错误"），
         // 禁用需要明确处置指引，故单列业务码 423，前端据此弹"请联系管理员"专属弹窗
-        // （前端在 judge-web/src/api/request.ts 按该业务码分支处理）。
+        // （前端在 judge-web/src/api/http.js 按该业务码分支处理）。
         UserDTO user = new UserDTO();
         user.setId(1L);
         user.setStatus(0);
@@ -244,5 +251,89 @@ class AccountServiceTest {
         assertEquals(unified.getAccessToken(), compat.getAccessToken());
         assertEquals(unified.getRefreshToken(), compat.getRefreshToken());
         assertEquals(AccountService.isStaffEntry(unified), AccountService.isStaffEntry(compat));
+    }
+
+    /* ==================== 刷新（refresh）：续签前必须校验账号状态与吊销 ==================== */
+
+    /** 单次验签解析载荷：type/userId/jti/iat 全部来自同一份 Claims（与实现一致） */
+    private void stubRefreshParse(long userId) {
+        Claims claims = mock(Claims.class);
+        when(claims.get("type")).thenReturn("refresh");
+        when(claims.get(JwtConstants.PAYLOAD_USER_KEY)).thenReturn(userId);
+        when(claims.getId()).thenReturn("jti-" + userId);
+        when(claims.getIssuedAt()).thenReturn(new Date());
+        when(jwtTool.parse("refresh-token")).thenReturn(claims);
+        // 默认未吊销；吊销场景在各自用例里覆盖
+        lenient().when(tokenRevocation.isRefreshRevoked(eq(userId), eq("jti-" + userId), anyLong()))
+                .thenReturn(false);
+    }
+
+    @Test
+    void refreshDisabledUserThrows423() {
+        // 续签前必须校验账号状态：被禁用账号即使持有未过期的 refresh token，
+        // 也不允许换取新 access token（否则「禁用」操作对其形同虚设）。
+        // 与登录入口同语义：专属业务码 423，前端据此弹出"请联系管理员"。
+        stubRefreshParse(100L);
+        when(userClient.queryUserStatus(100L)).thenReturn(0);
+
+        AccountDisabledException e = assertThrows(AccountDisabledException.class,
+                () -> accountService.refresh("refresh-token"));
+        assertEquals(423, e.getCode());
+    }
+
+    @Test
+    void refreshDeletedUserThrows401() {
+        // 用户已被删除（状态查不到）：refresh token 随之失效，fail-closed
+        stubRefreshParse(404L);
+        when(userClient.queryUserStatus(404L)).thenReturn(null);
+
+        assertThrows(UnauthorizedException.class, () -> accountService.refresh("refresh-token"));
+    }
+
+    @Test
+    void refreshFailsClosedWhenStatusQueryUnavailable() {
+        // judge-user 不可用时拒绝续签（fail-closed）：续签是授予权威的动作，
+        // 无法确认账号仍有效时宁可拒绝 —— 与角色查询的 fail-open（仅降级）刻意不对称
+        stubRefreshParse(100L);
+        when(userClient.queryUserStatus(100L)).thenThrow(new RuntimeException("connection refused"));
+
+        assertThrows(UnauthorizedException.class, () -> accountService.refresh("refresh-token"));
+    }
+
+    @Test
+    void refreshHappyPathIssuesAccessTokenWithRole() {
+        // 正常续签：新 access token 携带 role claim，续签不重发 refresh token（cookie 保持）
+        stubRefreshParse(3001L);
+        when(userClient.queryUserStatus(3001L)).thenReturn(1);
+        when(userClient.queryUserType(3001L)).thenReturn(3);
+        when(jwtTool.createAccessToken(3001L, 3, 30 * 60 * 1000L)).thenReturn("new-access");
+
+        LoginResultVO result = accountService.refresh("refresh-token");
+
+        assertEquals(3001L, result.getUserId());
+        assertEquals("new-access", result.getAccessToken());
+        assertEquals(3, result.getRole());
+        assertEquals("教师", result.getRoleLabel());
+        assertEquals(30 * 60L, result.getExpireTime());
+    }
+
+    @Test
+    void refreshRejectsAccessTokenAsRefreshToken() {
+        // access token 不能拿来续签（防止 access/refresh 互换延长会话）
+        Claims claims = mock(Claims.class);
+        when(claims.get("type")).thenReturn("access");
+        when(jwtTool.parse("access-token")).thenReturn(claims);
+
+        assertThrows(UnauthorizedException.class, () -> accountService.refresh("access-token"));
+    }
+
+    @Test
+    void refreshRejectedWhenTokenBlacklisted() {
+        // 登出吊销的 jti 黑名单对续签路径同样生效：被盗的 refresh cookie
+        // 即使尚未过期，登出后也不能再换新 access token
+        stubRefreshParse(100L);
+        when(tokenRevocation.isRefreshRevoked(eq(100L), eq("jti-100"), anyLong())).thenReturn(true);
+
+        assertThrows(UnauthorizedException.class, () -> accountService.refresh("refresh-token"));
     }
 }

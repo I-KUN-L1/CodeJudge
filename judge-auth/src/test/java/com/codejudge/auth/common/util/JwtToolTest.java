@@ -41,4 +41,19 @@ class JwtToolTest {
         assertEquals("access", jwtTool.parseTokenType(access));
         assertEquals("refresh", jwtTool.parseTokenType(refresh));
     }
+
+    @Test
+    void everyTokenCarriesUniqueJti() {
+        // jti 是登出吊销的锚点：黑名单按 jti 拉黑（judge:auth:bl:jti:{jti}）。
+        // 每枚 token 必须携带唯一 jti，否则拉黑一枚 = 拉黑一批。
+        String access = jwtTool.createAccessToken(100L, 30 * 60 * 1000L);
+        String refresh = jwtTool.createRefreshToken(100L, 30L * 24 * 60 * 60 * 1000L);
+        String accessAgain = jwtTool.createAccessToken(100L, 30 * 60 * 1000L);
+
+        String jti = jwtTool.parse(access).getId();
+        assertNotNull(jti, "access token 必须携带 jti claim");
+        assertNotNull(jwtTool.parse(refresh).getId(), "refresh token 必须携带 jti claim");
+        assertNotEquals(jti, jwtTool.parse(refresh).getId());
+        assertNotEquals(jti, jwtTool.parse(accessAgain).getId());
+    }
 }

@@ -25,7 +25,8 @@ class AdminBootstrapServiceTest {
     private UserMapper userMapper;
 
     private UserService buildService() {
-        return new UserService(userMapper, null);
+        // 第三个参数是禁用即时生效用的 StringRedisTemplate；本测试不触及，给空 mock 即可
+        return new UserService(userMapper, null, org.mockito.Mockito.mock(org.springframework.data.redis.core.StringRedisTemplate.class));
     }
 
     @Test
