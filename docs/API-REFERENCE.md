@@ -47,7 +47,8 @@
 |---|---|
 | 认证头 | `Authorization: Bearer <accessToken>` |
 | 令牌算法 | HS256（HMAC 对称签名，密钥 `CJ_JWT_SECRET` 共享给网关；access token 含 `type=access` claim，refresh 只可用于续签） |
-| 网关白名单 | `/accounts/login`、`/accounts/admin/login`、`/accounts/refresh`、`/accounts/password/first-change`、`/students/register`、`/v3/api-docs`、`/doc.html`（`/jwks` 已随 2026-09-25 加固删除 —— HMAC 对称密钥没有"公钥"，匿名暴露即交出伪造身份能力） |
+| 网关白名单（固定） | `/accounts/login`、`/accounts/admin/login`、`/accounts/refresh`、`/accounts/logout`、`/accounts/password/first-change`、`/students/register`（`/jwks` 已随 2026-09-25 加固删除 —— HMAC 对称密钥没有"公钥"，匿名暴露即交出伪造身份能力） |
+| 网关文档白名单（开关控制） | `/v3/api-docs`、`/v3/api-docs/**`、`/doc.html` —— 仅 `cj.gateway.doc-whitelist-enabled=true`（开发/测试默认，环境变量 `CJ_DOC_WHITELIST_ENABLED`）时匿名可达；**生产置 false 后文档路径不再放行，匿名访问一律 401**（2026-09-28 起，由 `GatewayProperties` 驱动，`AuthGlobalFilter` 匹配） |
 | 下游可见身份 | 网关注入 `user-info: <userId>`、`role-info: <roleId>` |
 | 角色 | `1` 管理员（员工）｜ `2` 学员 ｜ `3` 教师 |
 | 能力码 | 按钮级权限的**唯一权威**，由 `GET /accounts/me/capabilities` 下发。以 `user.type` 为唯一输入，不读 DB 里的 RBAC 表 |
@@ -79,9 +80,9 @@
 | POST | `/accounts/login` | 匿名 | **唯一登录入口**。角色由账号自身 `user.type` 决定，调用方不指定。**有令牌桶限流**：2 req/s，突发 5 |
 | POST | `/accounts/admin/login` | 匿名 | ⚠ **已废弃（兼容别名）**：委托同一条逻辑，额外要求账号为员工。响应包含 `role` / `roleLabel` / `mustChangePassword` |
 | GET | `/accounts/me/capabilities` | 登录 | **能力画像**：`perms`（能力码）+ `menus`（导航）+ `home`。前端的全部鉴权依据 |
-| POST | `/accounts/refresh` | 匿名（携 refreshToken） | 刷新 accessToken（不轮换 refreshToken） |
+| POST | `/accounts/refresh` | 匿名（携 refreshToken） | 刷新 accessToken（不轮换 refreshToken）。续签前校验**吊销状态**（登出拉黑的 jti / 禁用写入的吊销纪元，fail-open 于 Redis 故障）与**账号状态**（fail-closed）—— 已吊销返回 401，账号被禁用返回业务码 423 |
 | POST | `/accounts/password/first-change` | 匿名 | 首次登录强制改密；成功后删除 `.bootstrap-credentials` |
-| POST | `/accounts/logout` | 登录 | 登出（清 Redis 会话） |
+| POST | `/accounts/logout` | 登录 | 登出并**吊销本次会话全部 token**：把请求所携 access token 与两枚 refresh cookie 的 jti 写入 Redis 黑名单（`judge:auth:bl:jti:{jti}`，TTL=剩余寿命），网关与续签入口据此拒绝；同时清空 refresh cookie。缺失/过期/伪造的 token 静默跳过 —— 登出永远成功 |
 
 **登录请求**
 
@@ -179,7 +180,7 @@ GET /accounts/me/capabilities    (Authorization: Bearer <accessToken>)
 | GET | `/users/bootstrap/admin-exists` | 匿名 | 是否已有管理员（引导页用） |
 | POST | `/users/bootstrap/admin` | 匿名（仅首次） | 创建首个管理员 |
 | GET | `/users/checkCellphone` | 匿名 | 手机号是否已注册 |
-| GET | `/users/stats/total` | 登录 | 用户总数（前端看板） |
+| GET | `/users/stats/total` | 内部 | 用户总数（仅限服务间 Feign；外部经网关访问一律 403） |
 
 **注册请求体**（`UserFormDTO`）
 

@@ -41,6 +41,13 @@ public interface UserClient {
     @GetMapping("/users/{id}/type")
     Integer queryUserType(@PathVariable("id") Long id);
 
+    /**
+     * 查询用户状态（1 正常 / 其他为禁用）。供 judge-auth 续签 token 前校验，
+     * 防止被禁用账号凭 refresh token 继续换取 access token。
+     */
+    @GetMapping("/users/{id}/status")
+    Integer queryUserStatus(@PathVariable("id") Long id);
+
     @GetMapping("/users/ids")
     Map<String, Long> exchangeUserId(@RequestParam("phone") String phone);
 

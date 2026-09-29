@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.codejudge.api.dto.user.LoginFormDTO;
 import com.codejudge.api.dto.user.UserDTO;
+import com.codejudge.common.constants.UserRole;
 import com.codejudge.common.domain.PageDTO;
 import com.codejudge.common.domain.PageQuery;
 import com.codejudge.common.exceptions.BadRequestException;
@@ -41,8 +42,23 @@ public class UserService {
     /** 用户类型：员工 / 管理员 */
     private static final int TYPE_STAFF = 1;
 
+    /** 禁用账号的 token 吊销纪元存活期 = refresh token 最长寿命（30 天），与 judge-auth 对齐 */
+    private static final java.time.Duration REVOCATION_EPOCH_TTL = java.time.Duration.ofDays(30);
+
+    /**
+     * 展示型字段（name/username）白名单（QA-B06 修复）：中文、字母、数字、
+     * 空格与 · . _ - 分隔符，长度 ≤ 32。
+     * <p>这些字段会被管理端列表、个人主页等大量页面原样回显，历史上曾存入
+     * {@code <script>alert(1)</script>} 并原样透出（存储型 XSS，前端转义是唯一
+     * 兜底）。白名单在入口拒绝，保证任何新消费端（App/邮件/富文本）不触雷；
+     * 拒绝而非转义，避免「存库的是转义态、展示端二次转义」的双重编码问题。
+     */
+    private static final java.util.regex.Pattern DISPLAY_NAME_PATTERN =
+            java.util.regex.Pattern.compile("^[\\u4e00-\\u9fa5A-Za-z0-9· ._\\-]{1,32}$");
+
     private final UserMapper userMapper;
     private final UserDetailMapper userDetailMapper;
+    private final org.springframework.data.redis.core.StringRedisTemplate redis;
 
     /**
      * 管理员重置密码后的统一初始口令，取自环境变量 {@code CJ_USER_DEFAULT_PASSWORD}。
@@ -104,6 +120,15 @@ public class UserService {
         return user == null ? null : user.getType();
     }
 
+    /**
+     * 查询用户状态（1 正常 / 其他为禁用），供 judge-auth 续签 token 前校验。
+     * 用户不存在返回 null，调用方按 fail-closed 处理。
+     */
+    public Integer queryUserStatus(Long id) {
+        User user = userMapper.selectById(id);
+        return user == null ? null : user.getStatus();
+    }
+
     public Map<String, Long> exchangeUserId(String phone) {
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getCellPhone, phone));
         return user == null ? Map.of() : Map.of("userId", user.getId());
@@ -122,12 +147,43 @@ public class UserService {
         if (user == null) {
             throw new BadRequestException("用户不存在");
         }
+        // BUG-001 修复（QA-E06）：原先对任意登录用户全量下发 cellPhone/email/detail，
+        // 构成水平越权 PII 泄露。按视角裁剪：本人 / STAFF / TEACHER / 服务间直连取全量，
+        // 其余（学员查看他人）走公开视图，隐私字段不下发。
+        if (!canViewFullProfile(id)) {
+            return UserVO.ofPublic(user);
+        }
         UserDetail detail = userDetailMapper.selectOne(
                 new LambdaQueryWrapper<UserDetail>().eq(UserDetail::getUserId, id));
         return UserVO.of(user, detail);
     }
 
+    /**
+     * 全量资料可见性判定（与 OwnerAccessGuard 同源语义）：
+     * 无 user-info 头 = 服务间 Feign 直连（网关流量必带该头），放行；
+     * 本人放行；STAFF/TEACHER 放行；其余 fail-closed 只给公开视图。
+     */
+    private boolean canViewFullProfile(Long id) {
+        Long current = UserContext.getUser();
+        if (current == null || current.equals(id)) {
+            return true;
+        }
+        return UserContext.hasRole(UserRole.STAFF.getCode(), UserRole.TEACHER.getCode());
+    }
+
+    /** 校验展示型字段（QA-B06 修复）；null/空串不拦（必填性由各入口自行负责） */
+    private void validateDisplayField(String value, String label) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if (!DISPLAY_NAME_PATTERN.matcher(value).matches()) {
+            throw new BadRequestException(label + "仅支持中英文、数字与 · . _ - 空格，且不超过 32 字符");
+        }
+    }
+
     public void saveUser(UserFormDTO form) {
+        validateDisplayField(form.getName(), "姓名");
+        validateDisplayField(form.getUsername(), "用户名");
         checkCellPhone(form.getCellPhone(), null);
         User user = BeanUtils.copyBean(form, User.class);
         if (StringUtils.isNotBlank(form.getPassword())) {
@@ -143,6 +199,8 @@ public class UserService {
     }
 
     public void updateUser(Long id, UserFormDTO form) {
+        validateDisplayField(form.getName(), "姓名");
+        validateDisplayField(form.getUsername(), "用户名");
         User user = userMapper.selectById(id);
         if (user == null) {
             throw new BadRequestException("用户不存在");
@@ -171,6 +229,7 @@ public class UserService {
      * "加字段顺手带上密码"这类回归会直接变成越权写。
      */
     public void updateProfile(Long userId, UserFormDTO form) {
+        validateDisplayField(form.getName(), "姓名");
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BadRequestException("用户不存在");
@@ -245,6 +304,22 @@ public class UserService {
         userMapper.updateById(user);
         log.info("账号状态变更：targetUserId={}, status={}, operatorId={}",
                 id, status, UserContext.getUserId());
+        if (status == 0) {
+            // 禁用即时生效：写入用户级吊销纪元（key 常量见 judge-common AuthRedisKeys），
+            // 网关据此拒绝 iat 早于纪元的 access token，judge-auth 续签入口据此拒绝 refresh
+            // token —— 否则在途 token 仍能按剩余寿命使用（access ≤30min / refresh 30 天）。
+            try {
+                redis.opsForValue().set(
+                        com.codejudge.common.constants.AuthRedisKeys.USER_REVOKED_BEFORE_PREFIX + id,
+                        // 纪元对齐下一秒边界：iat 是秒级精度，详见 AuthRedisKeys.nextRevocationEpoch
+                        String.valueOf(com.codejudge.common.constants.AuthRedisKeys.nextRevocationEpoch()),
+                        REVOCATION_EPOCH_TTL);
+            } catch (Exception e) {
+                // 不阻断禁用主流程：Redis 故障时在途 token 存活至自然过期，refresh 侧仍有
+                // 续签状态校验兜底；由日志告警发现
+                log.error("禁用账号的 token 吊销纪元写入失败：targetUserId={}", id, e);
+            }
+        }
     }
 
     /**

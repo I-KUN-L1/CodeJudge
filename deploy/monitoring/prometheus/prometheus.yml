@@ -9,7 +9,10 @@
 #   Linux 宿主需配合 docker-compose 里的 extra_hosts: host-gateway（已配）。
 #
 # 服务不从网关抓：网关只代理业务路由，/actuator/** 未被暴露到网关路由表。
-#   直连各服务端口才是唯一可达路径，也因此**不需要 JWT**（actuator 端点未接鉴权）。
+#   直连各服务端口才是唯一可达路径，也因此**不需要 JWT**。
+#   注意（QA-F01）：网关自身的 /actuator/** 已启用严格模式令牌（.env 的
+#   CJ_ACTUATOR_TOKEN），下方 codejudge job 统一携带 Bearer 凭据 —— 其余服务
+#   未接防护，多余认证头会被忽略，无副作用。换令牌时两处必须同步。
 # ============================================================
 global:
   scrape_interval: 15s
@@ -34,6 +37,10 @@ scrape_configs:
   # tier 仅用于「核心链路 vs 边缘」分组展示，不参与告警判定。
   - job_name: 'codejudge'
     metrics_path: '/actuator/prometheus'
+    # QA-F01：网关自身 actuator 严格模式令牌（与 .env 的 CJ_ACTUATOR_TOKEN 同步维护）
+    authorization:
+      type: Bearer
+      credentials: 'cj-act-4fc68567c391f382ad85e631'
     scrape_interval: 15s
     static_configs:
       - targets: ['host.docker.internal:9080']

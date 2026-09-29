@@ -466,6 +466,11 @@ export CJ_P3_ADMIN_PASS=<密码>
 - [x] ⚙ 确认网关登录限流为**生产默认值**（未带 `GW_LOGIN_RATE_*`）｜ 校验：自动 C1
       —— 09-21 终版实测 PASS：12 次瞬时登录 → **5×200 + 7×429**（即默认令牌桶 2 req/s / 突发 5 已恢复）。
       ⚠️ 每次压测放宽后都必须走这一步恢复，别只看 `C1` 曾经绿过。
+- [ ] ⚙ 生产 `.env` 置 **`CJ_DOC_WHITELIST_ENABLED=false`**（网关文档白名单开关，2026-09-28 新增；
+      `.env.example` 已默认 false，开发 `.env` 显式 true 才能匿名看文档）
+      ｜ 校验：网关启动日志应为「API 文档白名单：已关闭」，且
+      `curl -i http://<网关>:9080/v3/api-docs` 与 `/doc.html` 返回 **401**
+      （开着 = 全部 API 清单/参数结构匿名公开）
 - [ ] ✋ 开启 HTTPS；`judge-ai` 的 SSE 需确认反向代理不缓冲（`proxy_buffering off`）
 
 ### 7.3 通知与容量

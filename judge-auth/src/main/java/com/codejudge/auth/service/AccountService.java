@@ -3,6 +3,7 @@ package com.codejudge.auth.service;
 import com.codejudge.api.client.user.UserClient;
 import com.codejudge.api.dto.user.LoginFormDTO;
 import com.codejudge.api.dto.user.UserDTO;
+import com.codejudge.auth.common.constants.JwtConstants;
 import com.codejudge.auth.common.util.JwtTool;
 import com.codejudge.auth.domain.po.LoginRecord;
 import com.codejudge.auth.domain.vo.LoginResultVO;
@@ -13,6 +14,7 @@ import com.codejudge.common.exceptions.BadRequestException;
 import com.codejudge.common.exceptions.UnauthorizedException;
 import com.codejudge.common.utils.StringUtils;
 import com.codejudge.common.utils.WebUtils;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +56,7 @@ public class AccountService {
     private final JwtTool jwtTool;
     private final UserClient userClient;
     private final LoginRecordMapper loginRecordMapper;
+    private final TokenRevocationService tokenRevocation;
 
     /**
      * 统一登录（唯一入口）：按账号自身属性自动判定角色，无需前端指定。
@@ -152,33 +155,84 @@ public class AccountService {
         return result != null && UserRole.of(result.getRole()) == UserRole.STAFF;
     }
 
+    /** 载荷里的 userId 经 JSON 序列化后可能是 Integer/Long/String，统一收敛为 Long */
+    private static Long toLong(Object value) {
+        if (value instanceof Number num) {
+            return num.longValue();
+        }
+        if (value instanceof String s && !s.isBlank()) {
+            try {
+                return Long.valueOf(s);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     public LoginResultVO refresh(String refreshToken) {
         if (StringUtils.isBlank(refreshToken)) {
             throw new UnauthorizedException("登录已过期，请重新登录");
         }
+        // 单次验签取出续签所需全部载荷（原实现 parseUserId + parseTokenType 要验签两遍）；
+        // 签名/过期/格式错误统一映射 401，不泄露内部细节
+        Claims claims;
         try {
-            Long userId = jwtTool.parseUserId(refreshToken);
-            // 类型校验：refresh 端点只接受 refresh token，access token 不得用来续签
-            if (!"refresh".equals(jwtTool.parseTokenType(refreshToken))) {
-                throw new UnauthorizedException("登录已过期，请重新登录");
-            }
-            LoginResultVO result = new LoginResultVO();
-            result.setUserId(userId);
-            // 刷新时补查用户类型，保证续签 token 仍携带 role claim（查询失败不阻断续签，仅降级为无角色）
-            Integer role = null;
-            try {
-                role = userClient.queryUserType(userId);
-            } catch (Exception e) {
-                log.warn("刷新 token 查询用户角色失败：userId={}, err={}", userId, e.getMessage());
-            }
-            result.setAccessToken(jwtTool.createAccessToken(userId, role, ACCESS_TOKEN_TTL));
-            result.setRole(role);
-            UserRole r = UserRole.of(role);
-            result.setRoleLabel(r == null ? null : r.getLabel());
-            result.setExpireTime(ACCESS_TOKEN_TTL / 1000);
-            return result;
+            claims = jwtTool.parse(refreshToken);
         } catch (Exception e) {
             throw new UnauthorizedException("登录已过期，请重新登录");
         }
+        // 类型校验：refresh 端点只接受 refresh token，access token 不得用来续签
+        if (!"refresh".equals(claims.get("type"))) {
+            throw new UnauthorizedException("登录已过期，请重新登录");
+        }
+        Long userId = toLong(claims.get(JwtConstants.PAYLOAD_USER_KEY));
+        if (userId == null) {
+            throw new UnauthorizedException("登录已过期，请重新登录");
+        }
+
+        // 吊销校验（登出拉黑的 jti / 禁用写入的吊销纪元）：黑名单对续签路径同样生效，
+        // 否则被盗的 refresh cookie 在登出后仍能续签 30 天
+        long issuedAtMs = claims.getIssuedAt() == null ? 0L : claims.getIssuedAt().getTime();
+        if (tokenRevocation.isRefreshRevoked(userId, claims.getId(), issuedAtMs)) {
+            throw new UnauthorizedException("登录已过期，请重新登录");
+        }
+
+        // 续签前校验账号状态（与登录入口对齐）：否则被禁用账号能凭 30 天有效的
+        // refresh token 持续换取新 access token，「禁用」操作对其形同虚设。
+        // fail-closed：用户不存在 / 状态查询失败一律拒绝 —— 续签是授予权威的动作，
+        // 无法确认账号仍有效时宁可拒绝（judge-user 整体不可用时登录同样不可用，可用性不受额外损失）。
+        Integer status;
+        try {
+            status = userClient.queryUserStatus(userId);
+        } catch (Exception e) {
+            log.warn("刷新 token 查询用户状态失败，fail-closed 拒绝续签：userId={}, err={}", userId, e.getMessage());
+            throw new UnauthorizedException("登录已过期，请重新登录");
+        }
+        if (status == null) {
+            // 用户已被删除（逻辑删除查不到）：refresh token 失效
+            throw new UnauthorizedException("登录已过期，请重新登录");
+        }
+        if (status != 1) {
+            // 专属业务码 423：与登录入口同语义，前端据此弹出"请联系管理员"
+            throw new AccountDisabledException("该账号已被禁用，请联系管理员");
+        }
+
+        LoginResultVO result = new LoginResultVO();
+        result.setUserId(userId);
+        // 刷新时补查用户类型，保证续签 token 仍携带 role claim。
+        // 状态是安全校验（fail-closed），角色只是能力降级（fail-open）—— 两者刻意不对称。
+        Integer role = null;
+        try {
+            role = userClient.queryUserType(userId);
+        } catch (Exception e) {
+            log.warn("刷新 token 查询用户角色失败：userId={}, err={}", userId, e.getMessage());
+        }
+        result.setAccessToken(jwtTool.createAccessToken(userId, role, ACCESS_TOKEN_TTL));
+        result.setRole(role);
+        UserRole r = UserRole.of(role);
+        result.setRoleLabel(r == null ? null : r.getLabel());
+        result.setExpireTime(ACCESS_TOKEN_TTL / 1000);
+        return result;
     }
 }

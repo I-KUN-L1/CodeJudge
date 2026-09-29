@@ -45,6 +45,9 @@ public class JwtTool {
         Date expiry = new Date(now.getTime() + ttlMillis);
         var builder = Jwts.builder()
                 .subject(String.valueOf(userId))
+                // jti（JWT ID）：每枚 token 的唯一指纹，是「登出吊销」的锚点 ——
+                // 黑名单按 jti 拉黑（judge:auth:bl:jti:{jti}），网关/续签入口据此拒绝已吊销 token
+                .id(java.util.UUID.randomUUID().toString())
                 .claim(JwtConstants.PAYLOAD_USER_KEY, userId)
                 .claim("type", access ? "access" : "refresh")
                 .issuedAt(now)

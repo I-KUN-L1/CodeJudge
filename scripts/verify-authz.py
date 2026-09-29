@@ -12,6 +12,9 @@ CodeJudge —— 统一登录 + 能力码（按钮级权限）验收脚本
      前端不做任何"角色 → 能做什么"的推导（见 §5 的静态断言）。
   C. 能力集层次正确：学员 ⊂ 教师 ⊂ 员工，且学员拿不到任何管理面能力码。
   D. 登录页不再外显默认账密，改由 `.bootstrap-credentials` 承载初始凭据。
+  E. 内部端点对外 fail-closed：`GET /users/{id}/status` 仅限服务间 Feign 调用
+     （InternalOnlyGuard 保护）。外部经网关访问一律拒绝 —— 未认证 / 伪造凭据 401，
+     任何已登录角色（含管理员）403，且拒绝响应不得回显用户状态。
 
 用法：
     python scripts/verify-authz.py
@@ -21,6 +24,8 @@ CodeJudge —— 统一登录 + 能力码（按钮级权限）验收脚本
 前置：
     judge-gateway(9080) / judge-auth(9081) / judge-user(9082) 已启动，
     sql/seed.sql 已灌入。前端断言需要 judge-web/dist 存在（否则显式 SKIP，不假绿）。
+    内部端点的正向对照需要 judge-user 直连可达（USER_SVC，默认 http://localhost:9082；
+    不可达时仅该项显式 SKIP，其余断言不受影响）。
 
 依赖：仅标准库。不需要 requests，也不需要 curl（Git Bash 下 curl 打 127.0.0.1 需 --noproxy）。
 
@@ -264,8 +269,62 @@ def section_4_guards():
     check_true("伪造 token 时不返回任何能力码", not perm_codes(body))
 
 
-def section_5_legacy_entry():
-    print("[5] 旧端点 POST /accounts/admin/login：兼容别名不得退化")
+# InternalOnlyGuard（judge-common）的拒绝文案 —— 源码常量级契约，两侧必须同步
+INTERNAL_ONLY_MSG = "该接口仅限内部服务调用"
+
+
+def _not_leaking_status(body):
+    """拒绝响应不得夹带业务数据。三种泄露形态都要抓：
+    R.error 的 data 非 null；裸 JSON 整数（守卫失效放行时 @NoWrapper 端点
+    会直接回状态值）；网关错误体本身没有 data 字段（天然不泄露）。"""
+    if isinstance(body, int) and not isinstance(body, bool):
+        return False
+    return dig(body, "data") is None
+
+
+def section_5_internal_users_status(tokens):
+    print("[5] 内部端点 GET /users/{id}/status：外部请求一律 401/403（fail-closed）")
+    url = GW + "/users/1/status"
+
+    # ① 未认证：端点不在 cj.jwt.exclude-paths 白名单，网关必须 401，请求到不了服务
+    st, body = request("GET", url)
+    check_true("未带 token 请求内部端点被拒（401）", st == 401 or dig(body, "code") == 401,
+               "http=%d code=%s" % (st, dig(body, "code")))
+    check("未带 token 拒绝文案与网关契约一致", dig(body, "msg"), "未登录或登录已过期")
+    check_true("未带 token 响应不泄露用户状态", _not_leaking_status(body), repr(body)[:80])
+
+    # ② 伪造凭据：网关验签失败 → 401
+    st, body = request("GET", url, token="not-a-jwt")
+    check_true("伪造 token 请求内部端点被拒（401）", st == 401 or dig(body, "code") == 401,
+               "http=%d code=%s" % (st, dig(body, "code")))
+    check("伪造 token 拒绝文案与网关契约一致", dig(body, "msg"), "登录凭证无效或已过期")
+    check_true("伪造 token 响应不泄露用户状态", _not_leaking_status(body), repr(body)[:80])
+
+    # ③ 已登录的任何角色（学员/教师/员工）：网关验签放行并注入 user-info 头，
+    #    InternalOnlyGuard 依「带 user-info 头 ⇒ 外部调用」判定 → 403。
+    #    这是内部端点契约的核心：连管理员也不放行，不存在"角色够高就能看"的例外。
+    for alias, label in (("student", "学员"), ("teacher", "教师"), ("admin", "员工")):
+        st, body = request("GET", url, token=tokens[alias])
+        check_true("%s 访问内部端点被拒（403）" % label, st == 403 or dig(body, "code") == 403,
+                   "http=%d code=%s" % (st, dig(body, "code")))
+        check("%s 拒绝文案与 InternalOnlyGuard 一致" % label, dig(body, "msg"), INTERNAL_ONLY_MSG)
+        check_true("%s 响应不泄露用户状态" % label, _not_leaking_status(body), repr(body)[:80])
+
+    # ④ 正向对照（反向 fail-open：防止守卫被改成一刀切 403 误伤内部调用）：
+    #    绕开网关直连 judge-user、不带 user-info 头 —— 正是 Feign 服务间的调用形态，必须放行。
+    svc = os.environ.get("USER_SVC", "http://localhost:9082")
+    st, body = request("GET", svc + "/users/1/status")
+    if st == -1:
+        skip("内部直连正向对照", "judge-user(%s) 不可达" % svc)
+        return
+    check_true("内部直连（无 user-info 头）不被 403 误伤",
+               st == 200 and dig(body, "code") not in (401, 403),
+               ("http=%d body=%r" % (st, body))[:90])
+    check_true("内部直连返回合法状态值", body is None or body in (0, 1), "body=%r" % (body,))
+
+
+def section_6_legacy_entry():
+    print("[6] 旧端点 POST /accounts/admin/login：兼容别名不得退化")
     st, body = request("POST", GW + "/accounts/admin/login",
                        {"cellPhone": PHONE_ADMIN, "password": PWD_ADMIN})
     check("员工走旧端点仍可登录", dig(body, "code"), 200)
@@ -293,8 +352,8 @@ def strip_comments(text):
     return text
 
 
-def section_6_frontend_static():
-    print("[6] 前端静态断言：不参与鉴权、不外显默认账密")
+def section_7_frontend_static():
+    print("[7] 前端静态断言：不参与鉴权、不外显默认账密")
     if os.environ.get("SKIP_FRONTEND"):
         skip("前端静态断言", "SKIP_FRONTEND=1")
         return
@@ -362,10 +421,11 @@ def main():
     if tokens:
         section_2_capabilities(tokens)
         section_4_guards()
-        section_5_legacy_entry()
+        section_5_internal_users_status(tokens)
+        section_6_legacy_entry()
     else:
-        print("  [SKIP] 能力码/守卫/兼容端点 —— 登录未通过")
-    section_6_frontend_static()
+        print("  [SKIP] 能力码/守卫/内部端点/兼容端点 —— 登录未通过")
+    section_7_frontend_static()
 
     print("=" * 66)
     print("通过 %d 项，失败 %d 项，跳过 %d 项" % (PASS, FAIL, SKIP))

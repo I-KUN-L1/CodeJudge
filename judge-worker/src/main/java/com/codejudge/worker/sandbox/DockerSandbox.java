@@ -380,9 +380,26 @@ public class DockerSandbox implements SandboxExecutor {
         return truncate(body);
     }
 
+    /** 内层协议字段的解析正则：字段固定为三个，预编译复用，避免每次判题重复编译 */
+    private static final java.util.regex.Pattern P_EXIT =
+            java.util.regex.Pattern.compile("\"exit\":(-?\\d+)");
+    private static final java.util.regex.Pattern P_TIME_MS =
+            java.util.regex.Pattern.compile("\"time_ms\":(-?\\d+)");
+    private static final java.util.regex.Pattern P_MEM_KB =
+            java.util.regex.Pattern.compile("\"mem_kb\":(-?\\d+)");
+
     private long intField(String json, String field, long def) {
-        var m = java.util.regex.Pattern.compile("\"" + field + "\":(-?\\d+)").matcher(json);
+        var m = patternFor(field).matcher(json);
         return m.find() ? Long.parseLong(m.group(1)) : def;
+    }
+
+    private static java.util.regex.Pattern patternFor(String field) {
+        return switch (field) {
+            case "exit" -> P_EXIT;
+            case "time_ms" -> P_TIME_MS;
+            case "mem_kb" -> P_MEM_KB;
+            default -> java.util.regex.Pattern.compile("\"" + field + "\":(-?\\d+)");
+        };
     }
 
     @PreDestroy
