@@ -106,7 +106,11 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="提交时间" width="150" align="right">
+          <!-- 提交时间用 min-width（弹性列）：本页 9 列原本全部定宽，
+               总宽 (~1016px) 小于面板内宽 (~1382px)，表格右侧留白、
+               与题库/竞赛列表「尾列撑满面板」的骨架不一致。
+               时间文本最短，适合做唯一弹性列；min-width=150 保住底宽 -->
+          <el-table-column label="提交时间" min-width="150" align="right">
             <template #default="{ row }">
               <el-tooltip :content="fmtTime(row.submitTime)" placement="top">
                 <span class="cj-num-dim">{{ fmtFromNow(row.submitTime) }}</span>

@@ -225,6 +225,26 @@ groups:
             心跳 key 是 judge:worker:heartbeat:*（TTL 30s），数为 0 说明没有 worker 在续期。
             先确认 judge-worker 进程在跑、且能连上 6380 端口的 Redis。
 
+      - alert: JudgeE2ELatencyP99Breach
+        # SLO S3（docs/SLO.md §1）：判题端到端 P99 < 10s（提交成功 → 终态 verdict 落库）。
+        # 指标由 judge-worker 埋点（JudgeE2eMetrics），样本只含真实终态
+        # （AC/WA/TLE/MLE/RE/CE/SE），CAS 丢弃与 MQ 延迟不计入。
+        # 5m 窗口滤掉单题抖动；低流量时样本少，P99 由直方图插值，波动大属预期。
+        expr: |
+          histogram_quantile(0.99, sum by (le) (
+            rate(cj_judge_e2e_seconds_bucket{job="codejudge"}[5m])
+          )) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "判题端到端 P99 为 {{ $value | printf \"%.1f\" }}s（SLO < 10s，持续 5 分钟）"
+          description: |
+            用户侧表现：从点提交到出结果的整体耗时明显变长，但提交本身不失败。
+            下钻：Grafana「错误预算」看板按 verdict 分列看哪个 verdict 拖尾；
+            TLE 拖尾常见于沙箱容器冷启动（注意实例数×CJ_MQ_CONSUME_THREADS≤CPU 核数），
+            SE 拖尾走死信排查（见 JudgeDeadTasksPresent）。
+
   # ---------------------------------------------------------------
   # 4. 资源：JVM 与连接池
   # ---------------------------------------------------------------

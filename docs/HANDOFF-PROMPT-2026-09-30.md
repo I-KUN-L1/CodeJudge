@@ -4,6 +4,12 @@
 > 同步更新 `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md` 的「第二轮」表格与 `docs/CONTEXT.md` §5.13。
 > 阻塞的项不许跳过验收硬凑（**假绿比 FAIL 危险**），标注 BLOCKED + 原因即可。
 
+> **执行状态速览（2026-09-30 第三轮，详见执行报告「第三轮」表）**
+> T1 ✅ commit `35367ef` ｜ T9 ✅代码/⏸验证 ｜ T10 ✅代码/⏸验证 ｜ T11 部分落地
+> （MinIO profile ✅ / broker store 卷 ✅ / 提交页列宽 ✅ / READINESS 同步 ⏳ / JaCoCo 补测 ⏳ / F1 待凭据）
+> T0 🔴 BLOCKED（VM 引擎 no route to host，**需用户 `wsl --shutdown`**）→ T2/T3/T4/T5 及 T9/T10 运行时验证排队
+> T6 待拍板 ｜ T7 待 remote ｜ T8 独立排期
+
 ---
 
 ## 背景与现状（一句话版）

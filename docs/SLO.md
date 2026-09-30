@@ -35,7 +35,8 @@
 | SLO | 对应告警规则 | 级别 |
 |---|---|---|
 | S1 | PlatformErrorBudgetBurn | critical |
-| S2/S3 | JudgeE2ELatencyP99Breach | warning |
+| S2 | （无专用告警）经 `CodeJudgeHighLatencyP95` 与「错误预算」看板 S2 面板观测 | — |
+| S3 | JudgeE2ELatencyP99Breach | warning |
 | S4 | JudgeSystemErrorSpike | critical |
 | 队列积压 | JudgeQueueBacklog | warning |
 | 死信 | JudgeDeadLetter | critical |
@@ -45,5 +46,9 @@
 
 - [x] Prometheus 直方图（`percentiles-histogram http.server.requests`）已在 8 服务启用
 - [x] 告警规则文件落盘（D1）
-- [ ] `cj_judge_e2e_seconds` 业务指标暴露（S3 度量需 worker/submission 埋点，**TODO**）
-- [ ] 错误预算看板（Grafana，**TODO**，复用 `gen_dashboards.py`）
+- [x] `cj_judge_e2e_seconds` 业务指标暴露（S3 度量）：judge-worker 终态落库点埋点
+  （`JudgeE2eMetrics`，业务终态 + 死信 SE 均计，CAS 丢弃不计；桶范围 50ms–120s），
+  告警 `JudgeE2ELatencyP99Breach` 已入 rules（2026-09-30）
+- [x] 错误预算看板（Grafana，`codejudge-error-budget`，经 `gen_dashboards.py` 生成、
+  `editable: false`；S1–S4 达成状态 + 燃烧率 + verdict 分解，2026-09-30）
+- [ ] 上述指标/看板在容器化栈上的**运行时验证**（依赖 Docker daemon 恢复 + compose app 实测，BLOCKED）

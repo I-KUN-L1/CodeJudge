@@ -586,6 +586,25 @@ const contestId = computed(() => Number(route.params.id));   // 2102698982248611
 **阻塞/待办**（10 项，详见执行报告）：镜像构建与 app `up` 实测、trivy/ZAP 实扫（网络）、
 E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI 徽章占位符替换。
 
+### 5.14 2026-09-30 第三轮：HANDOFF-PROMPT 执行（T9/T10/T11 代码落地，实测仍卡 Docker）
+
+**输入**：`docs/HANDOFF-PROMPT-2026-09-30.md`。逐项证据见执行报告「第三轮」表。
+
+- **T1 基线提交** ✅：launch-verify 42/0 → commit `35367ef`（68 文件）。
+- **T9 SLO 补全** ✅（代码）/⏸（验证）：worker `JudgeE2eMetrics`（`cj_judge_e2e_seconds`，
+  埋在 finishTerminal + 死信 SE，CAS 丢弃不计）+ 第 12 条告警 `JudgeE2ELatencyP99Breach`
+  （SLO §4 之前声称有但实际缺）+ 看板 9 `codejudge-error-budget`。
+- **T10 JSON 日志** ✅（代码）/⏸（验证）：`judge-common/logback-spring.xml`（jar 内收口，
+  非 prod=人读+`[req=requestId]` 段、prod=JSON `JsonLogLayout`）+ 8 服务 clean package
+  （嵌套 judge-common 复验已含新类）。**新坑**：jar plugin 内容未变跳过重建（forceCreation=false），
+  `-pl` 不带 `-am` 时嵌套旧依赖原样保留 → 改 common 后必须 clean 或 install 再打包。
+- **T11** ✅：MinIO 入 app profile（submission/worker 加 depends_on healthy）；
+  broker store 卷经一次性 `rocketmq-store-init`（root chown 3000）落地，重启丢队列风险关闭；
+  提交页「提交时间」列改 min-width 弹性列（骨架对齐）。
+- **T0 仍阻塞**：daemon 崩溃后 VM 引擎未起（`192.168.65.7:2376 no route to host` 持续 20+ 分钟，
+  explorer.exe 中转拉起有效但 VM 本身坏着）→ **必须用户手动 `wsl --shutdown`**。
+  T2/T3/T4/T5 及 T9/T10 运行时验证全部排队在它后面。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash
@@ -743,10 +762,10 @@ pgvector 双路召回（题目知识 + 历史点评）、断线重连（`Last-Ev
   `--wait` 看护模式需用 run_in_background 挂起，父进程驻留期间子 JVM 存活。
 - **MySQL PreparedStatement 不支持 `INTERVAL ? MILLISECOND`**（P3 实测）—— 时间运算一律在 Java 侧算好再传参。
 - **Git Bash 手工调 docker run 时 MSYS 会改写 `-v` 路径与 `/bin/sh` 参数**（MSYS_NO_PATHCONV 也不完全可靠）—— 调试容器请直接看 worker 日志或用 python 测试。
-- **RocketMQ broker 不能挂 store 卷**：镜像内无 `/home/rocketmq/store`，Docker 建成的挂载点是 `root:root`，进程 uid=3000 无写权限 → 启动即静默退出（日志为空）。生产需先 `chown 3000:3000`。**当前未挂载 → 数据不持久化**。
+- **RocketMQ broker store 卷（2026-09-30 已修复）**：当初镜像内无 `/home/rocketmq/store`，命名卷挂载点 root:root，uid=3000 无写权限 → 启动即静默退出（ExitCode=253、日志为空）。现由一次性 `rocketmq-store-init` 容器（user root，chown 3000:3000）+ `service_completed_successfully` 门控解决，消息已持久化。⚠️ 首次 `up` 若见 `Exited(0)` 的 store-init 容器属预期。
 - **MySQL**：`.env` 里 `MYSQL_PASSWORD` 必须与 `MYSQL_ROOT_PASSWORD` 一致（底座约定应用直接用 root）。
 - **judge-gateway**：底座缺 `spring-boot-starter-actuator`，已在 P1 补上。
-- **MinIO** 目前在 `storage` profile（本机 registry 拉取被拒），上线前需移出。
+- **MinIO 已入 app profile（2026-09-30）**：不再是独立 storage 常驻，`--profile app` 时随 submission/worker 的 depends_on(healthy) 拉起；storage profile 保留兼容调试。本机 registry 拉取仍可能被拒，需预拉镜像。
 - **沙箱运行时**：本机 Docker Desktop 仅注册 `runc` 系列，**无 `runsc`（gVisor）** → 默认加固 runc + seccomp，gVisor 作可选 `SANDBOX_RUNTIME`。
 
 ---

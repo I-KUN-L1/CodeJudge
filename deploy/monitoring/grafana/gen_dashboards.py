@@ -558,6 +558,82 @@ def contest_rank():
         ["contest"], p, templating=[])
 
 
+# =====================================================================
+# 看板 9：SLO / 错误预算 —— 按 docs/SLO.md §1 口径（99.9% 可用性 /
+# 提交受理 P99<200ms / 判题端到端 P99<10s），§3 的预算策略在这里可视化
+# =====================================================================
+def error_budget():
+    # 可用性分母/分子都排除 /actuator（标定记录：抓取自耗时会污染错误率）
+    avail_num = ('sum(rate(http_server_requests_seconds_count{job="codejudge", '
+                 'status=~"5..", uri!~"/actuator.*"}[30d]))')
+    avail_den = ('clamp_min(sum(rate(http_server_requests_seconds_count{job="codejudge", '
+                 'uri!~"/actuator.*"}[30d])), 0.001)')
+    err_ratio_30d = "(%s / %s)" % (avail_num, avail_den)
+    p = []
+    p.append(row("SLO 达成状态（30d 窗口）", 0))
+    p.append(stat("平台可用性（S1，99.9%）",
+                  "(1 - %s)" % err_ratio_30d,
+                  0, 1, 4, 5, unit="percentunit", decimals=4,
+                  thresholds=[(None, "red"), (0.999, "green")]))
+    p.append(stat("错误预算剩余（S1）",
+                  "clamp_max(1 - (%s / 0.001), 1)" % err_ratio_30d,
+                  4, 1, 4, 5, unit="percentunit", decimals=2,
+                  # SLO §3：>50% 正常迭代 / 25–50% 冻结非紧急变更 / <25% 全部冻结
+                  thresholds=[(None, "red"), (0.25, "yellow"), (0.5, "green")]))
+    p.append(stat("提交受理 P99（S2，<200ms）",
+                  'histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket'
+                  '{job="codejudge", application="judge-submission", method="POST", uri="/submissions"}[5m])))',
+                  8, 1, 4, 5, unit="s", decimals=3,
+                  thresholds=[(None, "green"), (0.2, "red")]))
+    p.append(stat("判题端到端 P99（S3，<10s）",
+                  'histogram_quantile(0.99, sum by (le) (rate(cj_judge_e2e_seconds_bucket{job="codejudge"}[5m])))',
+                  12, 1, 4, 5, unit="s", decimals=2,
+                  thresholds=[(None, "green"), (10, "red")]))
+    p.append(stat("SE 占终态比（S4，≥99.5% 非 SE）",
+                  '(sum(rate(cj_judge_e2e_seconds_count{job="codejudge", verdict="SE"}[30d])) '
+                  '/ clamp_min(sum(rate(cj_judge_e2e_seconds_count{job="codejudge"}[30d])), 0.001))',
+                  16, 1, 4, 5, unit="percentunit", decimals=4,
+                  thresholds=[(None, "green"), (0.005, "red")]))
+    p.append(stat("预算燃烧率（1h 窗口）",
+                  '((sum(rate(http_server_requests_seconds_count{job="codejudge", status=~"5..", '
+                  'uri!~"/actuator.*"}[1h])) / clamp_min(sum(rate(http_server_requests_seconds_count'
+                  '{job="codejudge", uri!~"/actuator.*"}[1h])), 0.001)) / 0.001)',
+                  20, 1, 4, 5, decimals=2,
+                  # >1 即消耗快于预算；>14.4 等价于 30d 预算 2 天内烧完
+                  thresholds=[(None, "green"), (1, "yellow"), (14.4, "red")]))
+
+    p.append(row("趋势", 6))
+    p.append(ts("错误预算燃烧率（1h / 6h）",
+                [("A", '((sum(rate(http_server_requests_seconds_count{job="codejudge", status=~"5..", '
+                        'uri!~"/actuator.*"}[1h])) / clamp_min(sum(rate(http_server_requests_seconds_count'
+                        '{job="codejudge", uri!~"/actuator.*"}[1h])), 0.001)) / 0.001)', "1h 燃烧率"),
+                 ("B", '((sum(rate(http_server_requests_seconds_count{job="codejudge", status=~"5..", '
+                        'uri!~"/actuator.*"}[6h])) / clamp_min(sum(rate(http_server_requests_seconds_count'
+                        '{job="codejudge", uri!~"/actuator.*"}[6h])), 0.001)) / 0.001)', "6h 燃烧率")],
+                0, 7, 12, 9, decimals=3))
+    p.append(ts("判题端到端 P50 / P95 / P99",
+                [("A", 'histogram_quantile(0.50, sum by (le) (rate(cj_judge_e2e_seconds_bucket{job="codejudge"}[5m])))', "P50"),
+                 ("B", 'histogram_quantile(0.95, sum by (le) (rate(cj_judge_e2e_seconds_bucket{job="codejudge"}[5m])))', "P95"),
+                 ("C", 'histogram_quantile(0.99, sum by (le) (rate(cj_judge_e2e_seconds_bucket{job="codejudge"}[5m])))', "P99")],
+                12, 7, 12, 9, unit="s", decimals=2))
+
+    p.append(row("构成分解", 16))
+    p.append(ts("判题终态速率（by verdict）",
+                [("A", 'sum by (verdict) (rate(cj_judge_e2e_seconds_count{job="codejudge"}[5m]))', "{{verdict}}")],
+                0, 17, 12, 9, unit="reqps", decimals=4))
+    p.append(ts("5xx 错误率趋势（10m 窗口）",
+                [("A", 'sum by (application) (rate(http_server_requests_seconds_count{job="codejudge", '
+                       'status=~"5..", uri!~"/actuator.*"}[10m])) / clamp_min(sum by (application) '
+                       '(rate(http_server_requests_seconds_count{job="codejudge", uri!~"/actuator.*"}[10m])), 0.001)',
+                  "{{application}}")],
+                12, 17, 12, 9, unit="percentunit", decimals=4))
+    return dashboard(
+        "codejudge-error-budget", "CodeJudge SLO / 错误预算",
+        "docs/SLO.md §1 的 S1–S4 达成状态与 §3 的预算策略可视化："
+        "预算剩余 <25% 时全部变更冻结。判题端到端样本来自 judge-worker 终态落库埋点（cj_judge_e2e_seconds）。",
+        ["slo"], p, templating=[])
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     for fn, d in [
@@ -569,6 +645,7 @@ def main():
         ("codejudge-sandbox.json", sandbox()),
         ("codejudge-mq-lag.json", mq_lag()),
         ("codejudge-contest-rank.json", contest_rank()),
+        ("codejudge-error-budget.json", error_budget()),
     ]:
         path = OUT / fn
         path.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
