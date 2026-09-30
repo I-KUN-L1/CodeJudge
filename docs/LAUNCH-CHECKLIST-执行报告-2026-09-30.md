@@ -93,3 +93,38 @@
 | 阻塞1(后半) | compose app `up -d` 实测 | **Docker daemon 崩溃恢复中**：9 个容器同启后 daemon 失联；恢复时先后踩两个坑——① `rename ~/.docker/daemon.json.tmp → Access is denied`（settings-store.json 的 DaemonConfig 同步路径；从工具环境拉起 Docker Desktop 继承受限令牌所致，经 `explorer.exe` 以正常用户令牌启动后解决）；② WSL2 VM 网络不通（`192.168.65.7:2376 no route to host`），VM 在最初崩溃中进入坏状态 | **需用户手动**：`wsl --shutdown` → 启动 Docker Desktop → daemon 就绪后 `docker compose --profile app up -d` → 8 端口健康检查。wsl.exe 在安全中心程序黑名单中，AI 无法代执行。`~/.docker/daemon.json.off` 是原配置备份（registry-mirrors），daemon 恢复后可自行恢复文件名 |
 | 阻塞7 | worker 沙箱路径核验 | 依赖容器栈起不来；且 prebuilt worker 镜像**不含 docker.io CLI**（见脚本说明） | 容器栈恢复后，用多阶段 Dockerfile 重建 worker 镜像再回归 verify-p3 |
 | 阻塞2 | trivy 实扫 | mirror.gcr.io 与 ghcr.io 的漏洞库下载均被网络拦 | 待有网环境 |
+
+---
+
+## 第三轮：HANDOFF-PROMPT 执行（2026-09-30 傍晚）
+
+### 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| T1 | **基线提交** | ✅ `bash docs/launch-verify.sh` → PASS=42/FAIL=0 后本地 commit `35367ef`（68 文件，无 remote，敏感文件核查通过：无 .env/bootstrap-credentials） |
+| T9 | **SLO 度量补全**（阻塞9） | ✅ 代码/规则/看板全部落地，**运行时验证 BLOCKED**（见下）：① `judge-worker` 新增 `JudgeE2eMetrics`（`cj_judge_e2e` Timer，Prometheus 暴露为 `cj_judge_e2e_seconds_*`，verdict 标签分列，桶 50ms–120s；埋在 `finishTerminal` 终态落库点与 `failTask` 死信分支，CAS 丢弃不计）——与 SLO.md §1 S3 口径「提交成功→终态 verdict 落库」一致；② `codejudge-alerts.yml` 补第 12 条规则 `JudgeE2ELatencyP99Breach`（warning，e2e P99>10s 持续 5m，SLO §4 此前声称有该规则但实际缺失）；③ `gen_dashboards.py` 新增看板 9 `codejudge-error-budget`（S1–S4 达成状态 + 预算剩余/燃烧率 + verdict 分解，9 看板全部重新生成，JSON/YAML 解析校验通过）；④ SLO.md §5 勾选两项并如实标注运行时验证待做。judge-worker `clean package` 通过 |
+| T10 | **stdout JSON 化**（阻塞10） | ✅ 代码落地，**运行时验证 BLOCKED**：① `judge-common` 新增统一 `logback-spring.xml`（jar 内 classpath 根收口，8 服务共用；非 prod=人读格式+新增 `[req=...]` MDC requestId 段，prod=JSON）+ 自研 `JsonLogLayout`（Jackson 转义，字段契约 ts/level/application/logger/thread/requestId/message/stackTrace；不引 logstash-encoder——本地仓库无货且外网受限）；② application 字段取 springProperty APP_NAME（与 Prometheus application 标签对齐）；③ **8 服务已 `clean package`**（嵌套 judge-common jar 复验含 JsonLogLayout+logback-spring）。⚠️ 构建期发现 jar plugin 内容未变会跳过重建（forceCreation=false），`-pl` 不带 `-am` 时嵌套旧依赖原样保留——必须 clean 或 install 后再打包 |
+
+### T11 落地部分
+
+| # | 事项 | 结果 |
+|---|---|---|
+| 遗留 | **MinIO 移出 storage profile** | ✅ `docker-compose.yml`：minio 改 `profiles: ["storage","app"]`；judge-submission / judge-worker 增加 `depends_on: minio: service_healthy`；注释同步。`docker compose config` 通过 |
+| 遗留 | **RocketMQ broker store 卷** | ✅ 原踩坑（uid=3000 撞 root:root 挂载点 → ExitCode=253）的「正确做法」落地：新增一次性 `rocketmq-store-init`（复用 apache/rocketmq 镜像、user 覆盖 root、chown 3000:3000，不引入可能被拒拉的新镜像）；broker 挂 `codejudge-mq-store` 命名卷并以 `service_completed_successfully` 门控。重启丢队列的风险关闭。**首次 up 实测待 Docker 恢复** |
+| 遗留 | **提交页列宽骨架不一致** | ✅ `SubmissionListView.vue`：「提交时间」列 `width=150` → `min-width=150`（本页唯一弹性列），表格撑满面板，与题库/竞赛列表骨架一致。**浏览器实测待前端可跑后回归** |
+| 遗留 | LAUNCH-READINESS.md 文档债 | ⏳ 本轮先以本报告 + CONTEXT §5.13 为准，同步留待下一轮（见 T11 待办） |
+
+### 受阻（附精确卡点与解法）
+
+| # | 事项 | 当前卡点 | 解法 |
+|---|---|---|---|
+| T0 | Docker daemon 恢复 | **VM 级故障持续**：本会话中经 `explorer.exe` 中转拉起 Docker Desktop（进程正常起来），但 apiproxy 持续 `dialing 192.168.65.7:2376: no route to host`（观测 20+ 分钟）—— VM 引擎未起，与第二轮同症 | **需用户手动**：管理员 PowerShell `wsl --shutdown` → 正常双击启动 Docker Desktop → `docker version` 出 Server 段。wsl.exe 在安全中心黑名单，AI 不可代执行 |
+| T2 | compose app 编排实测 | 依赖 T0 | daemon 恢复后：分批 `--profile app up -d`（先 user/problem/contest/ai，等健康后 auth/gateway/submission，最后 worker/web）→ 8 端口 health + web 200 → `verify-p1-login.py` 冒烟 |
+| T3 | worker 沙箱核验 | 依赖 T2 | 多阶段 Dockerfile 重建含 docker.io CLI 的 worker 镜像 → 容器化栈 verify-p3 全绿 → 挂载契约写 DEPLOYMENT.md |
+| T4 | soak 首跑 | 依赖 T2 或宿主机启动 | 10min 验链路 → 1h 全量（受管后台）→ 数字进 PERF.md |
+| T5 | trivy / ZAP | 漏洞库双源被网络拦 | 待有网环境（命令见 HANDOFF-PROMPT T5） |
+| T6 | E3 /v1 版本化 | **待用户拍板**（方案 DEPLOYMENT.md §8.3） | 拍板后同步改限流谓词 / JwtProperties / ActuatorGuardFilter 三处再启用 |
+| T7 | CI 徽章 / remote | 仓库无 remote | 用户建 remote → add origin + push → 替换 README 徽章占位符 5 处 |
+| T8 | G4 前端 E2E | 工作量独立可排期；跑通需服务在线 + playwright 浏览器下载 | 登录+题库两条冒烟先行，注意登录限流 |
+| T9/T10 验收 | 运行时验证 | Loki 查询、指标暴露、看板数据均需服务在线 | T2 完成后：worker 重打包 jar 已就绪 → 起 8 服务 → `curl :9085/actuator/prometheus \| grep cj_judge_e2e` + Loki `{application="judge-worker"} \| json` + Grafana 看错误预算看板 |

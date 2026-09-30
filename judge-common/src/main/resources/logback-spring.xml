@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CodeJudge 统一日志配置（上线检查清单第十轮 T10）。
+
+  放置位置说明：本文件位于 judge-common 的 jar 内（classpath 根），8 个服务都不再
+  自带 logback 配置 —— Spring Boot 的 LoggingApplicationListener 经 classloader
+  查找 logback-spring.xml，依赖 jar 中的配置同样可见，从而实现「一处改、全局生效」。
+  若某服务将来需要覆盖，在自己的 src/main/resources 下放同名文件即可
+  （应用 classes 在 classpath 上先于依赖 jar，自然胜出）。
+
+  profile 语义（行为变更点，见 LAUNCH-CHECKLIST 执行报告）：
+    · 非 prod（默认/本地）：人读单行格式，新增 [req=...] 段显示 MDC requestId
+      （原 Spring Boot 默认格式无此段 —— 本地日志排查同样受益）。
+    · prod：stdout JSON（字段契约见 JsonLogLayout 的 Javadoc），
+      Loki 查询形如 {application="judge-worker"} | json | requestId="xxx"。
+
+  日志级别沿用各服务 application.yml 的 logging.level.* —— 本文件不覆盖。
+-->
+<configuration>
+
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name"/>
+
+    <springProfile name="!prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%thread] [req=%X{requestId:-}] %logger{40} : %msg%n</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="prod">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+                <layout class="com.codejudge.common.logging.JsonLogLayout"/>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+
+</configuration>

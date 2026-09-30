@@ -20,6 +20,7 @@ import com.codejudge.worker.mapper.JudgeResultMapper;
 import com.codejudge.worker.mapper.WorkerJudgeTaskMapper;
 import com.codejudge.worker.mapper.WorkerSubmissionMapper;
 import com.codejudge.worker.mq.ProgressPublisher;
+import com.codejudge.worker.metrics.JudgeE2eMetrics;
 import com.codejudge.worker.sandbox.SandboxException;
 import com.codejudge.worker.sandbox.SandboxExecutor;
 import com.codejudge.worker.sandbox.SandboxResult;
@@ -70,6 +71,8 @@ public class JudgeEngine {
     private final StringRedisTemplate redis;
     /** 判题进度事件发布器（生产端限流，见 ProgressPublisher） */
     private final ProgressPublisher progressPublisher;
+    /** SLO S3 度量：判题端到端时延（提交 → 终态落库），见 JudgeE2eMetrics */
+    private final JudgeE2eMetrics e2eMetrics;
     /** 终态回写的事务模板：插结果行与 CAS 必须同生共死（Boot 自动装配该 Bean） */
     private final org.springframework.transaction.support.TransactionTemplate txTemplate;
 
@@ -341,6 +344,8 @@ public class JudgeEngine {
         if (!Boolean.TRUE.equals(committed)) {
             return JudgeReport.discarded();
         }
+        // SLO S3 样本：终态已真实落库才计（CAS 丢弃不是终态，不计入）
+        e2eMetrics.recordTerminal(submission.getSubmitTime(), verdict.name());
 
         // RESULT 事件发布（P4 的竞赛榜与 WS 将消费；发送失败不影响已落库终态）
         SubmissionResultMessage event = new SubmissionResultMessage();
@@ -390,6 +395,8 @@ public class JudgeEngine {
             if (updated == 1) {
                 submissionMapper.finishFailed(submission.getId());
                 publishDlq(task, submission, reason);
+                // 死信也是终态（FAILED/SE）：计入 SLO S3 样本，verdict 标签区分
+                e2eMetrics.recordTerminal(submission.getSubmitTime(), "SE");
                 // 死信是终态，必须把提交从待判队列摘除。
                 // 不摘除的后果：该成员永远留在 ZSet 里，judge_queue_backlog 只增不减，
                 // 系统空闲时也显示「有积压」，最终让积压告警彻底失真（实测已复现）。

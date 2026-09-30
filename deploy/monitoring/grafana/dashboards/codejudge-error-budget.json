@@ -1,0 +1,762 @@
+{
+  "uid": "codejudge-error-budget",
+  "title": "CodeJudge SLO / 错误预算",
+  "description": "docs/SLO.md §1 的 S1–S4 达成状态与 §3 的预算策略可视化：预算剩余 <25% 时全部变更冻结。判题端到端样本来自 judge-worker 终态落库埋点（cj_judge_e2e_seconds）。",
+  "tags": [
+    "slo",
+    "codejudge"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 98,
+      "type": "row",
+      "title": "SLO 达成状态（30d 窗口）",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 99,
+      "type": "stat",
+      "title": "平台可用性（S1，99.9%）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(1 - (sum(rate(http_server_requests_seconds_count{job=\"codejudge\", status=~\"5..\", uri!~\"/actuator.*\"}[30d])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"codejudge\", uri!~\"/actuator.*\"}[30d])), 0.001)))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "decimals": 4
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 100,
+      "type": "stat",
+      "title": "错误预算剩余（S1）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max(1 - ((sum(rate(http_server_requests_seconds_count{job=\"codejudge\", status=~\"5..\", uri!~\"/actuator.*\"}[30d])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"codejudge\", uri!~\"/actuator.*\"}[30d])), 0.001)) / 0.001), 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.25
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 101,
+      "type": "stat",
+      "title": "提交受理 P99（S2，<200ms）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"codejudge\", application=\"judge-submission\", method=\"POST\", uri=\"/submissions\"}[5m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
+            ]
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "type": "stat",
+      "title": "判题端到端 P99（S3，<10s）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(cj_judge_e2e_seconds_bucket{job=\"codejudge\"}[5m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "type": "stat",
+      "title": "SE 占终态比（S4，≥99.5% 非 SE）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(cj_judge_e2e_seconds_count{job=\"codejudge\", verdict=\"SE\"}[30d])) / clamp_min(sum(rate(cj_judge_e2e_seconds_count{job=\"codejudge\"}[30d])), 0.001))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.005
+              }
+            ]
+          },
+          "decimals": 4
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 104,
+      "type": "stat",
+      "title": "预算燃烧率（1h 窗口）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum(rate(http_server_requests_seconds_count{job=\"codejudge\", status=~\"5..\", uri!~\"/actuator.*\"}[1h])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"codejudge\", uri!~\"/actuator.*\"}[1h])), 0.001)) / 0.001)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 105,
+      "type": "row",
+      "title": "趋势",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 106,
+      "type": "timeseries",
+      "title": "错误预算燃烧率（1h / 6h）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum(rate(http_server_requests_seconds_count{job=\"codejudge\", status=~\"5..\", uri!~\"/actuator.*\"}[1h])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"codejudge\", uri!~\"/actuator.*\"}[1h])), 0.001)) / 0.001)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "1h 燃烧率"
+        },
+        {
+          "refId": "B",
+          "expr": "((sum(rate(http_server_requests_seconds_count{job=\"codejudge\", status=~\"5..\", uri!~\"/actuator.*\"}[6h])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"codejudge\", uri!~\"/actuator.*\"}[6h])), 0.001)) / 0.001)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "6h 燃烧率"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 107,
+      "type": "timeseries",
+      "title": "判题端到端 P50 / P95 / P99",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(cj_judge_e2e_seconds_bucket{job=\"codejudge\"}[5m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "P50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(cj_judge_e2e_seconds_bucket{job=\"codejudge\"}[5m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "P95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(cj_judge_e2e_seconds_bucket{job=\"codejudge\"}[5m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "P99"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 108,
+      "type": "row",
+      "title": "构成分解",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 109,
+      "type": "timeseries",
+      "title": "判题终态速率（by verdict）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (verdict) (rate(cj_judge_e2e_seconds_count{job=\"codejudge\"}[5m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "{{verdict}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "decimals": 4
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 110,
+      "type": "timeseries",
+      "title": "5xx 错误率趋势（10m 窗口）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "codejudge-prom"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application) (rate(http_server_requests_seconds_count{job=\"codejudge\", status=~\"5..\", uri!~\"/actuator.*\"}[10m])) / clamp_min(sum by (application) (rate(http_server_requests_seconds_count{job=\"codejudge\", uri!~\"/actuator.*\"}[10m])), 0.001)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "codejudge-prom"
+          },
+          "legendFormat": "{{application}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "decimals": 4
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

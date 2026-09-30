@@ -102,12 +102,29 @@ services:
       - "${BIND_IP:-127.0.0.1}:${ROCKETMQ_NAMESRV_BIND_PORT:-9877}:9876"
     command: sh mqnamesrv
 
+  # 一次性初始化容器：把 store 命名卷的属主修成 uid=3000(rocketmq)。
+  # 直接挂卷为什么起不来 —— 见 rocketmq-broker 下方的踩坑注释（2026-09-20 实测 ExitCode=253）。
+  # 用 apache/rocketmq 镜像自身跑 chown（user 覆盖为 root），不引入 alpine/busybox
+  # 这类可能被受限网络拒拉的新镜像。跑完即退出（Exited(0) 属预期）。
+  rocketmq-store-init:
+    image: apache/rocketmq:4.9.7
+    container_name: codejudge-mq-store-init
+    user: "0:0"
+    volumes:
+      - codejudge-mq-store:/home/rocketmq/store
+    command: ["sh", "-c", "chown -R 3000:3000 /home/rocketmq/store && chmod 700 /home/rocketmq/store"]
+    restart: "no"
+
   rocketmq-broker:
     image: apache/rocketmq:4.9.7
     container_name: codejudge-mq-broker
     restart: always
     depends_on:
-      - rocketmq-namesrv
+      rocketmq-namesrv:
+        condition: service_started
+      # 必须等属主修好再挂卷，否则 broker 仍会以 rocketmq 身份撞上 root:root 挂载点
+      rocketmq-store-init:
+        condition: service_completed_successfully
     environment:
       NAMESRV_ADDR: rocketmq-namesrv:9876
       # 规避 JDK8 在 cgroup v2（Docker Desktop/WSL2）下 OperatingSystemMXBean NPE
@@ -121,14 +138,13 @@ services:
       - "${BIND_IP:-127.0.0.1}:10922:10922"
     volumes:
       - ./deploy/rocketmq/broker.conf:/home/rocketmq/rocketmq-4.9.7/conf/broker.conf:ro
-      # 这里**故意不挂载 /home/rocketmq/store**（踩坑记录 2026-09-20）：
-      #   apache/rocketmq 镜像内并不存在该目录，容器进程以 uid=3000(rocketmq) 运行，
-      #   而 Docker 为命名卷创建的挂载点是 root:root(drwxr-xr-x) —— 进程无写权限，
-      #   broker 会在打印任何日志之前直接退出（ExitCode=253，日志为空，极难定位）。
-      #   实测证据：镜像内 /home/rocketmq 为 drwx------ rocketmq，/home/rocketmq/store 不存在。
-      #   取舍：不挂载则消息存储在容器可写层，`docker restart` 不丢、容器被重建才丢；
-      #   本地开发可接受（主题 autoCreateTopicEnable=true 会自动重建）。
-      #   生产若需持久化，正确做法是先建卷并 chown 3000:3000，再挂载。
+      # 消息持久化（2026-09-30 落地，原「故意不挂载」决策废止）：
+      #   当初不挂的原因：镜像内不存在 /home/rocketmq/store，Docker 为命名卷创建的
+      #   挂载点是 root:root，broker 进程（uid=3000）无写权限 → 启动即退（ExitCode=253，日志为空）。
+      #   现由 rocketmq-store-init 一次性容器以 root 把卷 chown 成 3000:3000，
+      #   broker 经 depends_on(service_completed_successfully) 晚于它挂卷 —— 持久化生效，
+      #   容器重建不再丢队列（重启丢消息的上线风险关闭）。
+      - codejudge-mq-store:/home/rocketmq/store
     command: sh mqbroker -c /home/rocketmq/rocketmq-4.9.7/conf/broker.conf
 
   rocketmq-console:
@@ -145,16 +161,18 @@ services:
       - "${BIND_IP:-127.0.0.1}:${ROCKETMQ_CONSOLE_BIND_PORT:-18081}:8080"
 
   # ---------- MinIO：判题代码（超长代码）与题目附件的对象存储 ----------
-  # 放在 `storage` profile 下，**默认不随 `docker compose up -d` 启动**，原因见下：
-  #   · MinIO 不是 P1 链路（登录/RBAC/用户）的依赖，P3 才用于存放超长判题代码；
-  #   · 部分受限网络环境下 `minio/minio` 镜像拉取会被仓库拒绝（实测 error from registry: denied），
-  #     若不加 profile，一个非关键组件会把整条 `docker compose up -d` 拖失败。
-  # 需要时显式启动：
-  #   docker compose --profile storage up -d minio
+  # 同时挂在 storage / app 两个 profile 下（2026-09-30 调整，原仅 storage）：
+  #   · judge-submission / judge-worker 的容器化部署依赖 minio:9000（environment 强制覆盖），
+  #     `--profile app` 起应用时 MinIO 必须随之就绪，否则超长代码上传/读取直接失败 ——
+  #     所以它事实上是 app 的依赖而非常驻基础设施，单独一个 storage profile 反而制造假象；
+  #   · 保留 storage profile 是为了兼容「只要 MinIO 不要应用」的调试场景：
+  #     docker compose --profile storage up -d minio
+  #   · 部分受限网络下 minio/minio 镜像拉取可能被拒（实测 error from registry: denied），
+  #     镜像缺失时 app 编排会卡在 minio 拉取 —— 需人工预拉镜像或临时注释掉本服务与两处 depends_on。
   minio:
     image: minio/minio
     container_name: codejudge-minio
-    profiles: ["storage"]
+    profiles: ["storage", "app"]
     restart: always
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?请在 .env 中配置 MINIO_ROOT_USER}
@@ -293,6 +311,8 @@ services:
         condition: service_started
       rocketmq-broker:
         condition: service_started
+      minio:
+        condition: service_healthy
 
   judge-worker:
     image: codejudge/judge-worker:latest
@@ -326,6 +346,8 @@ services:
         condition: service_started
       rocketmq-broker:
         condition: service_started
+      minio:
+        condition: service_healthy
 
   judge-contest:
     image: codejudge/judge-contest:latest
@@ -434,3 +456,4 @@ volumes:
   codejudge-redis-data:
   codejudge-pg-data:
   codejudge-minio-data:
+  codejudge-mq-store:
