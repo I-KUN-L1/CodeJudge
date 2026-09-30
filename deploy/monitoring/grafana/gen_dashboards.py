@@ -391,6 +391,173 @@ def ai_review():
         ["ai"], p, templating=[])
 
 
+# =====================================================================
+# 看板 5：判题机集群 —— 多实例运行态（注意：加实例不涨吞吐，见 docs/PERF.md §3.7）
+# =====================================================================
+def worker_cluster():
+    p = []
+    p.append(row("集群体检", 0))
+    p.append(stat("在线 worker 数",
+                  'max(judge_workers_online{job="codejudge"})',
+                  0, 1, 4, 5, decimals=0, color_mode="none"))
+    p.append(stat("集群消费速率",
+                  'sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-worker"}[1m]))',
+                  4, 1, 4, 5, unit="reqps", decimals=3, color_mode="none"))
+    p.append(stat("待判积压",
+                  'max(judge_queue_backlog{job="codejudge"})',
+                  8, 1, 4, 5, decimals=0,
+                  thresholds=[(None, "green"), (20, "yellow"), (100, "red")]))
+    p.append(stat("死信任务",
+                  'max(judge_dead_tasks{job="codejudge"})',
+                  12, 1, 4, 5, decimals=0,
+                  thresholds=[(None, "green"), (1, "red")]))
+    p.append(stat("worker 堆峰值占用比",
+                  'max(jvm_memory_used_bytes{job="codejudge", application="judge-worker", area="heap"}) '
+                  '/ max(jvm_memory_max_bytes{job="codejudge", application="judge-worker", area="heap"})',
+                  16, 1, 4, 5, unit="percentunit", decimals=3,
+                  thresholds=[(None, "green"), (0.75, "yellow"), (0.9, "red")]))
+
+    p.append(row("实例级趋势", 6))
+    p.append(ts("每实例消费速率（多实例按 instance 分列）",
+                [("A", 'sum by (instance) (rate(http_server_requests_seconds_count{job="codejudge", application="judge-worker"}[1m]))',
+                  "{{instance}}")],
+                0, 7, 12, 9, unit="reqps", decimals=3))
+    p.append(ts("每实例 CPU / 堆",
+                [("A", 'process_cpu_usage{job="codejudge", application="judge-worker"}', "CPU {{instance}}"),
+                 ("B", 'jvm_memory_used_bytes{job="codejudge", application="judge-worker", area="heap"}', "heap {{instance}}")],
+                12, 7, 12, 9, unit="none"))
+    p.append(ts("在线 worker 数变化",
+                [("A", 'judge_workers_online{job="codejudge"}', "在线数")],
+                0, 16, 12, 8, unit="none", decimals=0, fill=25))
+    p.append(ts("积压排空速率（负值=积压增长）",
+                [("A", '-deriv(judge_queue_backlog{job="codejudge"}[5m])', "积压变化速率")],
+                12, 16, 12, 8, unit="none", decimals=2))
+    return dashboard(
+        "codejudge-worker-cluster", "CodeJudge 判题机集群",
+        "多实例运行态与每实例分布。注意：本机实测加实例不涨吞吐（瓶颈=每题 5 容器启停），"
+        "扩容先减每题容器数或跨宿主部署，并配 CJ_MQ_CONSUME_THREADS（实例数×值≤CPU 核数）。",
+        ["judge"], p, templating=[])
+
+
+# =====================================================================
+# 看板 6：沙箱资源 —— 经 worker JVM 与判题队列间接观察
+# TODO: 每沙箱容器的 CPU/内存需要 cAdvisor/docker exporter 接入后补面板
+# =====================================================================
+def sandbox():
+    p = []
+    p.append(row("沙箱宿主代理指标（worker JVM）", 0))
+    p.append(stat("worker CPU",
+                  'max(process_cpu_usage{job="codejudge", application="judge-worker"})',
+                  0, 1, 4, 5, unit="percentunit", decimals=3,
+                  thresholds=[(None, "green"), (0.8, "yellow"), (0.95, "red")]))
+    p.append(stat("worker 线程数",
+                  'max(jvm_threads_live_threads{job="codejudge", application="judge-worker"})',
+                  4, 1, 4, 5, decimals=0, color_mode="none"))
+    p.append(stat("系统 CPU（worker 所在宿主）",
+                  'max(process_cpu_usage{job="codejudge", application=~"judge-(worker|submission)"})',
+                  8, 1, 4, 5, unit="percentunit", decimals=3, color_mode="none"))
+    p.append(stat("待判积压（沙箱排队深度代理）",
+                  'max(judge_queue_backlog{job="codejudge"})',
+                  12, 1, 4, 5, decimals=0,
+                  thresholds=[(None, "green"), (20, "yellow"), (100, "red")]))
+    p.append(stat("死信任务（沙箱重试耗尽）",
+                  'max(judge_dead_tasks{job="codejudge"})',
+                  16, 1, 4, 5, decimals=0,
+                  thresholds=[(None, "green"), (1, "red")]))
+
+    p.append(row("趋势", 6))
+    p.append(ts("worker GC 暂停（每秒）",
+                [("A", 'sum by (instance) (rate(jvm_gc_pause_seconds_sum{job="codejudge", application="judge-worker"}[5m]))',
+                  "{{instance}}")],
+                0, 7, 12, 9, unit="s", decimals=5))
+    p.append(ts("worker 堆使用（字节）",
+                [("A", 'sum by (instance) (jvm_memory_used_bytes{job="codejudge", application="judge-worker", area="heap"})',
+                  "{{instance}}")],
+                12, 7, 12, 9, unit="bytes"))
+    p.append(ts("判题出口流量（worker → submission 回传）",
+                [("A", 'sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-worker"}[1m]))', "worker 请求速率")],
+                0, 16, 12, 8, unit="reqps", decimals=3))
+    p.append(ts("队列积压趋势",
+                [("A", 'judge_queue_backlog{job="codejudge"}', "积压")],
+                12, 16, 12, 8, unit="none", decimals=0, fill=25))
+    return dashboard(
+        "codejudge-sandbox", "CodeJudge 沙箱资源",
+        "沙箱容器跑在宿主 Docker 上，Prometheus 直接抓不到容器内指标；"
+        "本面板经 worker JVM / 判题队列间接观察资源压力。"
+        "每容器粒度需接入 cAdvisor（TODO，见 LAUNCH-CHECKLIST H 区）。",
+        ["judge"], p, templating=[])
+
+
+# =====================================================================
+# 看板 7：MQ 消费延迟 —— 现有手写 MQ 封装未暴露 broker 指标，用业务侧代理指标
+# TODO: rocketmq-exporter 接入后补 broker/consumer 真实 lag 面板
+# =====================================================================
+def mq_lag():
+    p = []
+    p.append(row("消费滞后体检（业务侧代理）", 0))
+    p.append(stat("待判积压（created 滞留）",
+                  'max(judge_queue_backlog{job="codejudge"})',
+                  0, 1, 6, 5, decimals=0,
+                  thresholds=[(None, "green"), (20, "yellow"), (100, "red")]))
+    p.append(stat("死信（重试耗尽）",
+                  'max(judge_dead_tasks{job="codejudge"})',
+                  6, 1, 6, 5, decimals=0,
+                  thresholds=[(None, "green"), (1, "red")]))
+    p.append(row("趋势", 6))
+    p.append(ts("积压趋势",
+                [("A", 'judge_queue_backlog{job="codejudge"}', "积压")],
+                0, 7, 12, 9, unit="none", decimals=0, fill=25))
+    p.append(ts("worker 消费速率 vs 提交受理速率",
+                [("A", 'sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-worker"}[1m]))', "worker 消费"),
+                 ("B", 'sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-submission", method="POST"}[1m]))', "提交受理")],
+                12, 7, 12, 9, unit="reqps", decimals=3))
+    p.append(ts("积压变化速率",
+                [("A", 'deriv(judge_queue_backlog{job="codejudge"}[5m])', "变化速率")],
+                0, 16, 12, 8, unit="none", decimals=2))
+    return dashboard(
+        "codejudge-mq-lag", "CodeJudge MQ 消费延迟",
+        "手写 MQ 封装（MqTopics/RocketMQConsumerContainer）未暴露 broker lag，"
+        "本面板用业务侧代理指标（待判积压 / 死信 / 消费-受理速率差）观察消费健康度。"
+        "broker 级真实 lag 需 rocketmq-exporter（TODO）。",
+        ["mq"], p, templating=[])
+
+
+# =====================================================================
+# 看板 8：竞赛榜单活动度 —— 更新频率经 contest HTTP/WS 接口速率观察
+# TODO: WS 推送帧数专用计数器（需要 judge-contest 埋点）后补「榜单推送帧率」面板
+# =====================================================================
+def contest_rank():
+    p = []
+    p.append(row("竞赛服务活动度", 0))
+    p.append(stat("contest QPS",
+                  'sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-contest"}[1m]))',
+                  0, 1, 4, 5, unit="reqps", decimals=3, color_mode="none"))
+    p.append(stat("榜单查询 QPS",
+                  'sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-contest", uri=~"/contests.*rank.*"}[1m]))',
+                  4, 1, 4, 5, unit="reqps", decimals=3, color_mode="none"))
+    p.append(stat("contest P95",
+                  'histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job="codejudge", application="judge-contest"}[5m])))',
+                  8, 1, 4, 5, unit="s", decimals=3,
+                  thresholds=[(None, "green"), (0.5, "yellow"), (1, "red")]))
+    p.append(stat("contest 5xx 比率",
+                  '(sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-contest", status=~"5.."}[5m])) '
+                  '/ clamp_min(sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-contest"}[5m])), 0.001))',
+                  12, 1, 4, 5, unit="percentunit", decimals=4,
+                  thresholds=[(None, "green"), (0.01, "yellow"), (0.05, "red")]))
+
+    p.append(row("趋势", 6))
+    p.append(ts("contest 各接口 QPS",
+                [("A", 'sum by (uri) (rate(http_server_requests_seconds_count{job="codejudge", application="judge-contest"}[1m]))', "{{uri}}")],
+                0, 7, 12, 9, unit="reqps", decimals=4))
+    p.append(ts("submission 侧判题结果回写速率（榜单更新上游）",
+                [("A", 'sum(rate(http_server_requests_seconds_count{job="codejudge", application="judge-submission", uri=~"/submissions.*"}[1m]))', "提交接口")],
+                12, 7, 12, 9, unit="reqps", decimals=3))
+    return dashboard(
+        "codejudge-contest-rank", "CodeJudge 竞赛榜单",
+        "榜单更新活动度：contest 查询/提交上游速率。WS 推送帧率需 judge-contest 埋点计数器（TODO）。",
+        ["contest"], p, templating=[])
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     for fn, d in [
@@ -398,6 +565,10 @@ def main():
         ("codejudge-http.json", http_perf()),
         ("codejudge-judge-pipeline.json", judge_pipeline()),
         ("codejudge-ai-review.json", ai_review()),
+        ("codejudge-worker-cluster.json", worker_cluster()),
+        ("codejudge-sandbox.json", sandbox()),
+        ("codejudge-mq-lag.json", mq_lag()),
+        ("codejudge-contest-rank.json", contest_rank()),
     ]:
         path = OUT / fn
         path.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

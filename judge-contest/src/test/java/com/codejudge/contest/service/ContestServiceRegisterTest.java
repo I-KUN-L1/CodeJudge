@@ -1,4 +1,4 @@
-﻿package com.codejudge.contest.service;
+package com.codejudge.contest.service;
 
 import com.codejudge.api.client.problem.ProblemClient;
 import com.codejudge.contest.config.ContestProperties;

@@ -1,0 +1,12 @@
+# Grafana 数据源：Loki（D3 日志聚合）
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    uid: codejudge-loki
+    editable: false
+    jsonData:
+      maxLines: 1000

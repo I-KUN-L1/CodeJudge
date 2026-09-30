@@ -15,6 +15,15 @@
     <description>提交服务：提交受理/幂等/MQ 投递/判题任务调度（故障转移、重试、死信）</description>
 
     <dependencies>
+        <!-- Flyway：schema 版本化（LAUNCH-CHECKLIST C1）。版本由 spring-boot-dependencies 管理 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.codejudge</groupId>
             <artifactId>judge-common</artifactId>

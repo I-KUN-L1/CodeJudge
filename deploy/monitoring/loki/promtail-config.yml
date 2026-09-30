@@ -1,0 +1,41 @@
+# Promtail：抓宿主机 <repo>/logs/*.log -> Loki
+# judge-* 服务日志由 dev-start-backend.py 写到 logs/<module>-<port>.dev.log（纯文本）。
+# 服务名从文件名提取为 application 标签；requestId 用正则抽取为结构化标签，
+# 这样 Grafana 里可以用 {application="judge-submission"} |= "..." / | request_id="..." 查询。
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /positions/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: codejudge
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: codejudge
+          host: host.docker.internal
+          __path__: /var/log/codejudge/*.log
+    pipeline_stages:
+      # 从文件名 judge-submission-9084.dev.log 提取服务名
+      - match:
+          selector: '{job="codejudge"}'
+          stages:
+            - regex:
+                source: filename
+                expression: '(?P<base>[^/\\]+)\\.log$'
+            - regex:
+                source: base
+                expression: '^(?P<application>judge-[a-z]+)'
+            - labels:
+                application:
+      # requestId 抽取：日志形如 "... requestId=xxxx ..."（judge-common 透传字段的落日志形态）
+      - regex:
+          expression: '.*requestId[=:](?P<request_id>[0-9a-zA-Z-]+).*'
+      - labels:
+          request_id:

@@ -174,6 +174,261 @@ services:
       retries: 5
       start_period: 20s
 
+  # ------------------------------------------------------------
+  # 多副本与负载均衡（F1）：除 judge-worker 外的 app 服务均可 --scale 水平扩，
+  # 故不设 container_name（与 --scale 互斥）。LB：容器内用 nginx 反代时，
+  # Docker DNS 对同一 service 名自动轮询（dnsrr 需 swarm；普通 compose 用 --scale 即有基础轮询）。
+  # 判题机扩容方向见 docs/PERF.md §3.7：加实例不涨吞吐，勿盲目 --scale judge-worker。
+  # ------------------------------------------------------------
+  # ============================================================
+  # 应用层（app profile）：8 后端 + 前端
+  # 启动：先 `docker compose up -d` 起基础设施，再
+  #   docker compose --profile app up -d          （需要先构建镜像，见下）
+  # 校验：docker compose --profile app config
+  # 镜像构建（上下文=仓库根）：
+  #   for m in judge-gateway judge-auth judge-user judge-problem judge-submission judge-worker judge-contest judge-ai; do
+  #     docker build -f $m/Dockerfile -t codejudge/$m:latest . ; done
+  #   docker build -f judge-web/Dockerfile -t codejudge/judge-web:latest judge-web/
+  # 注意：
+  #   · 环境密钥经 env_file(.env) 注入；容器间连接地址在 environment 段**强制覆盖**为
+  #     compose 网络内的服务名（.env 里的 localhost:* 仅适用于宿主机直跑 jar 的场景）。
+  #   · judge-worker 需要 docker CLI + /var/run/docker.sock 才能派发沙箱容器。
+  #     ⚠️ 待验证项：沙箱代码经宿主 docker daemon 派发，worker 容器内的临时目录
+  #     与宿主路径不对齐时挂载会落空 —— 容器化 worker 首次启用前必须回归 verify-p3。
+  #   · stop_grace_period 40s > graceful 30s（application.yml），保证 in-flight 请求排空。
+  # ============================================================
+  judge-user:
+    image: codejudge/judge-user:latest
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      SVC_PROBLEM_URI: http://judge-problem:9083
+      SVC_SUBMISSION_URI: http://judge-submission:9084
+      SVC_CONTEST_URI: http://judge-contest:9086
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9082:9082"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  judge-auth:
+    image: codejudge/judge-auth:latest
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      SVC_USER_URI: http://judge-user:9082
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9081:9081"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      judge-user:
+        condition: service_started
+
+  judge-problem:
+    image: codejudge/judge-problem:latest
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9083:9083"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  judge-submission:
+    image: codejudge/judge-submission:latest
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      MINIO_ENDPOINT: http://minio:9000
+      SVC_PROBLEM_URI: http://judge-problem:9083
+      SVC_CONTEST_URI: http://judge-contest:9086
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9084:9084"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rocketmq-namesrv:
+        condition: service_started
+      rocketmq-broker:
+        condition: service_started
+
+  judge-worker:
+    image: codejudge/judge-worker:latest
+    container_name: codejudge-judge-worker
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      MINIO_ENDPOINT: http://minio:9000
+      SVC_PROBLEM_URI: http://judge-problem:9083
+      # 多实例必须限并发：实例数 × 该值 ≤ 宿主 CPU 核数，否则正确解被误判 TLE
+      CJ_MQ_CONSUME_THREADS: "4"
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9085:9085"
+    volumes:
+      # 沙箱容器由 worker 经宿主 docker daemon 派发（见上方注意事项）
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rocketmq-namesrv:
+        condition: service_started
+      rocketmq-broker:
+        condition: service_started
+
+  judge-contest:
+    image: codejudge/judge-contest:latest
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      SVC_PROBLEM_URI: http://judge-problem:9083
+      SVC_SUBMISSION_URI: http://judge-submission:9084
+      SVC_USER_URI: http://judge-user:9082
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9086:9086"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rocketmq-namesrv:
+        condition: service_started
+      rocketmq-broker:
+        condition: service_started
+
+  judge-ai:
+    image: codejudge/judge-ai:latest
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/judge_ai
+      SVC_PROBLEM_URI: http://judge-problem:9083
+      SVC_SUBMISSION_URI: http://judge-submission:9084
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9087:9087"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      rocketmq-namesrv:
+        condition: service_started
+
+  judge-gateway:
+    image: codejudge/judge-gateway:latest
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876
+      GW_AUTH_URI: http://judge-auth:9081
+      GW_USER_URI: http://judge-user:9082
+      GW_PROBLEM_URI: http://judge-problem:9083
+      GW_SUBMISSION_URI: http://judge-submission:9084
+      GW_CONTEST_URI: http://judge-contest:9086
+      GW_AI_URI: http://judge-ai:9087
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9080:9080"
+    depends_on:
+      judge-auth:
+        condition: service_started
+      judge-user:
+        condition: service_started
+      judge-problem:
+        condition: service_started
+      judge-submission:
+        condition: service_started
+      judge-contest:
+        condition: service_started
+      judge-ai:
+        condition: service_started
+
+  judge-web:
+    image: codejudge/judge-web:latest
+    container_name: codejudge-judge-web
+    profiles: ["app"]
+    restart: always
+    stop_grace_period: 20s
+    ports:
+      # 前端约定端口 5174 -> 容器 nginx 80（同源代理 /api 与 /ws）
+      - "${BIND_IP:-127.0.0.1}:5174:80"
+    depends_on:
+      judge-gateway:
+        condition: service_started
+
 volumes:
   codejudge-mysql-data:
   codejudge-redis-data:

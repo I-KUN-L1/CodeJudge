@@ -92,6 +92,7 @@ judge-web/coverage/
 # 两者都能一键重建（跑一次压测即可），没有任何入库价值。
 perf-test/results/
 perf-test/csv/
+perf-test/reports/
 
 # ---------- AI 协作工作区数据（含本地测试凭据与缺陷复盘，不入库） ----------
 .workbuddy/

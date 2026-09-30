@@ -1,5 +1,14 @@
 # CodeJudge
 
+<!-- B2 徽章：CI 徽章的仓库地址为占位符（本仓库暂未配置 remote），首次推送 GitHub 后
+     把 YOUR_GITHUB_ORG/CodeJudge 替换为真实 org/repo 即可点亮 -->
+[![CI](https://github.com/YOUR_GITHUB_ORG/CodeJudge/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?logo=springboot)
+![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2023.0.3-blue)
+![Node](https://img.shields.io/badge/Node-22-green?logo=node.js)
+![Coverage](https://img.shields.io/badge/coverage-JaCoCo%2030%25%20gate-yellow)
+
 分布式在线编程评测平台 —— 多语言判题 / 判题机集群 / 安全沙箱 / 竞赛排行榜 / AI 代码点评。
 
 面向编程教学、校招笔试与在线竞赛场景，基于 Java 21 + Spring Cloud 微服务架构，
@@ -296,6 +305,12 @@ curl -s -X POST http://localhost:9080/accounts/login \
 > 固定为仓库根，故落点就是 `<仓库根>/.bootstrap-credentials`；`judge-auth` 启动时会**无条件打印
 > 解析后的绝对路径**，找不到文件时以那行日志为准。
 > 手工 `java -jar` 时请自行保证 cwd，否则凭据会落到别处（并且登录响应里的改密提示会静默消失）。
+
+> 🔴 **风险提示（I3）**：`.bootstrap-credentials` 里是**明文初始口令**。只要该文件还在磁盘上：
+> ① 任何拿到仓库/宿主机读权限的人都能登录管理员；② 任何 STAFF 账号登录都会收到「请改密」提醒。
+> **首次登录后立即改密**（登录页提示或个人中心 → 修改密码，走 `/accounts/password/first-change`），
+> 改密成功文件自动删除。长期不改密 = 等于把管理员密码写在仓库根目录。
+> 该文件已入 `.gitignore`（36 行），不会进 git；但仍可能残留在备份/聊天记录里。
 
 ### 5.7 接口文档
 

@@ -15,6 +15,15 @@
     <description>竞赛服务：竞赛生命周期/报名、Redis ZSet 实时榜、封榜快照、WebSocket 榜单推送</description>
 
     <dependencies>
+        <!-- Flyway：schema 版本化（LAUNCH-CHECKLIST C1）。版本由 spring-boot-dependencies 管理 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.codejudge</groupId>
             <artifactId>judge-common</artifactId>
