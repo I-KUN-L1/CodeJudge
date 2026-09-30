@@ -1,0 +1,22 @@
+# Docker 构建上下文瘦身：构建镜像时排除本地构建产物与敏感文件
+# （后端 Dockerfile 在容器内自行 mvn package，宿主 target/ 不需要进上下文）
+**/target/
+# 例外：预构建降级路径（scripts/build-app-images-prebuilt.py）需要 jar 进上下文；
+# 多阶段 Dockerfile 不受影响（它只 COPY pom 与源码）
+!**/target/*.jar
+**/node_modules/
+**/dist/
+.git/
+.idea/
+**/*.iml
+logs/
+backups/
+perf-test/results/
+perf-test/csv/
+perf-test/reports/
+# 敏感文件绝不进镜像
+.env
+.bootstrap-credentials
+*.log
+workbuddy/
+.workbuddy/

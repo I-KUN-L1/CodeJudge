@@ -144,6 +144,23 @@ CJ_PERF_HOST=<网关IP> python perf-test/run-perf.py --plan throughput \
 > 而队列不参与 HTTP 吞吐统计 —— 结果是"吞吐很好看，队列已经崩了"。
 > 提交相关容量见 §5 的队列指标。
 
+### 3.2 长稳（soak）—— 探内存泄漏 / 连接耗尽 / 慢查询累积
+
+```bash
+# 默认 12（浏览）+ 6（榜单）= 18 线程、3600s，低负载长跑
+CJ_PERF_HOST=<网关IP> python perf-test/run-perf.py --plan soak --no-html
+```
+
+- **目的不是容量**，是验证"跑得久不劣化"：P95 / 错误率仍按统一门槛判 PASS/FAIL，
+  吞吐只报数（低并发下吞吐天然低于水位，判 500 req/s 是门槛误用）。
+- 由 `throughput.jmx` 派生，同样**不含提交**（长跑下更不能无限提交）。
+- 观测配套（缺一不可，否则 soak 白跑）：
+  1. Prometheus 看 `jvm_memory_used_bytes` 各服务曲线 —— 1h 内锯齿应回到同一水位；
+  2. `hikaricp_connections_active` / `pending` —— 连接池不持续增长；
+  3. `judge_queue_backlog` —— 结束后归零；
+  4. 压测后立刻跑 §5.3 的"静默损坏"确认。
+- 首次执行建议先 `-J tgBrowse.duration=600` 跑 10 分钟验证链路，再放全量 1h。
+
 ---
 
 ## 4. 容量爬坡（找拐点，本轮新增方法）

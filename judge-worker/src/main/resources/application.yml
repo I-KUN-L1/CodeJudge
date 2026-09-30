@@ -1,5 +1,6 @@
 server:
   port: 9085
+  shutdown: graceful
   # 判题机多实例：9085 / 9185 / 9285（--server.port 覆盖）
 
 management:
@@ -32,6 +33,9 @@ management:
         http.server.requests: true
 
 spring:
+  lifecycle:
+    # graceful shutdown: upper bound waiting in-flight requests (pair with stop_grace_period >= 40s)
+    timeout-per-shutdown-phase: 30s
   config:
     import:
       - optional:file:./.env[.properties]

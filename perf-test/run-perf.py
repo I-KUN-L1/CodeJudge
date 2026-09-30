@@ -57,6 +57,10 @@ THRESHOLDS = [
 ]
 MIN_THROUGHPUT = 500.0      # req/s，@ 默认 100 并发
 
+# 各计划 jmx 里未覆盖时的默认 duration（秒）—— 看门狗兜底用。
+# soak.jmx 的默认时长是 3600，若不在此登记，看门狗会按 180s 兜底把 1h 长稳提前杀掉。
+PLAN_DEFAULT_DURATION = {"smoke": 60, "load": 180, "throughput": 180, "soak": 3600}
+
 
 def find_jmeter():
     for cand in [os.environ.get("JMETER_HOME"),
@@ -122,7 +126,10 @@ def watchdog_seconds(plan, extra_j):
                 durations.append(int(kv.split("=", 1)[1]))
             except ValueError:
                 pass
-    return max(durations or [180]) + 180
+    # 命令行没显式覆盖 duration 时，按计划的 jmx 默认值兜底（soak=3600）
+    if not durations:
+        durations = [PLAN_DEFAULT_DURATION.get(plan, 180)]
+    return max(durations) + 180
 
 
 def run_jmeter(jmeter, plan, extra_j, report_dir, jtl, html=True):
@@ -308,6 +315,8 @@ def report(per, wall, plan):
     #                    故此处**只报数不判定** —— 判了只会得到一个恒假的 FAIL。
     #   · throughput  —— **恒定负载**模型（无限循环 + 固定时长），
     #                    稳态吞吐 = 并发数 / 平均响应时间，这才是吞吐门槛唯一成立的场景。
+    #   · soak        —— 恒定负载模型的低并发长跑（1h）：目标探泄漏/连接耗尽而非容量，
+    #                    吞吐只报数；P95 / 错误率仍按统一门槛判定（长跑不劣化才是 PASS）。
     if plan == "smoke":
         print(f"  [SKIP] {'整体吞吐':<30} {overall_tps:>8.1f} req/s "
               f"（smoke 为正确性计划，不做吞吐判定）")
@@ -317,10 +326,11 @@ def report(per, wall, plan):
         else:
             print(f"  [FAIL] {'整体吞吐':<30} {overall_tps:>8.1f} req/s (>= {MIN_THROUGHPUT})")
             fails.append("整体吞吐")
-    else:
+    else:  # load / soak：观测吞吐不作容量结论
+        why = ("load 为固定工作量模型，观测吞吐受 ramp 时长限制" if plan == "load"
+               else "soak 为低并发长稳，吞吐天然低于容量水位")
         print(f"  [INFO] {'整体吞吐':<30} {overall_tps:>8.1f} req/s "
-              f"（load 为固定工作量模型，观测吞吐受 ramp 时长限制，不作容量结论；"
-              f"容量标定请用 plan=throughput）")
+              f"（{why}；容量标定请用 plan=throughput）")
 
     print()
     if fails:
@@ -332,9 +342,11 @@ def report(per, wall, plan):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--plan", default="load", choices=["load", "smoke", "throughput"],
+    ap.add_argument("--plan", default="load",
+                    choices=["load", "smoke", "throughput", "soak"],
                     help="load=混合负载（固定工作量）/ smoke=正确性冒烟 / "
-                         "throughput=恒定负载（容量标定，唯一做吞吐判定者）")
+                         "throughput=恒定负载（容量标定，唯一做吞吐判定者）/ "
+                         "soak=低并发长稳 1h（探泄漏/连接耗尽，G5）")
     ap.add_argument("-J", dest="extra_j", action="append", default=[],
                     help="透传给 JMeter 的参数，形如 -J tgSubmit.threads=40")
     ap.add_argument("--max-error-rate", type=float, default=None,

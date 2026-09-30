@@ -513,3 +513,94 @@ export CJ_P3_ADMIN_PASS=<密码>
       登录 → 选题 → 提交 → 判题进度(WS) → AI 点评(SSE) → 竞赛榜单(WS)
       ｜ 校验：自动 M6 提示 + `judge-web` 单测（`npm test`，136 项）
 
+
+## 8. 传输安全与密钥轮换（上线检查清单 E 区）
+
+### 8.1 HTTPS / TLS（E1）
+
+架构：**网关前置反代终止 TLS**，judge-* 服务保持内网 HTTP。
+
+```
+浏览器 ──HTTPS(443)──> Nginx/Caddy ──HTTP──> judge-gateway:9080 ──> 内网服务
+```
+
+推荐 Nginx 配置骨架（与 `judge-web/nginx.conf` 的 /api、/ws 规则合并使用）：
+
+```nginx
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name judge.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/judge.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/judge.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+
+    # HSTS：确认全站 HTTPS 稳定后再加 preload（先不加 preload，回滚难）
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # …此处并入 judge-web/nginx.conf 的 location / 、/api/ 、/ws/ 三段…
+    # 差异：proxy_pass 目标按部署拓扑改（http://judge-gateway:9080 或宿主网关地址）
+}
+
+server {
+    listen 80;
+    server_name judge.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+- 证书自动续期：`certbot renew --deploy-hook "nginx -s reload"`（systemd timer 自带）。
+- 内网中间件（MySQL/Redis/PG/MQ）**不暴露公网**；compose 已默认绑 `BIND_IP=127.0.0.1`。
+- ⚠️ 终止 TLS 后，网关看到的都是 HTTP。`X-Forwarded-Proto` 已由反代设置，
+  前端 cookie 的 `Secure` 属性判定见 `CookieBuilder`（2026-09-25 第八轮已修静默丢弃问题）。
+
+### 8.2 JWT 密钥轮换（E4）
+
+现状：单密钥 HMAC（`CJ_JWT_SECRET`），**不支持多密钥灰度**。轮换步骤（当前形态）：
+
+1. 选低峰窗口。**换密钥后所有已签发 token 立即失效**（包括 refresh token），全员需重新登录。
+2. 改 `.env` 的 `CJ_JWT_SECRET`（≥32 字节随机值）。
+3. 重启 `judge-auth` 与 `judge-gateway`（两者共享该密钥，**必须同一窗口内一起换**，
+   只换一个 = 全站 401）。
+4. 复验：`python scripts/verify-p1-login.py`（登录链路 43 项断言）。
+
+多密钥（kid）灰度轮换属**行为变更**，涉及 `JwtTool` 签发/验签双钥窗口 + 网关 kid 感知，
+建议与「refresh token 轮换/吊销（Redis jti）」「RS256 化」合并立项（见 LAUNCH-READINESS §G 遗留项）。
+**当前防线**：`/jwks` 端点已删除（密钥不再外泄），密钥仅经 `.env` 流转、不入 git、不进命令行。
+
+### 8.3 API 版本化（E3）—— 待拍板
+
+方案（未启用，需产品/调用方确认后落地）：网关加一条**别名路由**放在路由表最前：
+
+```yaml
+        - id: v1-alias
+          uri: no://op
+          predicates:
+            - Path=/v1/**
+          filters:
+            - RewritePath=/v1/(?<segment>.*), /$\{segment}
+```
+
+**启用前必须同步修改三处**（否则产生安全缺口）：
+1. 登录限流谓词补 `/v1/accounts/login`（否则新路径绕过限流 —— 与 2026-09-23 `/accounts/admin/login` 同型缺口）；
+2. `JwtProperties.excludePaths` 白名单核对（`/v1/**` 形态是否命中）；
+3. actuator 防护过滤器（`ActuatorGuardFilter`）的路径匹配核对。
+
+验收：`curl http://<gw>/v1/problems/page` 与不带 `/v1` 行为一致；`verify-authz.py` 全绿。
+
+### 8.4 沙箱基础镜像 digest 固定记录（H3）
+
+构建脚本 `scripts/build-sandbox-images.py` 默认按 `name@sha256` 拉取 base（`CJ_SANDBOX_UNPINNED=1` 逃生）。当前登记：
+
+| base | digest（2026-09-30 登记） |
+|---|---|
+| eclipse-temurin:21-jdk | sha256:92a2a4d7a928d057e7bd999c418d66c26a34eb9a0442f3ab67721c3f88110b2d |
+| python:3.12-slim | sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 |
+| gcc:13 | sha256:16ae525998c94df36a116c191524256b1d46e72d7a0e9aaf6c153455e40eb5b8 |
+| golang:1.22 | sha256:1cf6c45ba39db9fd6db16922041d074a63c935556a05c5ccb62d181034df7f02 |
+
+升级流程：换新 digest → 重跑 `python scripts/build-sandbox-images.py` → `python scripts/verify-p3.py` 回归。

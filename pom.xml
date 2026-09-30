@@ -200,6 +200,80 @@
                             <goal>report</goal>
                         </goals>
                     </execution>
+                    <!--
+                        覆盖率门禁（B3，ratchet 棘轮式抬升）。
+                        2026-09-30 全模块实测基线（mvn test + jacoco:report，LINE）：
+                          auth 0.549 / submission 0.416 / user 0.350 / gateway 0.260 /
+                          common 0.120 / problem 0.124 / worker 0.089 / ai 0.066 / contest 0.047
+                        当前下限 = 最低模块防回退值（0.04）；抬升路径见 LAUNCH-CHECKLIST G1：
+                          先补 judge-worker/judge-ai/judge-contest → 全局抬到 0.30。
+                        ⚠️ 不要直接改 0.30 —— 会在 CI 首日变红（实测 judge-common 0.12 被拦）。
+                    -->
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.04</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+                静态检查（上线检查清单 B4，首期仅出报告不阻断）：
+                SpotBugs 绑定 spotbugs 目标（生成 spotbugsXml.xml，report-only）；
+                违规清零后把 CI 中的 "|| true" 去掉并绑定 check 目标即转为门禁。
+            -->
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>4.8.6.6</version>
+                <configuration>
+                    <effort>Low</effort>
+                    <threshold>Medium</threshold>
+                    <failOnError>false</failOnError>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotbugs-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>spotbugs</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <!-- 首期用 sun_checks 基线出报告，不阻断构建 -->
+                    <configLocation>sun_checks.xml</configLocation>
+                    <failOnViolation>false</failOnViolation>
+                    <includeTestSourceDirectory>false</includeTestSourceDirectory>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>checkstyle-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>checkstyle</goal>
+                        </goals>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

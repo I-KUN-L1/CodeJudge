@@ -552,6 +552,40 @@ const contestId = computed(() => Number(route.params.id));   // 2102698982248611
 **文档**：API-REFERENCE（令牌算法/白名单/限流）、CORE-IMPLEMENTATION §4.4（标已修）、LAUNCH-READINESS §G。
 **遗留未修（记录在案，见审查报告）**：Python 语法错误判 RE 非 CE（需沙箱加 py_compile 预检）；Java 堆内 MLE 判不出；`problem.submit_count/accepted_count` 代码无写入点（数据侧已回填）；`springdoc` 生产应关（未配 profile，靠运维按环境关）；refresh token 无轮换/吊销（建议 Redis jti，属行为变更待拍板）；日志无滚动（建议 common logback-spring.xml）。
 
+### 5.13 2026-09-30 第九轮：上线检查清单 A–L 落地（本轮）
+
+**输入**：`docs/LAUNCH-CHECKLIST.md` 全量执行。**一键复验：`bash docs/launch-verify.sh` → PASS=42 / FAIL=0**。
+逐项证据、偏离决策与阻塞项清单见 **`docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`**（本轮权威汇总）。
+
+**交付摘要**：
+- **A**：9 Dockerfile（多阶段非 root）+ judge-web/nginx.conf（SPA//api/WS/SSE）+ compose app profile
+  （9 服务、stop_grace_period 40s、worker 挂 docker.sock）+ startup.sh/.ps1（单服务/透传双形态）+ 优雅停机 8/8 yml
+- **B**：ci.yml（JDK21/vitest/artifact/osv-scanner）+ JaCoCo check 门禁（**棘轮 0.04 起步**，
+  实测基线 contest 0.047 ~ auth 0.549 写在根 pom 注释）+ SpotBugs/Checkstyle report-only + README 徽章
+- **C**：**Flyway 接管**（6 服务 V1__baseline 与 init.sql 同源拆分 + baseline-on-migrate；
+  **真机验证存量库路径**：judge-problem baseline=1、数据完好、health UP）；种子数据有意不进 Flyway；
+  `scripts/backup-db.py`（mysqldump/pg_dumpall 实跑通过）；`docs/DATA-GROWTH.md`（分区方案+触发线）
+- **D**：告警用既有 `prometheus/rules/codejudge-alerts.yml`（11 条，promtool SUCCESS，**不复制成双真相**）；
+  看板 4→8（gen_dashboards.py 新增判题机集群/沙箱/MQ 延迟/竞赛榜单）；**Loki+Promtail 已入监控栈并运行**
+  （3100 ready，抓 logs/*.log 抽 application/requestId）；`docs/SLO.md`
+- **E**：DEPLOYMENT.md §8（TLS 骨架/JWT 轮换步骤/`/v1` 版本化方案+三处联动）；CORS 已收敛核对；
+  trivy/osv 命令就绪（**本机漏洞库下载被网络拦截 → 实扫待有网环境**）；沙箱 base 镜像 **digest 固定**（4 个登记）
+- **F/G**：可扩副本（app 服务去 container_name）；E2E/soak/浏览器兼容为已知待办（M6 等）
+- **H/I**：`scripts/reset-pg-schema.py`（自检+自愈，实测）；ARCHITECTURE.md 队列对账章节；README 凭据风险提示
+- **J/K/L**：CONTRIBUTING/CHANGELOG/SECURITY/.editorconfig/.gitattributes/.dockerignore + gitignore 补
+  `perf-test/reports/`；`docs/ROADMAP.md`；`docs/launch-verify.sh`
+
+**本轮修掉的缺陷**：`judge-contest` 测试文件 **UTF-8 BOM → `mvn verify` 必挂**
+（`\ufeff` 非法字符；增量编译曾用旧 class 掩盖成假绿）。已清，全仓唯一。
+
+**新踩坑（要记住）**：① Git Bash **内联 heredoc 会把 `\n`/`\r` 改写成 `/n`/`/r`**（MSYS 改写家族）——
+内联脚本若含反斜杠序列必须先 Write 落盘再执行；② **mvn 运行中改根 pom** → 子模块重读父 pom 半新半旧，
+构建诡异失败（本轮 judge-contest 首次失败的真实根因之一）；③ `&` 起的 JVM 随工具调用 SIGTERM 被连带回收
+——起服务一律 run_in_background + `--wait`（已知坑的再次确认）。
+
+**阻塞/待办**（10 项，详见执行报告）：镜像构建与 app `up` 实测、trivy/ZAP 实扫（网络）、
+E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI 徽章占位符替换。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash

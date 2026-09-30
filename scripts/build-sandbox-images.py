@@ -36,6 +36,34 @@ ENV_KEYS = {
     "go": "CJ_SANDBOX_IMAGE_GO",
 }
 
+# ------------------------------------------------------------------
+# H3 基础镜像 digest 固定（供应链安全）：默认按 name@sha256 拉取，
+# 保证「今天构建」与「三个月后重建」用的是**同一份**底层文件系统。
+# digest 来源：2026-09-30 `docker image inspect --format '{{join .RepoDigests ", "}}'`。
+# 升级基础镜像的正确流程：改这里的新 digest（不要删掉固定机制），并在
+# docs/DEPLOYMENT.md 登记变更 + 重跑 verify-p3.py 回归沙箱行为。
+# 应急逃生：CJ_SANDBOX_UNPINNED=1 时退回浮动 tag（如 digest 过期导致拉取失败）。
+# ------------------------------------------------------------------
+BASE_DIGESTS = {
+    "eclipse-temurin:21-jdk": "sha256:92a2a4d7a928d057e7bd999c418d66c26a34eb9a0442f3ab67721c3f88110b2d",
+    "python:3.12-slim":       "sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9",
+    "gcc:13":                 "sha256:16ae525998c94df36a116c191524256b1d46e72d7a0e9aaf6c153455e40eb5b8",
+    "golang:1.22":            "sha256:1cf6c45ba39db9fd6db16922041d074a63c935556a05c5ccb62d181034df7f02",
+}
+
+
+def resolve_base(base):
+    """按 digest 固定 base 镜像；CJ_SANDBOX_UNPINNED=1 时退回浮动 tag。"""
+    if os.environ.get("CJ_SANDBOX_UNPINNED") == "1":
+        print(f"[warn] CJ_SANDBOX_UNPINNED=1：本次使用浮动 tag {base}（不固定 digest）")
+        return base
+    repo, _, tag = base.partition(":")
+    digest = BASE_DIGESTS.get(f"{repo}:{tag}")
+    if digest is None:
+        print(f"[warn] {base} 无已登记 digest，退回浮动 tag（请补充 BASE_DIGESTS）")
+        return base
+    return f"{repo}@{digest}"
+
 
 def read_env_tags():
     """从仓库根目录的 .env 读取 CJ_SANDBOX_IMAGE_*（存在则覆盖默认 tag）。"""
@@ -68,10 +96,13 @@ def docker_available():
 
 def build(lang, tag):
     dockerfile_dir, _, base, purpose = IMAGES[lang]
+    pinned = resolve_base(base)
     print(f"\n===== 构建 {tag}（{purpose}）=====")
     # 先拉基础镜像：失败时给出清晰提示（受限网络可能拒绝拉取）
-    if sh(["docker", "pull", base]) != 0:
-        print(f"[错误] 基础镜像拉取失败：{base}。请检查网络/镜像仓库配置后重试。")
+    if sh(["docker", "pull", pinned]) != 0:
+        print(f"[错误] 基础镜像拉取失败：{pinned}。"
+              f"digest 过期时可临时 CJ_SANDBOX_UNPINNED=1 用浮动 tag 重试，"
+              f"但事后必须更新 BASE_DIGESTS。")
         return False
     return sh(["docker", "build", "-t", tag, dockerfile_dir]) == 0
 

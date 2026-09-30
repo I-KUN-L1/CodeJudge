@@ -1,0 +1,97 @@
+# ============================================================
+# CodeJudge CI —— 构建 / 单测 / 覆盖率 / 前端 / 依赖扫描
+#
+# 触发：push 与 PR（master 主干）。
+# 产物：JaCoCo 覆盖率报告（artifact: jacoco-report-java-21）、前端 dist（artifact: judge-web-dist）。
+# 门禁：mvn verify 内含 JaCoCo check（根 pom，LINE 覆盖率起步 30%，见根 pom 插件段）。
+# 依赖扫描：osv-scanner 首期仅报告不阻断（|| true），高风险清零后改为 fail。
+# ============================================================
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  backend:
+    name: Backend (Java 21 / Maven)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # mvn verify = 编译 + 全部单测 + JaCoCo report/check（覆盖率门禁在此生效）
+      - name: Build & test (mvn verify)
+        run: mvn -B -ntp verify
+
+      - name: Upload JaCoCo reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report-java-21
+          path: '**/target/site/jacoco/'
+          if-no-files-found: warn
+
+      # SpotBugs / Checkstyle 首期仅出报告（warn），根 pom 中以 report-only 目标绑定
+      - name: Static analysis reports (SpotBugs / Checkstyle)
+        if: always()
+        run: mvn -B -ntp -DskipTests com.github.spotbugs:spotbugs-maven-plugin:4.8.6.6:spotbugs || true
+
+      - name: Upload static analysis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-reports
+          path: '**/target/spotbugsXml.xml'
+          if-no-files-found: ignore
+
+      # SCA 依赖安全扫描（首期仅报告；后续把 || true 换成 fail 即为门禁）
+      - name: Dependency scan (osv-scanner)
+        if: always()
+        continue-on-error: true
+        run: |
+          curl -sSLo /usr/local/bin/osv-scanner \
+            https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64
+          chmod +x /usr/local/bin/osv-scanner
+          osv-scanner scan --recursive . --format table || true
+
+  frontend:
+    name: Frontend (Node 22 / Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: judge-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: judge-web/package-lock.json
+
+      - name: Install (npm ci)
+        run: npm ci
+
+      - name: Unit tests (vitest)
+        run: npm test -- --run
+
+      - name: Build (vite build)
+        run: npm run build
+
+      - name: Upload dist
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: judge-web-dist
+          path: judge-web/dist/
+          if-no-files-found: warn

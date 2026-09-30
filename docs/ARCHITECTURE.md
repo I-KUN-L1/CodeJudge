@@ -245,3 +245,32 @@ CodeJudge 整体换段：
 | 取消匿名教师自助注册 | 保留 STAFF-only 收紧（行为变更，见 `P1-遗留项处置.md`） |
 | SSE 错误走事件不走状态码 | 订阅建立后 HTTP 头已发出，无法再改状态码；客户端必须处理 `ERROR` 事件 |
 | PG 表插入用 `INSERT ... RETURNING id` | PG 驱动在 `RETURN_GENERATED_KEYS` 下返回整行，`KeyHolder.getKey()` 抛异常 → 静默数据损坏（P5 实测缺陷） |
+
+## 队列对账与自愈设计（LAUNCH-CHECKLIST I2）
+
+实现：`judge-submission/service/JudgeCompensationService.java`
+
+### 为什么需要对账
+
+判题任务的「入队」发生在 Redis ZSet（`judge:judge:queue:zset`），而任务状态在 MySQL。
+两条存储写入路径不同，任何一环异常（MQ 丢消息、worker 崩在判一半、死信分支漏清理）都会留下
+「任务已终态但 ZSet 里还有它」的**僵尸成员**——表现为队列积压虚高、`/workers` 集群视图失真、
+滞留重发兜底反复空转。
+
+### 机制（三层）
+
+| 层 | 触发 | 动作 |
+|---|---|---|
+| 主路径 ZREM | `ResultEventHandler` 收到判题结果 | 收到即 `ZREM`（终态成员立刻出队） |
+| 死信分支 ZREM | `JudgeEngine.failTask` / `JudgeCompensationService.deadLetter` | 任务进死信时同步 `ZREM`，不让死信任务留在待判队列 |
+| 队列对账扫描 | `queueReconcileScan()` 定时（每 60s） | 按入队时间升序取最老一批（`RECONCILE_BATCH`），逐个核对 MySQL 任务状态：已终态 / 不存在 / 非法成员 → 批量 `ZREM`，日志给出摘除数量 |
+
+### 自愈闭环
+
+对账扫描是**只摘除、不重投**的（重投由「滞留重发 pending-rescue」负责，两套机制各管一半）：
+
+- ZSet 有、任务无/已终态 → 对账摘除（清垃圾）；
+- 任务存在、未终态、但迟迟没人认领 → 滞留重发补投递（补数据）。
+
+`WorkerViewService` 的积压指标口径**依赖**对账：若对账失效，`judge_queue_backlog` 会只增不减
+—— 监控上「积压持续单边上涨 + worker 全部空闲」就是对账失效的指纹。

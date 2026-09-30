@@ -41,6 +41,15 @@
       ============================================================================
     -->
     <dependencies>
+        <!-- Flyway：schema 版本化（LAUNCH-CHECKLIST C1）。版本由 spring-boot-dependencies 管理 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.codejudge</groupId>
             <artifactId>judge-common</artifactId>

@@ -1,5 +1,6 @@
 server:
   port: 9087
+  shutdown: graceful
 
 management:
   endpoints:
@@ -32,6 +33,15 @@ management:
         http.server.requests: true
 
 spring:
+  flyway:
+    # C1 schema 版本化：V1__baseline.sql 与 sql/init.sql 同源（init.sql 保留为首次建库脚本）
+    # 存量数据卷首次启动打 baseline(=1) 跳过 V1，不会对已有表重放 DDL
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration
+  lifecycle:
+    # graceful shutdown: upper bound waiting in-flight requests (pair with stop_grace_period >= 40s)
+    timeout-per-shutdown-phase: 30s
   config:
     import:
       - optional:file:./.env[.properties]
