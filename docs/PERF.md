@@ -361,6 +361,30 @@ DB/Redis/Feign 往返、工件读写）。**继续加并发只会把差额换成
 > ⚠️ 以上均为**同机**数字（判题、Docker、压测工具同机）。生产标定仍需按
 > `perf-test/RUNBOOK.md` 在独立环境做，且**多实例必须落在不同宿主机**才可能接近线性。
 
+### 3.8 长稳首跑（`--plan soak` 10 分钟）—— 容器化栈（2026-10-01）
+
+首轮 soak 在**容器化全栈**上跑（compose 8 服务 + 网关 9080），结论：**链路长稳无劣化**。
+
+| 指标 | 实测 |
+|---|---|
+| 样本 / 错误 | **1,270,883 / 0（0.000%）** |
+| 有效窗口 | 599.8s（按样本时间戳跨度） |
+| 整体吞吐 | 2118.7 req/s（soak 低并发长稳，容量标定用 `--plan throughput`，见 §3.5） |
+| P95（四采样器） | problems/page **15ms**、problems/{id} **13ms**、submissions/page **10ms**、contests/{id}/rank **11ms**（门槛 300/300/400/300ms，余量 20–40×） |
+| 观测项（RUNBOOK §3.2） | jvm heap 锯齿回水位正常；`hikaricp_connections_pending` 窗口内恒 0（6 服务）；`judge_queue_backlog` 恒 0；跑完 `verify-p1-login` **43/0** 无静默损坏 |
+
+**login P95=804ms FAIL 是小样本伪告警（解读，勿照抄进告警）**：soak 里 login 挂在
+OnceOnlyController（每线程一次，n=18）。18 样本实值：15 个 97–136ms + 1 个 181ms +
+**2 个 804ms**（ramp 起步的两个预热离群点：首次连接建立 + auth 侧冷启动），全部 HTTP 200。
+n=18 时 P95 插值正好落在两个离群点上 —— **500ms 门槛对 soak 的 login 无统计意义**，
+login 延迟门槛只在 load/throughput 计划（大样本）下判。稳态 login 延迟 P50≈123ms，健康。
+
+**限流注意**：本轮按 soak.jmx 头部说明放宽 `GW_LOGIN_RATE_REPLENISH=500/BURST=1000` 跑测，
+测后恢复 2/5 并实测 429 仍生效（12 连发 → {200:6, 429:6}）。事后结论：soak（18 线程）
+登录速率 ≈0.6/s < 2/s replenish，**其实不必放宽**；该说明是给 load（100 线程）的。
+
+1h 全量（T4.2，`--plan soak --no-html`）另行补录于本节末尾。
+
 ---
 
 ## 四、告警阈值与实测的对应关系

@@ -625,6 +625,46 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
 - 另：`SimpleMeterRegistry` 在 `io.micrometer.core.instrument.simple` 包（首次 import 踩错，
   编译期即拦下，损失 1 次构建）。
 
+### 5.16 2026-10-01 第五轮：Docker 恢复后的容器化全链路实测（本轮）
+
+**输入**：`docs/HANDOFF-PROMPT-2026-09-30.md`。逐项证据见执行报告「第五轮」表。
+**T0 解除**：根因是宿主内存压力——用户拍板停掉 zx-learn 全栈（10 容器）后 daemon 通路即刻
+恢复稳定，此前两天的「VM 网络通路反复死亡」再未复现。
+
+- **compose 三处修复** ✅：① gateway healthcheck CMD-SHELL **单引号阻止 `$$CJ_ACTUATOR_TOKEN`
+  展开**（token 成字面量被 ActuatorGuardFilter 拦 404 → 永远 unhealthy 假象）→ 改双引号；
+  ② broker 容器形态注册地址：`brokerIP1=127.0.0.1` 是宿主形态遗留，容器网络下 worker 连
+  注册地址=连自己（closeChannel 死循环、判题全挂）→ 新建 `deploy/rocketmq/broker-compose.conf`
+  （brokerIP1=rocketmq-broker，除 brokerIP1 外与 broker.conf 必须一致）；
+  ③ broker 有效堆限 1g（实测 RSS 1.19G 吻合）。
+- **T2 全绿** ✅：分批重建全栈（infra+init → user/problem/contest/ai → auth/submission/gateway →
+  worker/web），8 端口 health 全 UP + web 5174 返回新 dist + verify-p1-login **43/0**。
+- **T3 全绿** ✅：verify-p3 **21/0**。容器化形态 `/cj-sandbox` 走真实 Linux 权限，
+  `DockerSandbox` 沙箱 uid 1000:1000 → **1001:1001**（artifactDir 属主=worker uid 1001，
+  uid 1000 时编译沙箱 `cannot create /work/stdout: Permission denied`）；契约沉淀
+  DEPLOYMENT.md §3.3.1。
+- **T9 运行时验证** ✅：`cj_judge_e2e_seconds_*` 6 条 verdict 序列入 Prometheus，
+  与 verify-p3 实测 12 次终态对齐（AC=1/MLE=2/TLE=2/WA=1/RE=5/CE=1）。
+- **T6 落地+验证** ✅：`/v1/problems/page` 与裸路径一致；verify-authz **73/0**
+  （脚本修复：内部直连对照用户 id 硬编码 1 不存在 → `STATUS_UID=2001`）。
+- **T10 全链路** ✅：gateway 不依赖 judge-common（设计约束）→ 本地 `logback-spring.xml` +
+  同包名 `JsonLogLayout` 拷贝（三处同步纪律）；promtail 文件名正则修复（`\\` 字面反斜杠
+  永不匹配容器内正斜杠路径 → application 标签从未产出）；Loki 实测 gateway 39 行 `| json`
+  解析成功 + auth 流 requestId 命中真实请求行。
+- **⚠️ 新坑（第五轮实测）**：
+  1. **promtail 优雅停机会把内存 positions 落盘** —— `rm positions.yaml` 后 `docker restart`
+     等于没删（停机 flush 覆盖），文件被 Seek 到 EOF 不重读；**要新标签生效就重启业务进程
+     产生新行**，别指望 promtail 重读历史。
+  2. **Loki 数据随监控栈卷重建丢失**（T2 期间 infra 重建 → 早前 auth 流推送蒸发）；
+     证据要能随时重产（one-off 进程 + 打请求）而不是只存 Loki。
+  3. **gateway（WebFlux）无 servlet RequestIdInterceptor**，prod JSON 行无 requestId 属设计
+     （JsonLogLayout 缺省省略）；requestId 全链路证据由 servlet 服务（auth）承担。
+  4. **prod one-off 是会话级进程**：会话结束即被回收，其 prod 日志文件是「历史证据」；
+     复验要重新拉起（java -jar + prod profile，无需注入 .env 凭据——启动行与匿名
+     public-read 请求不需要密钥）。
+- **T5 维持 BLOCKED**：trivy DB 双源被拦（ghcr.io 可达但 ~7KB/s，119MB ETA 5 小时，放弃等待）；
+  ZAP 镜像本地不存在、docker.io 拉取被拦。命令与镜像清单已备好，待有网环境。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash

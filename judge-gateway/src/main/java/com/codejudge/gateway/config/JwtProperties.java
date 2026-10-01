@@ -38,7 +38,16 @@ public class JwtProperties {
             "/accounts/logout",
             "/accounts/password/first-change",
             // 学员自助注册: 判题平台允许学员自行注册后刷题
-            "/students/register"
+            "/students/register",
+            // E3 API 版本化（T6）: /v1 别名在鉴权过滤之后才被 RewritePath 剥前缀
+            // （AuthGlobalFilter 按原始路径匹配），白名单必须同时登记两种形态，
+            // 否则 /v1/students/register 等匿名端点会被 401。
+            "/v1/accounts/login",
+            "/v1/accounts/admin/login",
+            "/v1/accounts/refresh",
+            "/v1/accounts/logout",
+            "/v1/accounts/password/first-change",
+            "/v1/students/register"
     );
 
     /**
@@ -52,5 +61,7 @@ public class JwtProperties {
      * 一旦放行详情路径，未登录用户将能看到草稿/下线题目并收到隐藏测试用例。
      * 在区分「内部调用」与「网关匿名」的标记机制落地前，详情保持需登录。
      */
-    private List<String> publicReadPaths = List.of("/problems/page");
+    private List<String> publicReadPaths = List.of("/problems/page",
+            // E3 版本化（T6）: 公开只读白名单同步登记 /v1 形态（同 excludePaths 的理由）
+            "/v1/problems/page");
 }

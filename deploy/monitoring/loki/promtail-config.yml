@@ -26,15 +26,17 @@ scrape_configs:
       - match:
           selector: '{job="codejudge"}'
           stages:
+            # ⚠️ 正斜杠路径：promtail 在容器内看到的 filename 是 /var/log/codejudge/xxx.log。
+            #   旧写法 (?P<base>[^/\\]+)\\.log$ 里的 \\ 要求字面反斜杠 —— 永不匹配，
+            #   application 标签从未产出（2026-10-01 容器化实测发现并修正）。
             - regex:
                 source: filename
-                expression: '(?P<base>[^/\\]+)\\.log$'
-            - regex:
-                source: base
-                expression: '^(?P<application>judge-[a-z]+)'
+                expression: '/var/log/codejudge/(?P<application>judge-[a-z]+)'
             - labels:
                 application:
       # requestId 抽取：日志形如 "... requestId=xxxx ..."（judge-common 透传字段的落日志形态）
+      # JSON 行（prod）里形如 "requestId":"..."，带引号不会命中本正则 —— 属预期：
+      # 结构化查询走 Loki 的 | json 解析器，本标签只为旧人读格式提供直查便利。
       - regex:
           expression: '.*requestId[=:](?P<request_id>[0-9a-zA-Z-]+).*'
       - labels:
