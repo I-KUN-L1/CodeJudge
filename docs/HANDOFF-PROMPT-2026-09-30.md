@@ -1,8 +1,8 @@
 # CodeJudge 上线收尾 · 新对话执行提示词
 
 > 用法：把本文件全文作为任务输入发给 AI 编程助手。每完成一项附验收证据（命令输出/文件路径），
-> 同步更新 `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md` 的「第二轮/第三轮」表格与
-> `docs/CONTEXT.md` §5.13/§5.14。
+> 同步更新 `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md` 的轮次表（现有「第二/三/四轮」，
+> 新工作开新轮次小节）与 `docs/CONTEXT.md` §5.13–§5.15（新工作追加新小节）。
 > 阻塞的项不许跳过验收硬凑（**假绿比 FAIL 危险**），标注 BLOCKED + 原因即可。
 
 > **执行状态速览（2026-10-01 第二次更新，详见执行报告「第四轮」表与 `.workbuddy/memory/2026-10-01.md`）**
@@ -10,7 +10,8 @@
 > T10 ✅代码完成（judge-common logback 收口 + JsonLogLayout，8 服务已 clean package，Loki 验证 ⏸）
 > T11 部分落地（MinIO app profile ✅ / broker store 卷 ✅ / 提交页列宽 ✅ / **READINESS 同步 ✅（第四轮）** /
 > **JaCoCo 首批补测 ✅（6 类 49 例，ai 0.21 / worker 0.136 / contest 0.05，门禁 0.04 仍绿）** / F1 待凭据）
-> 第三轮全部改动已提交：commit `649d51d`（launch-verify 42/0 复验）。第四轮改动待提交。
+> 第三轮改动 = commit `649d51d`（launch-verify 42/0 复验）；**第四轮改动已提交 = commit `d9c67b1`**
+> （4 文档 + 6 新测试类 + 1 测试修复，三模块 mvn verify 门禁绿）。
 >
 > ⚠️ 第四轮新坑（10-01）：**T9 提交时 worker 测试未重跑** —— JudgeEngine 新增 JudgeE2eMetrics
 > 依赖让既有 `JudgeEngineFailTaskTest` NPE（@InjectMocks 不注新依赖）。已修（注入真实
@@ -34,11 +35,12 @@
 ## 背景与现状（一句话版）
 
 CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端，`D:\1\CodeJudge`）已完成上线检查清单
-A–L 的全部静态交付（一键复验 `bash docs/launch-verify.sh` → PASS=42/FAIL=0），9 个运行时镜像已构建，
-第三轮（T9/T10/T11 代码侧）已提交 `649d51d`。
+A–L 的全部静态交付（一键复验 `bash docs/launch-verify.sh` → PASS=42/FAIL=0），9 个运行时镜像已构建。
+已提交三个收尾 commit：`35367ef`（第九轮 A–L）→ `649d51d`（第三轮 T9/T10/T11 代码侧）→
+`d9c67b1`（第四轮：LAUNCH-READINESS 同步 + JaCoCo 首批补测 + 修 T9 遗留测试 NPE）。
 当前卡在：**Docker 宿主→VM 网络通路反复死亡（T0）**、镜像编排实测未跑、若干行为变更项待拍板。
-权威进度读 `docs/CONTEXT.md`（§5.13/§5.14）与
-`docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`（含「第二轮/第三轮」精确状态）。
+权威进度读 `docs/CONTEXT.md`（§5.13–§5.15）与
+`docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`（含「第二/三/四轮」精确状态）。
 
 ## 硬约束（先读，都是踩过的坑）
 
@@ -78,12 +80,16 @@ A–L 的全部静态交付（一键复验 `bash docs/launch-verify.sh` → PASS
     BOOT-INF/lib/judge-common-1.0.0.jar | grep JsonLogLayout`（fat jar 是嵌套结构，
     直接对服务 jar grep 不到，须先解开嵌套 jar）。
 15. **（10-01 新增）JaCoCo 棘轮拦 install**：新增零覆盖类会跌破 0.04 门禁 → `mvn install`
-    被拦；本地构建用 `-Djacoco.skip=true` 绕过（**CI 不绕**）。
+    被拦；本地构建用 `-Djacoco.skip=true` 绕过（**CI 不绕**）。第四轮补测后
+    （ai 0.21 / worker 0.136 / contest 0.05）**contest 仍贴线**——动 contest 且新增未覆盖代码时照样会被拦。
 16. **（10-01 新增）「引擎短暂存活后通路死亡」模式**：VM 引导成功、引擎正常服务数分钟后
     `192.168.65.7:2376 no route to host`，VM 内无 OOM/panic。已实测两次（09-30、10-01）。
     排查入口：host 侧 `com.docker.backend.exe.log` 的 apiproxy 段 +
     `vm/init.log` 是否冻结 + `route print 192.168.65.*` + `Get-NetAdapter`（看双出口/VMware 网卡）。
     此问题若重启电脑后仍间歇复现，go-live 需评估弃用 WSL2（换原生 Linux 或 Hyper-V）。
+17. **（10-01 第四轮新增）给 Bean 加构造依赖后必须真跑一次 `mvn test`** —— package 跳过 test
+    （或沿用旧产物）时会掩盖既有测试的 `@InjectMocks` NPE（实例：T9 加 `JudgeE2eMetrics` 后
+    `JudgeEngineFailTaskTest` 静默破坏，第四轮补测才暴露）。
 
 ---
 
@@ -107,11 +113,13 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 `docker compose --env-file ../../.env -f docker-compose.monitoring.yml up -d`。
 若通路又抖动复发，按硬约束 16 的排查入口记录证据（这是 go-live 环境风险项）。
 
-### T1. ✅ 已完成（2026-09-30，勿重做）
+### T1. ✅ 已完成（勿重做）
 
-- commit `35367ef`（68 文件，launch-verify 42/0 先行验证；无 remote 故仅本地 commit；
+- `35367ef`（2026-09-30，68 文件，launch-verify 42/0 先行验证；无 remote 故仅本地 commit；
   敏感文件核查通过：无 .env / bootstrap-credentials 入库）。
-- 第三轮改动另见 commit `649d51d`（T9/T10/T11 交付，同样 42/0 复验后提交）。
+- `649d51d`（同日第三轮：T9/T10/T11 交付，同样 42/0 复验后提交）。
+- `d9c67b1`（2026-10-01 第四轮：T11a 文档债 + T11b JaCoCo 首批补测 + 修 T9 遗留测试 NPE；
+  三模块 `mvn verify` 门禁绿后提交）。
 
 ### T2. compose app profile 编排实测（依赖 T0；阻塞项1 后半）
 
@@ -197,6 +205,8 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
   SLO §4 此前声称有该规则但实际缺失，已补）。
 - 看板 9 `codejudge-error-budget`（`gen_dashboards.py` 生成，S1–S4 达成状态 + 预算剩余/燃烧率）。
 - worker 已 clean package 通过。
+- 第四轮补充（`d9c67b1`）：死信 SE 埋点已固化为单测断言（`JudgeEngineFailTaskTest`，
+  `cj_judge_e2e{verdict="SE"}` count=1）—— 运行时验证只剩「指标经 HTTP 暴露 + 看板出数」两件事。
 
 剩余（T0 恢复后）：worker 起来后 `curl :9085/actuator/prometheus | grep cj_judge_e2e` 验暴露 +
 真实判题一单验证直方图非空 + Grafana 看板出数。
@@ -235,5 +245,5 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 - 按 A/B/C/D 分类输出：已做（附证据）/ 受阻（附精确卡点与解法）/ 待用户（明确要什么）/
   不做（说明理由）。
 - 每完成一个任务同步勾掉本文件对应项并更新执行报告；全部结束后更新 `docs/CONTEXT.md`
-  §5.13 与 `.workbuddy/memory/`。
+  （现有 §5.13–§5.15，新工作追加新小节）与 `.workbuddy/memory/`。
 - 结尾附上线提醒总结（行为变更清单、需要的用户配合、go-live 前剩余项）。
