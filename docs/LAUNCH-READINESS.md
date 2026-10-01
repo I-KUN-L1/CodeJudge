@@ -3,6 +3,9 @@
 > 生成：**2026-09-22** ｜ 维护：每次 preflight / 配置变更后同步本页
 > 依据：`scripts/verify-p6.py`（PASS=98 / FAIL=0）、`scripts/preflight-check.py` 终版读数、
 > 2026-09-22 的 promtool / amtool / 零硬编码复验。
+> **2026-10-01 增量同步**：并入 2026-09-30 第九轮（LAUNCH-CHECKLIST A–L）与第三轮（T9/T10/T11）
+> 的放行视角变化，详见 §H；权威进度仍以 `docs/CONTEXT.md` §5.13/§5.14 与
+> `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md` 为准。
 
 ---
 
@@ -12,6 +15,10 @@
 **放行前必须完成 3 项**（1 项凭据类 / 1 项 HTTPS / 1 项告警通道），另有 1 项判题容量决策需要拍板。
 本地凭据轮换**已于 2026-09-22 完成并实测**（Grafana 默认口令已失效、伪造 JWT 被拒），
 但**生产环境必须重新生成一套**——本地值不得直接带去生产。
+
+**2026-09-30 后新增的放行前置**：Docker 运行时实测链（compose app 编排 / worker 沙箱核验 / soak / 扫描）
+全部排队在环境恢复（HANDOFF T0）之后——**静态交付已 42/0 全绿（`bash docs/launch-verify.sh`），
+但编排与运行时验证尚未跑过一遍**，go-live 前必须补齐（见 §H）。
 
 ---
 
@@ -98,14 +105,15 @@ CJ_MQ_CONSUME_THREADS=4 python scripts/dev-start-backend.py --extra judge-worker
 
 | 限制 | 影响 |
 |---|---|
-| MinIO 当前在 `storage` profile（本机 registry 拉取被拒） | 上线前需移出该 profile，否则对象存储不可用 |
-| RocketMQ broker **未挂 store 卷** | **消息不持久化**，broker 重启会丢未消费消息 |
+| ~~MinIO 当前在 `storage` profile~~ | ✅ **已修复（2026-09-30 T11）**：minio 改入 `app` profile，judge-submission / judge-worker 增加 `depends_on: minio: service_healthy`；`docker compose config` 通过。**容器编排实测待 Docker 恢复（HANDOFF T2）** |
+| ~~RocketMQ broker **未挂 store 卷**~~ | ✅ **已修复（2026-09-30 T11）**：新增一次性 `rocketmq-store-init`（root chown 3000:3000）+ broker 挂 `codejudge-mq-store` 命名卷并以 `service_completed_successfully` 门控。重启丢队列风险关闭；**首次 up 会看到 Exited(0) 的 init 容器，属预期**。实测待 T2 |
 | 沙箱运行时是 `runc` + seccomp（本机无 gVisor） | 与宿主共享内核，隔离强度弱于 gVisor。公网判题平台建议装 gVisor（preflight **D2 WARN**） |
 | Grafana 匿名只读仍开启（`GF_AUTH_ANONYMOUS_ENABLED=true`） | 生产必须置 false（preflight **B3 WARN**） |
 | `CJ_LLM_ENABLED=false` 时 AI 点评走结构化降级 | ✅ **2026-09-26 已接入真实 LLM**（智谱 glm-4.5-air，Key 在本地 `.env`）：`degraded=false` 流式输出正常，`verify-p5.py` 复跑 **PASS=46 / FAIL=0**。生产环境凭据生成（A1）时同步决定 `CJ_LLM_ENABLED` 与 `CJ_LLM_API_KEY` |
 | SSE 并发上限默认 200，未压测 | 上线后按实际并发观察（P5 遗留增强项） |
 | **判题吞吐 ≈0.95 题/s，且不随实例数增长** | 队列会以约 1 题/s 的速度排空：200 次提交 ≈ 3.5 分钟。**这是当前最紧的一环**（详见 A4 与 `docs/PERF.md` §3.7） |
 | **每题 5 个 `docker run`**（1 编译 + 4 用例） | 宿主容器启停上限约 10–11 容器/s，故理论上限约 2 题/s；且并发争抢会让**正确解被判 TLE**（已提供 `CJ_MQ_CONSUME_THREADS` 约束） |
+| **（10-01 新增）Docker 宿主→VM 网络通路反复死亡** | `192.168.65.7:2376 no route to host` 已实测两次（09-30 / 10-01）；VM 能引导、引擎短暂服务后通路死亡，头号嫌疑为宿主网络层（双出口 / VMware VMnet 冲突）。修复路径见 HANDOFF-PROMPT T0；**若重启电脑仍复现，go-live 需评估弃用 WSL2**（换原生 Linux 或 Hyper-V） |
 
 ---
 
@@ -113,7 +121,9 @@ CJ_MQ_CONSUME_THREADS=4 python scripts/dev-start-backend.py --extra judge-worker
 
 - `ce335f1` —— 首提交，430 文件 / +56 035 行，覆盖 P1–P6 全部交付物
 - `667872a` —— 文档一致性与陷阱表修正
-- ⚠️ **无远端**：`git remote -v` 为空。要异地备份需先 `git remote add` 并处理认证
+- `35367ef` —— 2026-09-30 第九轮上线检查清单 A–L 全量交付 + 第二轮 soak/镜像脚本（68 文件；提交前 launch-verify 42/0）
+- `649d51d` —— 2026-09-30 第三轮：T9 SLO 度量 + T10 stdout JSON 化 + T11 compose/前端遗留（复验 42/0）
+- ⚠️ **无远端**：`git remote -v` 为空。要异地备份需先 `git remote add` 并处理认证（HANDOFF T7）
 
 ---
 
@@ -142,3 +152,44 @@ CJ_MQ_CONSUME_THREADS=4 python scripts/dev-start-backend.py --extra judge-worker
 - `CJ_JWT_SECRET` 行为变化：旧签发的 token 均含 `type` claim，无兼容问题；但**网关与 auth 必须同批重启**（一边新一边旧会把合法请求判 401）。
 - `verify-p1-login.py` 已同步：refreshToken 不再随 body 下发的新断言。
 - MySQL 驱动 8.0.23 → 8.3.0（新坐标 `com.mysql:mysql-connector-j`）：首次在线构建后即可离线。
+
+---
+
+## H. 2026-09-30/10-01 增量同步（第九轮 A–L + 第三轮 T9/T10/T11）
+
+> 放行视角的增量；逐项证据见 `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`「第二轮/第三轮」表。
+
+### H.1 已收敛的放行项
+
+| 事项 | 状态 | 放行视角说明 |
+|---|---|---|
+| 部署产物（9 Dockerfile / compose app profile / nginx.conf / 优雅停机） | ✅ 静态 | 镜像 9 个已构建（prebuilt 路径）；**编排 up 实测未跑**（HANDOFF T2） |
+| Flyway 接管 6 库 schema | ✅ | **行为变更**：每库首启建 `flyway_schema_history` 打 baseline=1，属预期；存量库真机已验（judge-problem） |
+| 备份 / 增长治理 | ✅ | `scripts/backup-db.py`（mysqldump/pg_dumpall 实跑）；`docs/DATA-GROWTH.md` |
+| 可观测：告警 12 条 / 看板 9 张 / Loki+Promtail / SLO.md | ✅ 静态 | 第 12 条 `JudgeE2ELatencyP99Breach` 与看板 9 `codejudge-error-budget` 为第三轮补齐；**运行时出数待 T2** |
+| JSON 日志收口（judge-common logback-spring.xml + JsonLogLayout） | ✅ 代码 | 非 prod=人读+`[req=...]`，prod=JSON；8 服务已重打包。Loki `| json` 按 requestId 查询待运行时验证 |
+| 判题 E2E 指标（`cj_judge_e2e_seconds`） | ✅ 代码 | worker `JudgeE2eMetrics`；暴露与直方图出数待 T2 |
+| MinIO 入 app profile / broker store 卷 / 提交页列宽 | ✅ | 见 §E 已勾掉的两行 |
+| 工程化（CONTRIBUTING/CHANGELOG/SECURITY/ROADMAP/launch-verify.sh） | ✅ | 一键复验 42/0 |
+
+### H.2 新增的放行前置（go-live 前必须补）
+
+| # | 事项 | 阻塞点 |
+|---|---|---|
+| 1 | compose app profile 编排实测（分批 up + 8 端口 health + verify-p1 冒烟） | HANDOFF T0（Docker 宿主→VM 通路，需用户修复） |
+| 2 | worker 容器化沙箱路径核验 + verify-p3 回归（挂载契约写 DEPLOYMENT.md） | 依赖 T2；prebuilt worker 镜像不含 docker CLI，需多阶段重建 |
+| 3 | soak 首跑（先 600s 验链路再 1h 全量）+ 数字进 PERF.md | 依赖 T2 或宿主机启动 |
+| 4 | trivy / ZAP 实扫，HIGH/CRITICAL 清零 | 漏洞库双源被网络拦，待有网环境 |
+| 5 | T9/T10 运行时验证（prometheus 指标暴露 / Loki `| json` / 看板出数） | 依赖 T2 |
+| 6 | E3 `/v1` 版本化（启用须同步限流谓词/JwtProperties/ActuatorGuardFilter 三处） | **待用户拍板**（方案 DEPLOYMENT.md §8.3） |
+| 7 | CI 徽章 5 处占位符替换 + 首推验 Actions | 待用户建 remote |
+| 8 | 前端 E2E（Playwright，登录+题库两条冒烟先行） | 独立排期；跑通需服务在线 + 浏览器下载 |
+| 9 | F1 告警接真实通道（= 本页 A2） | 待用户提供凭据 |
+| 10 | JaCoCo 棘轮 0.04 → 0.30（补 contest/ai/worker 单测） | 本地构建绕过 `-Djacoco.skip=true`，CI 不绕 |
+
+### H.3 行为变更清单（部署时须知）
+
+1. **Flyway**：每库首启自动 baseline，`flyway_schema_history` 出现属预期。
+2. **rocketmq-store-init**：首次 `up` 会看到 Exited(0) 的一次性容器，属预期（门控用）。
+3. **prod 日志形态变 JSON**：生产 profile 下 stdout 不再是人读格式；日志平台按 JSON 字段解析。
+4. **`--profile app` 与宿主机直跑互斥**：生产用前者，开发保持 `start-all.py`。

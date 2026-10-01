@@ -605,6 +605,26 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
   explorer.exe 中转拉起有效但 VM 本身坏着）→ **必须用户手动 `wsl --shutdown`**。
   T2/T3/T4/T5 及 T9/T10 运行时验证全部排队在它后面。
 
+### 5.15 2026-10-01 第四轮：T11 遗留收口（文档债 + JaCoCo 首批补测）
+
+**输入**：`docs/HANDOFF-PROMPT-2026-09-30.md`。逐项证据见执行报告「第四轮」表。
+**前置探测**：`docker version` 30s 超时（exit=124），T0 仍 BLOCKED，T2–T5/T9-T10 运行时验证继续排队。
+
+- **T11a 文档债清偿** ✅：`LAUNCH-READINESS.md` 头部补「Docker 运行时实测链为放行前置」；
+  §E 勾掉 MinIO profile / broker store 卷两条已修复限制（注明实测待 T2）并新增 Docker 通路
+  风险行；§F 回滚点补 `35367ef`/`649d51d`；新增 §H（放行视角增量 + 10 项放行前置 + 4 条行为变更清单）。
+- **T11b JaCoCo 首批补测** ✅：6 个测试类 49 例（contest 领域逻辑 8 + rank 契约 4、
+  ai TextSplitter 7 + PromptBuilder 15、worker LanguageProfiles 9 + E2eMetrics 6）。
+  LINE 覆盖率：**ai 0.066→0.21 / worker 0.089→0.136 / contest 0.047→0.05**；
+  三模块 `mvn test` 65 例全绿，`mvn verify` 0.04 门禁通过。
+- **⚠️ 新坑（第四轮实测）**：**T9 提交时 worker 测试未重跑** —— JudgeEngine 新增
+  `JudgeE2eMetrics` 构造依赖，既有 `JudgeEngineFailTaskTest`（@InjectMocks）不注新依赖 →
+  死信分支埋点 NPE。已修：注入真实 metrics（SimpleMeterRegistry）并把「死信 SE 计入
+  SLO S3 样本」固化为断言（`cj_judge_e2e{verdict="SE"}` count=1）。
+  **教训：给 Bean 加构造依赖后必须真跑一次 `mvn test`**，package 跳过 test 时旧产物会掩盖。
+- 另：`SimpleMeterRegistry` 在 `io.micrometer.core.instrument.simple` 包（首次 import 踩错，
+  编译期即拦下，损失 1 次构建）。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash
