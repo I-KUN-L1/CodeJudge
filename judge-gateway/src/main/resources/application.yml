@@ -58,6 +58,16 @@ spring:
       config:
         enabled: ${NACOS_CONFIG_ENABLED:false}
     gateway:
+      # ============ E3 API 版本化（T6，2026-10-01 启用）============
+      # 全局别名剥离：/v1/xxx 在转发下游前剥掉版本前缀（下游只认识无版本路径）；
+      # 未带 /v1 的请求不匹配 RewritePath，原样转发。各业务路由的 Path 谓词
+      # 已同步补 /v1 变体（见下方各路由）；/v1/ws/** 刻意不开放（WebSocket 不做版本化，
+      # 无路由匹配 → 404）。DEPLOYMENT.md §8.3 的单条 no://op 别名路由无法按路径
+      # 分发到多个后端，此处按同等语义实现为「每路由补谓词 + 全局剥离」。
+      default-filters:
+        # 注意 $\{segment} 的反斜杠是必须的：阻止 Spring 把 ${segment} 当
+        # 环境属性占位符解析（官方文档同款写法）
+        - RewritePath=/v1/(?<segment>.*), /$\{segment}
       httpclient:
         # 连接超时 2s：下游服务未监听/网络不可达时快速失败
         connect-timeout: 2000
@@ -104,8 +114,10 @@ spring:
           uri: ${GW_AUTH_URI:http://localhost:9081}
           predicates:
             # 两个登录入口都在限流内：/accounts/admin/login 是兼容别名，若只限统一入口，
-            # 攻击者可打旧端点完全绕过防爆破限流（员工账号可在线爆破）
-            - Path=/accounts/login,/accounts/admin/login
+            # 攻击者可打旧端点完全绕过防爆破限流（员工账号可在线爆破）。
+            # E3 版本化（T6）：/v1 形态同步纳入 —— 别名路由剥前缀发生在鉴权/限流之后
+            # （GlobalFilter 先于路由 RewritePath），谓词按原始路径匹配，漏配即绕过限流。
+            - Path=/accounts/login,/accounts/admin/login,/v1/accounts/login,/v1/accounts/admin/login
             - Method=POST
           filters:
             - name: RequestRateLimiter
@@ -119,11 +131,11 @@ spring:
         - id: judge-auth
           uri: ${GW_AUTH_URI:http://localhost:9081}
           predicates:
-            - Path=/accounts/**,/menus/**,/roles/**,/privileges/**
+            - Path=/accounts/**,/menus/**,/roles/**,/privileges/**,/v1/accounts/**,/v1/menus/**,/v1/roles/**,/v1/privileges/**
         - id: judge-user
           uri: ${GW_USER_URI:http://localhost:9082}
           predicates:
-            - Path=/users/**,/students/**,/teachers/**,/staffs/**
+            - Path=/users/**,/students/**,/teachers/**,/staffs/**,/v1/users/**,/v1/students/**,/v1/teachers/**,/v1/staffs/**
 
         # ============ P2：题目（judge-problem） ============
         # 题目与标签、测试用例管理；/test-cases/** 为教师/管理员专用的隐藏用例端点，
@@ -131,13 +143,13 @@ spring:
         - id: judge-problem
           uri: ${GW_PROBLEM_URI:http://localhost:9083}
           predicates:
-            - Path=/problems/**,/tags/**,/test-cases/**
+            - Path=/problems/**,/tags/**,/test-cases/**,/v1/problems/**,/v1/tags/**,/v1/test-cases/**
 
         # ============ P3：提交 / 判题机（judge-submission、judge-worker） ============
         - id: judge-submission
           uri: ${GW_SUBMISSION_URI:http://localhost:9084}
           predicates:
-            - Path=/submissions/**,/workers/**
+            - Path=/submissions/**,/workers/**,/v1/submissions/**,/v1/workers/**
 
         # ============ P4：WebSocket ============
         # 路由顺序即匹配优先级：更具体的 /ws/contests/** 必须排在 /ws/** 之前，
@@ -163,14 +175,14 @@ spring:
         - id: judge-contest
           uri: ${GW_CONTEST_URI:http://localhost:9086}
           predicates:
-            - Path=/contests/**
+            - Path=/contests/**,/v1/contests/**
 
         # ============ P5：AI 代码点评（judge-ai） ============
         # SSE 流式点评：响应为长连接，覆盖全局 30s 响应超时为 15 分钟
         - id: judge-ai
           uri: ${GW_AI_URI:http://localhost:9087}
           predicates:
-            - Path=/ai/**
+            - Path=/ai/**,/v1/ai/**
           metadata:
             response-timeout: 900000
 

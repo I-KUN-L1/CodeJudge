@@ -78,6 +78,11 @@ EXPECTED_STAFF = STUDENT_PERMS | TEACHER_EXTRA | STAFF_EXTRA
 
 EXPECTED_HOME = {"student": "/problems", "teacher": "/teacher/problems", "admin": "/admin/users"}
 
+# 内部端点对照用的用户 id（必须真实存在）：种子学员 13900000001 = 2001。
+# 历史上硬编码 1 —— 现库 user 表 id 从 2001 起，id=1 不存在 → 控制器返回 null →
+# 空响应体，正向对照恒挂（2026-10-01 容器化全栈实测发现，属脚本数据依赖缺陷）。
+STATUS_UID = os.environ.get("CJ_AUTHZ_STATUS_UID", "2001")
+
 # 学员绝不该拿到的码（反向断言：防止"给满"式的 fail-open）
 FORBIDDEN_FOR_STUDENT = sorted(TEACHER_EXTRA | STAFF_EXTRA)
 
@@ -284,7 +289,7 @@ def _not_leaking_status(body):
 
 def section_5_internal_users_status(tokens):
     print("[5] 内部端点 GET /users/{id}/status：外部请求一律 401/403（fail-closed）")
-    url = GW + "/users/1/status"
+    url = GW + "/users/%s/status" % STATUS_UID
 
     # ① 未认证：端点不在 cj.jwt.exclude-paths 白名单，网关必须 401，请求到不了服务
     st, body = request("GET", url)
@@ -313,7 +318,7 @@ def section_5_internal_users_status(tokens):
     # ④ 正向对照（反向 fail-open：防止守卫被改成一刀切 403 误伤内部调用）：
     #    绕开网关直连 judge-user、不带 user-info 头 —— 正是 Feign 服务间的调用形态，必须放行。
     svc = os.environ.get("USER_SVC", "http://localhost:9082")
-    st, body = request("GET", svc + "/users/1/status")
+    st, body = request("GET", svc + "/users/%s/status" % STATUS_UID)
     if st == -1:
         skip("内部直连正向对照", "judge-user(%s) 不可达" % svc)
         return

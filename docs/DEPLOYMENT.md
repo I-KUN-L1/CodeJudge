@@ -144,12 +144,18 @@ docker compose ps            # 等到 mysql / redis / postgres / rocketmq 全部
 docker compose --profile storage up -d minio     # MinIO 默认不启动，见 compose 内注释
 ```
 
-> ⚠ **RocketMQ broker 挂载坑（已规避，勿"修"回去）**：`docker-compose.yml` **故意不挂载**
-> `/home/rocketmq/store`。原因：apache/rocketmq 镜像内不存在该目录，容器以 uid=3000 运行，
-> 而 Docker 创建的命名卷挂载点是 `root:root drwxr-xr-x` → 进程无写权限 →
-> **broker 在打印任何日志前直接退出（ExitCode=253，日志为空）**。
-> 不挂载时消息存于容器可写层：`docker restart` 不丢，容器被**重建**才丢
-> （主题 `autoCreateTopicEnable=true` 会自动重建），本地开发可接受。
+> ⚠ **RocketMQ broker 数据与注册地址（2026-10-01 更新，勿"修"回去）**：
+> 1. **store 卷**：早期「镜像内无 `/home/rocketmq/store`、命名卷挂载点 root:root → uid=3000
+>    无写权限 → ExitCode=253」的坑，已由一次性 `rocketmq-store-init` 容器（user root，
+>    chown 3000:3000）+ `service_completed_successfully` 门控解决，消息持久化到
+>    `codejudge-mq-store` 命名卷。首次 `up` 见 `Exited(0)` 的 init 容器属预期。
+> 2. **brokerIP1 双 conf**：broker 向 namesrv 注册的地址来自 `brokerIP1`，客户端直连该地址。
+>    **容器形态必须注册服务名**（`deploy/rocketmq/broker-compose.conf`，`brokerIP1=rocketmq-broker`）——
+>    若注册 `127.0.0.1`，同网络的 worker 会连到自己（closeChannel 死循环、判题全挂，实测）；
+>    **宿主机直跑形态**用 `deploy/rocketmq/broker.conf`（`brokerIP1=127.0.0.1`）。
+>    两份文件**除 brokerIP1 外必须一致**（判题相关参数如 messageDelayLevel 改动要同步两处）。
+>    想两形态共存：Windows hosts 加一行 `127.0.0.1 rocketmq-broker` 即可（宿主进程把服务名
+>    解析回本机，worker 容器则走 compose 内 DNS）。
 
 ### 3.2 第二步：构建
 
@@ -175,6 +181,27 @@ docker images | grep codejudge/
 | `codejudge/judge-python312` | Python 3.12 |
 | `codejudge/judge-gcc13` | GCC 13 (C++17) |
 | `codejudge/judge-go122` | Go 1.22 |
+
+#### 3.3.1 worker 容器化派发的挂载与权限契约（T3，2026-10-01 实测落地）
+
+容器化形态（worker 跑在 compose 里、经 `/var/run/docker.sock` 派发沙箱）必须满足三条，
+缺一即出现「挂载落空 / 假 TLE / permission denied」：
+
+1. **路径对齐**：DockerSandbox 把 workDir/artifactDir/seccomp 的**绝对路径**直接传给宿主
+   daemon 做 `-v` 挂载源 → worker 容器内的私有路径在 VM 侧不存在，挂载即落空。
+   对策：worker 与沙箱统一走 VM 侧同路径 `/cj-sandbox`
+   （compose: `CJ_WORKER_WORK_ROOT=/cj-sandbox`、`CJ_SANDBOX_SECCOMP=/cj-sandbox/judge-seccomp.json`，
+   worker bind 挂载 `/cj-sandbox:/cj-sandbox`）。
+2. **属主初始化**：一次性 `sandbox-work-init` 容器（root）建 `/cj-sandbox/artifacts`、
+   拷贝 seccomp profile、`chown -R 1001:1001` —— 容器化形态下 bind 挂载走**真实 Linux 权限**，
+   worker(uid 1001) 必须对 artifactDir 有写权（Windows 宿主挂载的 777 时代不再适用）。
+   因此 `DockerSandbox` 派发沙箱固定 `--user 1001:1001`（与 worker 进程 uid 一致；
+   曾用 1000:1000 → 编译沙箱 `cannot create /work/stdout: Permission denied`，实测踩坑）。
+3. **docker.sock 访问**：VM 内 sock 为 `root:root 0660`，worker（uid 1001, gid 999 judge）
+   不在 root 组 → compose 用 `group_add: ["0"]` 补 gid 0 组成员身份走组位读写，
+   不改 sock 本身权限。
+
+验收：容器化栈上 `python scripts/verify-p3.py` 全绿（21/0，2026-10-01）。
 
 ### 3.4 第四步：启动后端
 
@@ -572,9 +599,15 @@ server {
 建议与「refresh token 轮换/吊销（Redis jti）」「RS256 化」合并立项（见 LAUNCH-READINESS §G 遗留项）。
 **当前防线**：`/jwks` 端点已删除（密钥不再外泄），密钥仅经 `.env` 流转、不入 git、不进命令行。
 
-### 8.3 API 版本化（E3）—— 待拍板
+### 8.3 API 版本化（E3）—— ✅ 已落地（2026-10-01）
 
-方案（未启用，需产品/调用方确认后落地）：网关加一条**别名路由**放在路由表最前：
+> **落地记录（2026-10-01）**：用户拍板本轮执行。网关别名路由 `v1-alias`（RewritePath）已启用，
+> 三处同步点全部核对完成：① 登录限流谓词覆盖 `/v1/accounts/login`；② `JwtProperties.excludePaths`
+> 白名单已核对 `/v1/**` 形态；③ `ActuatorGuardFilter` 路径匹配不受影响。
+> 运行时验收：`GET /v1/problems/page` 与不带 `/v1` 响应一致（code=200 同构）；
+> `verify-authz.py` **73 PASS / 0 FAIL**（含 /v1 形态的越权矩阵）。
+
+原方案备忘（未启用时代的决策依据）：网关加一条**别名路由**放在路由表最前：
 
 ```yaml
         - id: v1-alias

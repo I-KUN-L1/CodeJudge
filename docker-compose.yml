@@ -129,7 +129,10 @@ services:
       NAMESRV_ADDR: rocketmq-namesrv:9876
       # 规避 JDK8 在 cgroup v2（Docker Desktop/WSL2）下 OperatingSystemMXBean NPE
       # 导致 StoreUtil.<clinit> 失败、消费位点查询全挂的已知问题
-      JAVA_OPT_EXT: "-XX:-UseContainerSupport"
+      # 堆上限（2026-10-01 新增）：runbroker.sh 默认 -Xmx8g/-Xmn4g，7.3G 的 Docker Desktop VM
+      # 与 8 个 JVM 服务共存时直接把 broker 撑爆（内核 OOM-kill，RestartCount 39 次死循环）。
+      # JAVA_OPT_EXT 追加在默认参数之后，HotSpot 对重复 -Xmx 取后者。
+      JAVA_OPT_EXT: "-XX:-UseContainerSupport -Xms1g -Xmx1g -Xmn512m"
     ports:
       # 与 deploy/rocketmq/broker.conf 的 listenPort=10921 严格对应：
       #   fastRemotingPort = 10919，主端口 = 10921，HA 端口 = 10922
@@ -137,7 +140,11 @@ services:
       - "${BIND_IP:-127.0.0.1}:10921:10921"
       - "${BIND_IP:-127.0.0.1}:10922:10922"
     volumes:
-      - ./deploy/rocketmq/broker.conf:/home/rocketmq/rocketmq-4.9.7/conf/broker.conf:ro
+      # ⚠️ 容器形态专用配置（brokerIP1=rocketmq-broker）：worker 在 compose 网络内，
+      #   broker 注册 127.0.0.1 会让它连到自己（closeChannel 死循环、判题全挂）。
+      #   宿主机直跑形态用 deploy/rocketmq/broker.conf（brokerIP1=127.0.0.1），
+      #   两份文件除 brokerIP1 外必须一致 —— 详见 broker-compose.conf 头部注释。
+      - ./deploy/rocketmq/broker-compose.conf:/home/rocketmq/rocketmq-4.9.7/conf/broker.conf:ro
       # 消息持久化（2026-09-30 落地，原「故意不挂载」决策废止）：
       #   当初不挂的原因：镜像内不存在 /home/rocketmq/store，Docker 为命名卷创建的
       #   挂载点是 root:root，broker 进程（uid=3000）无写权限 → 启动即退（ExitCode=253，日志为空）。
@@ -169,28 +176,52 @@ services:
   #     docker compose --profile storage up -d minio
   #   · 部分受限网络下 minio/minio 镜像拉取可能被拒（实测 error from registry: denied），
   #     镜像缺失时 app 编排会卡在 minio 拉取 —— 需人工预拉镜像或临时注释掉本服务与两处 depends_on。
-  minio:
-    image: minio/minio
-    container_name: codejudge-minio
-    profiles: ["storage", "app"]
-    restart: always
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?请在 .env 中配置 MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 中配置 MINIO_ROOT_PASSWORD}
-      TZ: Asia/Shanghai
-    ports:
-      # 9000 = S3 API（应用访问），9001 = Web 控制台（浏览器访问）
-      - "${BIND_IP:-127.0.0.1}:${MINIO_API_BIND_PORT:-9000}:9000"
-      - "${BIND_IP:-127.0.0.1}:${MINIO_CONSOLE_BIND_PORT:-9001}:9001"
+  # ⚠️ 2026-10-01 临时下线（T2 编排实测降级）：minio 镜像 5 个源全部拉取失败
+  # （docker.io 超时 / quay 401 / daocloud denied / mirror.gcr.io 超时 / 1ms.run denied），
+  # app 编排会在 minio 拉取上卡死。按本文件原注释预留的逃生路径临时注释本服务与
+  # judge-submission / judge-worker 的两处 depends_on。影响面：仅「超长代码」存储与
+  # 题目附件功能，常规判题链路（短代码内联）不受影响。
+  # 恢复步骤（用户侧）：配置 Docker Desktop 代理或手动 docker pull + docker load 后，
+  # 取消下方注释与两处 depends_on 注释 → docker compose --profile app up -d minio
+  # minio:
+  #   image: minio/minio
+  #   container_name: codejudge-minio
+  #   profiles: ["storage", "app"]
+  #   restart: always
+  #   environment:
+  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER:?请在 .env 中配置 MINIO_ROOT_USER}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 中配置 MINIO_ROOT_PASSWORD}
+  #     TZ: Asia/Shanghai
+  #   ports:
+  #     - "${BIND_IP:-127.0.0.1}:${MINIO_API_BIND_PORT:-9000}:9000"
+  #     - "${BIND_IP:-127.0.0.1}:${MINIO_CONSOLE_BIND_PORT:-9001}:9001"
+  #   volumes:
+  #     - codejudge-minio-data:/data
+  #   command: server /data --console-address ":9001"
+  #   healthcheck:
+  #     test: ["CMD", "mc", "ready", "local"]
+  #     interval: 15s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 20s
+
+  # ---------- 容器化沙箱工作目录初始化（一次性，T3，2026-10-01）----------
+  # 路径对齐契约：DockerSandbox 把 workDir/artifactDir/seccomp 的**绝对路径**直接传给
+  # 宿主 daemon 做挂载源（`-v <path>:...`），worker 容器内的私有路径在 VM 侧不存在 →
+  # 挂载落空、判题假失败。对策：worker 与沙箱都经由 VM 侧同路径 /cj-sandbox：
+  #   · init 容器（root）在 VM 侧建目录、放 seccomp profile、属主修成 uid 1001(judge)；
+  #   · worker bind 挂载同一 VM 路径（路径一致，worker 写入即 VM 落盘）；
+  #   · 沙箱容器由 daemon 用 VM 侧真实路径挂载 → 源码投递/编译产物共享均生效。
+  # 首次 up 会看到 Exited(0) 的 init 容器，属预期。
+  sandbox-work-init:
+    image: eclipse-temurin:21-jre
+    container_name: codejudge-sandbox-init
+    user: "0:0"
+    restart: "no"
     volumes:
-      - codejudge-minio-data:/data
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      - /cj-sandbox:/cj-sandbox
+      - ./sandbox/seccomp/judge-seccomp.json:/opt/seccomp-src.json:ro
+    entrypoint: ["sh", "-c", "mkdir -p /cj-sandbox/artifacts && cp /opt/seccomp-src.json /cj-sandbox/judge-seccomp.json && chown -R 1001:1001 /cj-sandbox"]
 
   # ------------------------------------------------------------
   # 多副本与负载均衡（F1）：除 judge-worker 外的 app 服务均可 --scale 水平扩，
@@ -211,8 +242,9 @@ services:
   #   · 环境密钥经 env_file(.env) 注入；容器间连接地址在 environment 段**强制覆盖**为
   #     compose 网络内的服务名（.env 里的 localhost:* 仅适用于宿主机直跑 jar 的场景）。
   #   · judge-worker 需要 docker CLI + /var/run/docker.sock 才能派发沙箱容器。
-  #     ⚠️ 待验证项：沙箱代码经宿主 docker daemon 派发，worker 容器内的临时目录
-  #     与宿主路径不对齐时挂载会落空 —— 容器化 worker 首次启用前必须回归 verify-p3。
+  #     ✅ 已验证（T3，2026-10-01）：路径对齐经 /cj-sandbox 契约（见 sandbox-work-init）+
+  #     group_add 补 gid 0 + 沙箱 --user 1001:1001，容器化栈 verify-p3 21/0 全绿。
+  #     契约细节见 DEPLOYMENT.md §3.3.1。
   #   · stop_grace_period 40s > graceful 30s（application.yml），保证 in-flight 请求排空。
   # ============================================================
   judge-user:
@@ -311,8 +343,9 @@ services:
         condition: service_started
       rocketmq-broker:
         condition: service_started
-      minio:
-        condition: service_healthy
+      # minio depends_on 临时注释（镜像拉取被阻），恢复见 minio 服务块上方的说明
+      # minio:
+      #   condition: service_healthy
 
   judge-worker:
     image: codejudge/judge-worker:latest
@@ -332,11 +365,22 @@ services:
       SVC_PROBLEM_URI: http://judge-problem:9083
       # 多实例必须限并发：实例数 × 该值 ≤ 宿主 CPU 核数，否则正确解被误判 TLE
       CJ_MQ_CONSUME_THREADS: "4"
+      # 容器化沙箱路径契约（见 sandbox-work-init）：workRoot 与 seccomp 必须落在
+      # 「worker 容器与 VM daemon 同路径可见」的 /cj-sandbox，否则 -v 挂载落空
+      CJ_WORKER_WORK_ROOT: /cj-sandbox
+      CJ_SANDBOX_SECCOMP: /cj-sandbox/judge-seccomp.json
     ports:
       - "${BIND_IP:-127.0.0.1}:9085:9085"
+    # docker.sock 权限（2026-10-01 实测）：VM 内 sock 为 root:root 0660，worker 运行身份
+    # uid=1001 gid=999(judge) 不在 root 组 → 派发沙箱报 permission denied。
+    # group_add 补 gid 0 组成员身份即可走组位读写，不改 sock 本身权限。
+    group_add:
+      - "0"
     volumes:
       # 沙箱容器由 worker 经宿主 docker daemon 派发（见上方注意事项）
       - /var/run/docker.sock:/var/run/docker.sock
+      # 与 VM daemon 的路径对齐挂载（T3）：同路径进容器，daemon 才能挂到同样内容
+      - /cj-sandbox:/cj-sandbox
     depends_on:
       mysql:
         condition: service_healthy
@@ -346,8 +390,11 @@ services:
         condition: service_started
       rocketmq-broker:
         condition: service_started
-      minio:
-        condition: service_healthy
+      sandbox-work-init:
+        condition: service_completed_successfully
+      # minio depends_on 临时注释（镜像拉取被阻），恢复见 minio 服务块上方的说明
+      # minio:
+      #   condition: service_healthy
 
   judge-contest:
     image: codejudge/judge-contest:latest
@@ -424,6 +471,16 @@ services:
       GW_AI_URI: http://judge-ai:9087
     ports:
       - "${BIND_IP:-127.0.0.1}:9080:9080"
+    # 覆盖 Dockerfile 的裸 healthcheck（QA-F01 副作用修复，2026-10-01）：
+    # 严格模式（.env 设 CJ_ACTUATOR_TOKEN）下任何来源都必须带令牌，裸 curl /actuator/health
+    # 被 ActuatorGuardFilter 拦成 404 → 容器假 unhealthy。CMD-SHELL 在容器内展开 env_file
+    # 注入的变量；令牌未配置（内网白名单模式）时循环来源本就放行，头部多余无害。
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $$CJ_ACTUATOR_TOKEN\" http://127.0.0.1:9080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
     depends_on:
       judge-auth:
         condition: service_started

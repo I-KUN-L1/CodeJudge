@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  * <p><b>隔离清单（12 项要求中的运行时项）</b>：
  * <ol>
  *   <li>每次执行独立容器 + 独立 workdir（tmpfs），结束即删；</li>
- *   <li>{@code --user 1000:1000} 非 root；</li>
+ *   <li>{@code --user 1001:1001} 非 root（与 worker 进程 uid 一致，见 runContainer）；</li>
  *   <li>{@code --read-only} 根文件系统只读，/tmp 挂 noexec tmpfs；</li>
  *   <li>{@code --network none} 断网；</li>
  *   <li>{@code --cpus} / {@code --memory}+{@code --memory-swap}（同值禁 swap）/ {@code --pids-limit} 防 fork 炸弹；</li>
@@ -139,8 +139,11 @@ public class DockerSandbox implements SandboxExecutor {
         cmd.add("--tmpfs"); cmd.add("/tmp:rw,nosuid,nodev,noexec,size=32m");
         // 网络：完全断网
         cmd.add("--network"); cmd.add("none");
-        // 用户与提权：非 root + 禁止提权 + 丢弃全部 capabilities
-        cmd.add("--user"); cmd.add("1000:1000");
+        // 用户与提权：非 root + 禁止提权 + 丢弃全部 capabilities。
+        // uid 固定 1001（= worker 进程 uid）：容器化形态下 workRoot(/cj-sandbox) 为
+        // VM bind 挂载、真实 Linux 权限生效，artifactDir 由 worker(uid 1001) 创建（755），
+        // 沙箱须以同 uid 运行才有 /work 写权限；宿主形态挂 Windows 路径默认 777 不受影响。
+        cmd.add("--user"); cmd.add("1001:1001");
         cmd.add("--security-opt"); cmd.add("no-new-privileges");
         cmd.add("--cap-drop"); cmd.add("ALL");
         // seccomp 白名单外收紧：禁 mount/ptrace/reboot/kexec 等危险 syscall

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  judge-gateway 专属 logback 配置（2026-10-01 容器化全栈实测补齐）。
+
+  为什么 gateway 要单独放一份：judge-gateway **不依赖 judge-common**（设计约束，
+  见其 pom.xml 注释 —— 网关保持最小依赖面），而统一日志配置与 JsonLogLayout
+  都住在 judge-common 里。此前 8 服务里唯独网关一直跑在 Spring Boot 默认格式上
+  （既没有人读的 [req=] 段，prod 下也不会 JSON 化）—— 属「打包完成 ≠ 运行时生效」
+  的假绿，容器化实测才暴露。
+
+  同步纪律：本文件与 judge-common/src/main/resources/logback-spring.xml
+  以及 JsonLogLayout.java 的拷贝（com.codejudge.common.logging）三处必须一致，
+  改任何一处都要同步另两处 —— 已在 LAUNCH-CHECKLIST 报告登记。
+-->
+<configuration>
+
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name"/>
+
+    <springProfile name="!prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%thread] [req=%X{requestId:-}] %logger{40} : %msg%n</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="prod">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+                <layout class="com.codejudge.common.logging.JsonLogLayout"/>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+
+</configuration>

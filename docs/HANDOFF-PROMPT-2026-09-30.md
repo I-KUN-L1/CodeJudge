@@ -95,7 +95,11 @@ A–L 的全部静态交付（一键复验 `bash docs/launch-verify.sh` → PASS
 
 ## 任务清单（按依赖与优先级）
 
-### T0. 环境恢复前置（🔴 仍 BLOCKED，2026-10-01 状态）
+### T0. ✅ 已解决（2026-10-01：停 zx-learn 全栈腾内存，daemon 通路恢复）
+
+> **结案**：根因是宿主内存压力（zx-learn 10 容器 + CodeJudge 全栈挤爆 WSL2）。用户拍板停掉
+> zx-learn 全栈后，Docker daemon 立即恢复稳定，整轮 T2/T3/T9/T6/T10 实测无再抖动。
+> 以下排查记录保留作历史参考。
 
 **已排除的原因**：不是「没做 wsl --shutdown」（已做过）、不是 VM 起不来（VM 能引导、引擎能
 短暂服务）、不是引擎崩溃（无 OOM/panic）。**是宿主→VM 网络通路反复死亡**。
@@ -121,7 +125,13 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 - `d9c67b1`（2026-10-01 第四轮：T11a 文档债 + T11b JaCoCo 首批补测 + 修 T9 遗留测试 NPE；
   三模块 `mvn verify` 门禁绿后提交）。
 
-### T2. compose app profile 编排实测（依赖 T0；阻塞项1 后半）
+### T2. ✅ 已完成（2026-10-01：8 端口 health 全 UP + web 200 + verify-p1-login 43/0）
+
+> **结案**：分批 `--profile app up` 全栈拉起。过程中修了两个 compose 缺陷：
+> gateway healthcheck CMD-SHELL 单引号阻止 `$$CJ_ACTUATOR_TOKEN` 展开（404 假 unhealthy → 改双引号）；
+> broker 容器形态注册地址（详见 T3）。证据见执行报告「第五轮」。
+
+原任务书：
 
 1. 分批起：`docker compose --profile app up -d judge-user judge-problem judge-contest judge-ai`，
    等健康后再 `judge-auth judge-gateway judge-submission`，最后 `judge-worker judge-web`。
@@ -137,7 +147,15 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 4. 已知风险：worker 容器内没有 docker CLI → 判题派发失败属预期，记录后转 T3。
 5. 注意 Flyway 行为变更：每个库首启会建 `flyway_schema_history` 打 baseline=1 —— 属预期不是异常。
 
-### T3. worker 容器化沙箱路径核验（依赖 T2；阻塞项7）
+### T3. ✅ 已完成（2026-10-01：verify-p3 21/0 全绿，契约入 DEPLOYMENT.md §3.3.1）
+
+> **结案**：worker 镜像含 docker CLI；容器化派发三要素实测落地 —— `/cj-sandbox` 路径对齐
+> （sandbox-work-init 属主 1001:1001）、`DockerSandbox` 沙箱 `--user 1000:1000 → 1001:1001`
+> （uid 1000 时编译沙箱 Permission denied）、worker `group_add: ["0"]` 访问 docker.sock。
+> 连带修复：broker 容器形态 `brokerIP1=127.0.0.1` 会让 worker 连自己（closeChannel 死循环、
+> 判题全挂）→ 新增 `deploy/rocketmq/broker-compose.conf`（brokerIP1=rocketmq-broker）。
+
+原任务书：
 
 1. 用多阶段 Dockerfile 重建 worker 镜像（含 docker.io CLI）：
    `docker build -f judge-worker/Dockerfile -t codejudge/judge-worker:latest .`
@@ -173,7 +191,7 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 2. HIGH/CRITICAL 有命中则逐条处置（升级 base / 加白名单说明），写进 DEPLOYMENT.md §8.4 旁。
 3. E5 ZAP baseline（`zap-baseline.py -t http://host.docker.internal:9080`）同样待有网，高危清零。
 
-### T6. E3 `/v1` API 版本化（**需用户拍板后执行**；阻塞项3）
+### T6. ✅ 已完成（2026-10-01 拍板执行：/v1 与裸路径行为一致 + verify-authz 73/0）
 
 方案已写在 `docs/DEPLOYMENT.md` §8.3（网关别名路由 + RewritePath）。启用前**必须同步改三处**，
 否则造出安全缺口：
@@ -195,7 +213,11 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 - 可先做登录+题库两条冒烟链路跑通框架，其余渐进补。
 - 注意登录限流（2 req/s 突发 5），E2E 反复登录要放宽或复用会话。
 
-### T9. ✅ 代码已完成（commit `649d51d`），仅剩运行时验证（依赖 T0）
+### T9. ✅ 全部完成（代码 `649d51d`；运行时验证 2026-10-01：指标暴露 + verdict 序列与实测对齐）
+
+> **结案**：worker `:9085/actuator/prometheus` 暴露 `cj_judge_e2e_seconds_*`；Prometheus 中
+> 6 条 verdict 序列与 verify-p3 实测 12 次终态完全对齐（AC=1/MLE=2/TLE=2/WA=1/RE=5/CE=1）。
+> Grafana 看板 9（错误预算）随监控栈出数。
 
 已落地（勿重做）：
 - `judge-worker/src/main/java/com/codejudge/worker/metrics/JudgeE2eMetrics.java`：
@@ -211,7 +233,16 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 剩余（T0 恢复后）：worker 起来后 `curl :9085/actuator/prometheus | grep cj_judge_e2e` 验暴露 +
 真实判题一单验证直方图非空 + Grafana 看板出数。
 
-### T10. ✅ 代码已完成（commit `649d51d`），仅剩运行时验证（依赖 T0）
+### T10. ✅ 全部完成（代码 `649d51d`；运行时验证 2026-10-01：Loki 全链路 + requestId 查询）
+
+> **结案**：① gateway 不依赖 judge-common（设计约束）→ `judge-gateway` 本地覆盖
+> `logback-spring.xml` + 同包名 `JsonLogLayout` 拷贝（三处同步纪律，见文件头 Javadoc）；
+> ② promtail 文件名正则修复（`(?P<base>[^/\\]+)\\.log$` 的 `\\` 永不匹配容器内正斜杠路径 →
+> application 标签从未产出 → 改 `/var/log/codejudge/(?P<application>judge-[a-z]+)`）；
+> ③ Loki 实测：`{application="judge-gateway"}` 39 行 `| json` 解析成功；
+> `{application="judge-auth"} | json | requestId != ""` 命中真实请求行。
+> 已知局限维持：requestId 仅服务内有效，网关（WebFlux，无 servlet 拦截器）JSON 行无 requestId
+> 属设计（字段缺省省略），跨服务串联待后续。
 
 已落地（勿重做）：
 - `judge-common/src/main/resources/logback-spring.xml`（jar 内 classpath 收口，8 服务共用；
