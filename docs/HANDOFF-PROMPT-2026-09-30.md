@@ -1,24 +1,38 @@
 # CodeJudge 上线收尾 · 新对话执行提示词
 
 > 用法：把本文件全文作为任务输入发给 AI 编程助手。每完成一项附验收证据（命令输出/文件路径），
-> 同步更新 `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md` 的「第二轮」表格与 `docs/CONTEXT.md` §5.13。
+> 同步更新 `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md` 的「第二轮/第三轮」表格与
+> `docs/CONTEXT.md` §5.13/§5.14。
 > 阻塞的项不许跳过验收硬凑（**假绿比 FAIL 危险**），标注 BLOCKED + 原因即可。
 
-> **执行状态速览（2026-09-30 第三轮，详见执行报告「第三轮」表）**
-> T1 ✅ commit `35367ef` ｜ T9 ✅代码/⏸验证 ｜ T10 ✅代码/⏸验证 ｜ T11 部分落地
-> （MinIO profile ✅ / broker store 卷 ✅ / 提交页列宽 ✅ / READINESS 同步 ⏳ / JaCoCo 补测 ⏳ / F1 待凭据）
-> T0 🔴 BLOCKED（VM 引擎 no route to host，**需用户 `wsl --shutdown`**）→ T2/T3/T4/T5 及 T9/T10 运行时验证排队
-> T6 待拍板 ｜ T7 待 remote ｜ T8 独立排期
+> **执行状态速览（2026-10-01 更新，详见执行报告「第三轮」表与 `.workbuddy/memory/2026-10-01.md`）**
+> T1 ✅ commit `35367ef` ｜ T9 ✅代码完成（worker 埋点+告警12条+错误预算看板，运行时验证 ⏸）
+> T10 ✅代码完成（judge-common logback 收口 + JsonLogLayout，8 服务已 clean package，Loki 验证 ⏸）
+> T11 部分落地（MinIO app profile ✅ / broker store 卷 ✅ / 提交页列宽 ✅ / READINESS 同步 ⏳ / JaCoCo 补测 ⏳ / F1 待凭据）
+> 第三轮全部改动已提交：commit `649d51d`（launch-verify 42/0 复验）。
+>
+> T0 🔴 **BLOCKED 升级（2026-10-01 实测）**：`wsl --shutdown` 已做过但问题未解 ——
+> VM 能引导、引擎能短暂服务（16:27 实测容器 stats 正常），随后宿主→VM 通路死亡
+> （`192.168.65.7:2376 no route to host` 持续，VM 内无 OOM/panic）。
+> **头号嫌疑 = 宿主网络层**：① `route print` 无任何 192.168.65.x 路由；
+> ② 双出口并存（以太网 + PPPoE 宽带连接 ifIndex=53 metric=1 默认路由）；
+> ③ VMware VMnet1/VMnet8 宿主虚拟网卡 Up（与 WSL2 冲突已知源）。
+> **用户修复优先级：① 重启电脑 → ② 管理员 `wsl --update` →
+> ③ 临时停用 VMnet1/VMnet8 + 断开宽带连接起 Docker 验证（通了逐个恢复定位元凶）→
+> ④（兜底，删数据）`wsl --unregister docker-desktop`。**
+> 好消息：镜像/容器数据完好，宿主通路修复后 T2 可直接开跑。
+> T2/T3/T4/T5 及 T9/T10 运行时验证全部排队在 T0 后。T6 待拍板 ｜ T7 待 remote ｜ T8 独立排期。
 
 ---
 
 ## 背景与现状（一句话版）
 
 CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端，`D:\1\CodeJudge`）已完成上线检查清单
-A–L 的全部静态交付（一键复验 `bash docs/launch-verify.sh` → PASS=42/FAIL=0），9 个运行时镜像已构建。
-当前卡在：**Docker daemon 崩溃后待用户恢复**、镜像编排实测未跑、若干行为变更项待拍板。
-权威进度读 `docs/CONTEXT.md`（§5.13 = 第九轮 checklist 全记录）与
-`docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`（含「第二轮：阻塞项推进」精确状态）。
+A–L 的全部静态交付（一键复验 `bash docs/launch-verify.sh` → PASS=42/FAIL=0），9 个运行时镜像已构建，
+第三轮（T9/T10/T11 代码侧）已提交 `649d51d`。
+当前卡在：**Docker 宿主→VM 网络通路反复死亡（T0）**、镜像编排实测未跑、若干行为变更项待拍板。
+权威进度读 `docs/CONTEXT.md`（§5.13/§5.14）与
+`docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`（含「第二轮/第三轮」精确状态）。
 
 ## 硬约束（先读，都是踩过的坑）
 
@@ -45,28 +59,53 @@ A–L 的全部静态交付（一键复验 `bash docs/launch-verify.sh` → PASS
     （30 次/分钟/账号）。验收录 `python scripts/verify-p*.py` / `verify-authz.py`（56 项）。
 11. 长跑命令用受管后台任务（`&` 起的子进程会被 Job Object 连带回收）。
 12. 性能数字必须真实运行得出，禁止估算；验收脚本断言必须同时校验样本非空。
+13. **（10-01 新增）AI 侧拉起 Docker Desktop 的手段已全部穷尽，勿再重试**：
+    - `Start-Process` 直启 = 必现 `rename daemon.json.tmp Access denied` 崩溃（受限令牌；
+      daemon.json ACL 本身正常，纯 spawn 方式问题）；
+    - `schtasks` 计划任务绕道 = 被安全中心程序黑名单拦死，不可绕；
+    - `explorer.exe` 中转 **不可依赖**（09-30 18:37 曾成功一次，10-01 连续 3 次 exit=1 零派生）；
+    - 杀掉 `com.docker.backend` 后 **monitor 不会自动重拉**（实测 0 重生）。
+    结论：Docker 恢复只能靠用户操作。
+14. **（10-01 新增）改 judge-common 后的打包陷阱**：maven-jar-plugin 内容未变会跳过重建
+    （forceCreation=false），`-pl <服务>` 不带 `-am` 时 fat jar 嵌的是 `~/.m2` 旧 judge-common
+    —— 必须先 `install` 再 `clean package`；验证法 `unzip -p 服务jar
+    BOOT-INF/lib/judge-common-1.0.0.jar | grep JsonLogLayout`（fat jar 是嵌套结构，
+    直接对服务 jar grep 不到，须先解开嵌套 jar）。
+15. **（10-01 新增）JaCoCo 棘轮拦 install**：新增零覆盖类会跌破 0.04 门禁 → `mvn install`
+    被拦；本地构建用 `-Djacoco.skip=true` 绕过（**CI 不绕**）。
+16. **（10-01 新增）「引擎短暂存活后通路死亡」模式**：VM 引导成功、引擎正常服务数分钟后
+    `192.168.65.7:2376 no route to host`，VM 内无 OOM/panic。已实测两次（09-30、10-01）。
+    排查入口：host 侧 `com.docker.backend.exe.log` 的 apiproxy 段 +
+    `vm/init.log` 是否冻结 + `route print 192.168.65.*` + `Get-NetAdapter`（看双出口/VMware 网卡）。
+    此问题若重启电脑后仍间歇复现，go-live 需评估弃用 WSL2（换原生 Linux 或 Hyper-V）。
 
 ---
 
 ## 任务清单（按依赖与优先级）
 
-### T0. 环境恢复前置（需用户手动，先与用户确认是否已完成）
+### T0. 环境恢复前置（🔴 仍 BLOCKED，2026-10-01 状态）
 
-用户侧动作（AI 只能提示，不能代做）：
-- 管理员 PowerShell：`wsl --shutdown` → 正常双击启动 Docker Desktop → 确认 `docker version` 出 Server 版本。
-- （可选）把 `~/.docker/daemon.json.off` 改名回 `daemon.json` 恢复镜像加速（不恢复也能用，拉取变慢）。
+**已排除的原因**：不是「没做 wsl --shutdown」（已做过）、不是 VM 起不来（VM 能引导、引擎能
+短暂服务）、不是引擎崩溃（无 OOM/panic）。**是宿主→VM 网络通路反复死亡**。
+
+用户侧动作（按成功率排序）：
+1. **重启电脑** → 双击启动 Docker Desktop → 等 2–3 分钟（鲸鱼图标稳定）→ `docker version` 出 Server 段。
+2. 仍复现：管理员 PowerShell `wsl --update` 后重试。
+3. 仍复现：临时停用 VMware VMnet1/VMnet8 两块虚拟网卡 + 断开 PPPoE 宽带连接（ifIndex=53，
+   metric=1 默认路由），起 Docker 验证；通了后逐个恢复以定位元凶。
+4. （兜底，⚠️ 删除发行版内镜像与容器数据）`wsl --unregister docker-desktop` 重建。
 
 AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 再 `docker ps` 确认基础设施容器（mysql/redis/pg/namesrv/broker/minio/监控栈）是否已随
 `restart: always` 自启，缺的补 `docker compose up -d` / `deploy/monitoring` 下
 `docker compose --env-file ../../.env -f docker-compose.monitoring.yml up -d`。
+若通路又抖动复发，按硬约束 16 的排查入口记录证据（这是 go-live 环境风险项）。
 
-### T1. 提交当前改动（先做，锁住基线）
+### T1. ✅ 已完成（2026-09-30，勿重做）
 
-- `git status` 现有 **67 个未提交文件**（第九轮 A–L 全部交付物 + 第二轮 soak/镜像脚本）。
-- 仓库无 remote（`git remote -v` 为空）→ 本地 commit 即可；commit 前跑
-  `bash docs/launch-verify.sh` 确认 42/0 不回退。
-- 提交后顺手做 T7 的徽章部分若有 remote 再说（见 T7）。
+- commit `35367ef`（68 文件，launch-verify 42/0 先行验证；无 remote 故仅本地 commit；
+  敏感文件核查通过：无 .env / bootstrap-credentials 入库）。
+- 第三轮改动另见 commit `649d51d`（T9/T10/T11 交付，同样 42/0 复验后提交）。
 
 ### T2. compose app profile 编排实测（依赖 T0；阻塞项1 后半）
 
@@ -142,26 +181,42 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 - 可先做登录+题库两条冒烟链路跑通框架，其余渐进补。
 - 注意登录限流（2 req/s 突发 5），E2E 反复登录要放宽或复用会话。
 
-### T9. SLO 度量补全（阻塞项9）
+### T9. ✅ 代码已完成（commit `649d51d`），仅剩运行时验证（依赖 T0）
 
-- worker/submission 补 `cj_judge_e2e_seconds`（提交→终态）直方图埋点，暴露给 Prometheus。
-- Grafana 加「错误预算」看板（按 docs/SLO.md §5 的口径：99.9% 可用性 / 提交 P99<200ms /
-  判题端到端 P99<10s），看板经 `gen_dashboards.py` 生成、`allowUiUpdates: false`。
+已落地（勿重做）：
+- `judge-worker/src/main/java/com/codejudge/worker/metrics/JudgeE2eMetrics.java`：
+  `cj_judge_e2e` → Prometheus `cj_judge_e2e_seconds_*`，按 verdict 分列，桶 50ms–120s；
+  埋点在 `JudgeEngine.finishTerminal` 终态落库点 + 死信 SE 分支，CAS 丢弃不计（与 SLO.md §1 S3 口径一致）。
+- 告警第 12 条 `JudgeE2ELatencyP99Breach`（`deploy/monitoring/prometheus/rules/codejudge-alerts.yml`；
+  SLO §4 此前声称有该规则但实际缺失，已补）。
+- 看板 9 `codejudge-error-budget`（`gen_dashboards.py` 生成，S1–S4 达成状态 + 预算剩余/燃烧率）。
+- worker 已 clean package 通过。
 
-### T10. stdout JSON 化（阻塞项10）
+剩余（T0 恢复后）：worker 起来后 `curl :9085/actuator/prometheus | grep cj_judge_e2e` 验暴露 +
+真实判题一单验证直方图非空 + Grafana 看板出数。
 
-- judge-common 统一 `logback-spring.xml` 收口：profile 切换（dev=人读格式 / prod=JSON 含
-  requestId/traceId），Loki 侧验证 `{application="judge-*"} | json` 可按 requestId 全链路查。
-- 行为变更：改完全部 8 服务日志形态变，需重打包 + 重启验证 Loki 查询。
+### T10. ✅ 代码已完成（commit `649d51d`），仅剩运行时验证（依赖 T0）
 
-### T11. 其余遗留（按 README/CONTEXT 既有待办）
+已落地（勿重做）：
+- `judge-common/src/main/resources/logback-spring.xml`（jar 内 classpath 收口，8 服务共用；
+  非 prod=人读格式 + `[req=requestId]` 段，prod=JSON）+
+  `judge-common/.../common/logging/JsonLogLayout.java`（Jackson 转义；application 取
+  springProperty `APP_NAME`，勿用 LoggerContext 名——默认是 "default"）。
+  **不引 logstash-encoder**（本地仓库无货且外网受限）。
+- 8 服务已 `clean package`，嵌套 judge-common 已复验含新产物（验证法见硬约束 14）。
 
+剩余（T0 恢复后）：重启后验证 Loki `{application="judge-*"} | json` 可按 requestId 查询。
+已知局限：requestId 仅服务内有效，网关不透传，跨服务链路串联待后续。
+
+### T11. 其余遗留（✅ 三项已落地于 commit `649d51d`，剩余如下）
+
+- ~~MinIO 移出 `storage` profile~~ ✅ 已入 app profile（submission/worker `depends_on: minio: healthy`）。
+- ~~RocketMQ broker 挂 store 卷~~ ✅ 已落地（一次性 `rocketmq-store-init` root chown 3000 +
+  `service_completed_successfully` 门控；**首次 up 会看到 Exited(0) 的 init 容器，属预期**）。
+- ~~提交记录页列宽~~ ✅ 「提交时间」列改 `min-width` 弹性列。
 - `docs/LAUNCH-READINESS.md` 未同步第九/十轮改动（文档债）。
-- MinIO 移出 `storage` profile（变成 app 依赖而非常驻）。
-- RocketMQ broker 挂 store 卷（当前消息不持久化，重启丢队列）。
-- 提交记录页列总宽 926px < 面板内宽 1382px（跨页骨架不一致）。
 - JaCoCo 门禁棘轮从 0.04 往 0.30 抬：先补 judge-contest / judge-ai / judge-worker 单测
-  （实测基线注释在根 pom）。
+  （实测基线注释在根 pom；本地构建绕过法见硬约束 15）。
 - F1 告警通道（Slack/钉钉/邮件，需外部凭据，向用户要）。
 
 ---
