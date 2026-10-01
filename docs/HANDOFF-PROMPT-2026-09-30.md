@@ -5,11 +5,17 @@
 > `docs/CONTEXT.md` §5.13/§5.14。
 > 阻塞的项不许跳过验收硬凑（**假绿比 FAIL 危险**），标注 BLOCKED + 原因即可。
 
-> **执行状态速览（2026-10-01 更新，详见执行报告「第三轮」表与 `.workbuddy/memory/2026-10-01.md`）**
+> **执行状态速览（2026-10-01 第二次更新，详见执行报告「第四轮」表与 `.workbuddy/memory/2026-10-01.md`）**
 > T1 ✅ commit `35367ef` ｜ T9 ✅代码完成（worker 埋点+告警12条+错误预算看板，运行时验证 ⏸）
 > T10 ✅代码完成（judge-common logback 收口 + JsonLogLayout，8 服务已 clean package，Loki 验证 ⏸）
-> T11 部分落地（MinIO app profile ✅ / broker store 卷 ✅ / 提交页列宽 ✅ / READINESS 同步 ⏳ / JaCoCo 补测 ⏳ / F1 待凭据）
-> 第三轮全部改动已提交：commit `649d51d`（launch-verify 42/0 复验）。
+> T11 部分落地（MinIO app profile ✅ / broker store 卷 ✅ / 提交页列宽 ✅ / **READINESS 同步 ✅（第四轮）** /
+> **JaCoCo 首批补测 ✅（6 类 49 例，ai 0.21 / worker 0.136 / contest 0.05，门禁 0.04 仍绿）** / F1 待凭据）
+> 第三轮全部改动已提交：commit `649d51d`（launch-verify 42/0 复验）。第四轮改动待提交。
+>
+> ⚠️ 第四轮新坑（10-01）：**T9 提交时 worker 测试未重跑** —— JudgeEngine 新增 JudgeE2eMetrics
+> 依赖让既有 `JudgeEngineFailTaskTest` NPE（@InjectMocks 不注新依赖）。已修（注入真实
+> metrics + 顺手固化「死信 SE 计入 SLO 样本」断言）。教训：改构造器/字段后，`mvn test`
+> 与 `mvn package` 至少跑一个真的。
 >
 > T0 🔴 **BLOCKED 升级（2026-10-01 实测）**：`wsl --shutdown` 已做过但问题未解 ——
 > VM 能引导、引擎能短暂服务（16:27 实测容器 stats 正常），随后宿主→VM 通路死亡
@@ -208,15 +214,18 @@ AI 侧先探测：`timeout 30 docker version --format "{{.Server.Version}}"`，
 剩余（T0 恢复后）：重启后验证 Loki `{application="judge-*"} | json` 可按 requestId 查询。
 已知局限：requestId 仅服务内有效，网关不透传，跨服务链路串联待后续。
 
-### T11. 其余遗留（✅ 三项已落地于 commit `649d51d`，剩余如下）
+### T11. 其余遗留（✅ 五项已落地：三项于 `649d51d`，两项于第四轮，剩余如下）
 
 - ~~MinIO 移出 `storage` profile~~ ✅ 已入 app profile（submission/worker `depends_on: minio: healthy`）。
 - ~~RocketMQ broker 挂 store 卷~~ ✅ 已落地（一次性 `rocketmq-store-init` root chown 3000 +
   `service_completed_successfully` 门控；**首次 up 会看到 Exited(0) 的 init 容器，属预期**）。
 - ~~提交记录页列宽~~ ✅ 「提交时间」列改 `min-width` 弹性列。
-- `docs/LAUNCH-READINESS.md` 未同步第九/十轮改动（文档债）。
-- JaCoCo 门禁棘轮从 0.04 往 0.30 抬：先补 judge-contest / judge-ai / judge-worker 单测
-  （实测基线注释在根 pom；本地构建绕过法见硬约束 15）。
+- ~~`docs/LAUNCH-READINESS.md` 未同步第九/十轮改动（文档债）~~ ✅ 第四轮已同步（§E 勾掉两条已修复限制、
+  §F 回滚点补两条 commit、新增 §H 放行视角增量与行为变更清单）。
+- JaCoCo 门禁棘轮 0.04 → 0.30：**首批补测已落地（第四轮）**：contest/ai/worker 各新增契约与纯逻辑单测
+  （6 类 49 例，LINE：ai 0.066→0.21 / worker 0.089→0.136 / contest 0.047→0.05；`mvn verify` 门禁绿）。
+  距 0.30 仍远，后续批次优先 contest（体量大且难测，评估只对 service 包设 per-class 棘轮或继续补
+  lifecycle/result handler 的 mockito 测试）；本地构建绕过法见硬约束 15（**CI 不绕**）。
 - F1 告警通道（Slack/钉钉/邮件，需外部凭据，向用户要）。
 
 ---

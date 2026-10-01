@@ -128,3 +128,19 @@
 | T7 | CI 徽章 / remote | 仓库无 remote | 用户建 remote → add origin + push → 替换 README 徽章占位符 5 处 |
 | T8 | G4 前端 E2E | 工作量独立可排期；跑通需服务在线 + playwright 浏览器下载 | 登录+题库两条冒烟先行，注意登录限流 |
 | T9/T10 验收 | 运行时验证 | Loki 查询、指标暴露、看板数据均需服务在线 | T2 完成后：worker 重打包 jar 已就绪 → 起 8 服务 → `curl :9085/actuator/prometheus \| grep cj_judge_e2e` + Loki `{application="judge-worker"} \| json` + Grafana 看错误预算看板 |
+
+---
+
+## 第四轮：T11 遗留收口（2026-10-01）
+
+### 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| T11a | **LAUNCH-READINESS.md 文档债清偿** | ✅ 头部结论补「Docker 运行时实测链为放行前置」；§E 勾掉两条已修复限制（MinIO profile / broker store 卷，注明实测待 T2）并新增 Docker 通路风险行；§F 回滚点补 `35367ef` / `649d51d`；新增 §H（第九轮+第三轮放行视角增量：已收敛项 8 条 / 新增放行前置 10 项 / 行为变更清单 4 条） |
+| T11b | **JaCoCo 补测（contest/ai/worker）** | ✅ 新增 6 个测试类 49 例：contest `ContestDomainLogicTest`（生命周期/封窗/罚时 8 例）+ `ContestRankServiceContractTest`（键位/主题/三段编码契约 4 例）；ai `TextSplitterTest`（7 例）+ `ReviewPromptBuilderTest`（15 例，Prompt 结构=前端解析锚点逐条固化）；worker `LanguageProfilesTest`（9 例）+ `JudgeE2eMetricsTest`（6 例，SimpleMeterRegistry 验样本准入与 verdict 分列）。**覆盖率（LINE）：ai 0.066→0.21 / worker 0.089→0.136 / contest 0.047→0.05**（`mvn jacoco:report`，报告在各模块 `target/site/jacoco/`）。三模块 `mvn test` 65 例全绿、`mvn verify` 含 0.04 门禁通过 |
+| 顺手修 | **既有测试被 T9 打破** | ✅ `JudgeEngineFailTaskTest` 因 T9 给 JudgeEngine 新增 `JudgeE2eMetrics` 依赖而 NPE（死信分支埋点调用 null）——注入真实 metrics（SimpleMeterRegistry）并**顺势把「死信 SE 分支计入 SLO S3 样本」固化为断言**（timer `cj_judge_e2e{verdict="SE"}` count=1）。此坑说明 T9 提交时 worker 测试未重跑（clean package 跳过了 test 或沿用了旧产物） |
+
+### 受阻（不变）
+
+T0 / T2 / T3 / T4 / T5 / T9-T10 运行时验证 / T6（待拍板）/ T7（待 remote）/ T8（待排期）——卡点与解法见第三轮表，本轮无变化。10-01 实测 `docker version` 30s 超时（exit=124），T0 仍 BLOCKED。

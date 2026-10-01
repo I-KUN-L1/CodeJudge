@@ -13,7 +13,9 @@ import com.codejudge.worker.mapper.JudgeResultMapper;
 import com.codejudge.worker.mapper.WorkerJudgeTaskMapper;
 import com.codejudge.worker.mapper.WorkerSubmissionMapper;
 import com.codejudge.worker.mq.ProgressPublisher;
+import com.codejudge.worker.metrics.JudgeE2eMetrics;
 import com.codejudge.worker.sandbox.SandboxExecutor;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -80,6 +83,15 @@ class JudgeEngineFailTaskTest {
     private ProgressPublisher progressPublisher;
     @Mock
     private TransactionTemplate txTemplate;
+
+    /**
+     * T9 新增依赖：真实的 JudgeE2eMetrics（SimpleMeterRegistry 承接）。
+     * 用 spy 而非 mock —— 死信分支的 SE 埋点是 SLO 口径的第二个终点，值得真实断言。
+     */
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    @Spy
+    private JudgeE2eMetrics e2eMetrics = new JudgeE2eMetrics(meterRegistry);
 
     @InjectMocks
     private JudgeEngine engine;
@@ -154,8 +166,10 @@ class JudgeEngineFailTaskTest {
         @DisplayName("attempt+1 ≥ maxAttempt：任务标死、提交终态化、待判队列摘除、DLQ 投递")
         void deadLettersAndRemovesFromQueue() {
             when(taskMapper.markDead(TASK_ID, WORKER_ID, REASON)).thenReturn(1);
+            Submission s = submission();
+            s.setSubmitTime(java.time.LocalDateTime.now().minusSeconds(1));
 
-            boolean handedBack = engine.failTask(task(2, 3), submission(), WORKER_ID, REASON);
+            boolean handedBack = engine.failTask(task(2, 3), s, WORKER_ID, REASON);
 
             assertThat(handedBack).isFalse();
             verify(taskMapper).markDead(TASK_ID, WORKER_ID, REASON);
@@ -165,6 +179,10 @@ class JudgeEngineFailTaskTest {
             verify(mqTemplate).send(eq(MqTopics.TOPIC_JUDGE_DLQ),
                     eq(MqTopics.Tags.SUBMISSION_DEAD), any(Object.class));
             verify(submissionMapper, never()).backToPending(SUBMISSION_ID);
+            // T9 埋点：死信也是终态（SE），必须计入 SLO S3 样本
+            verify(e2eMetrics).recordTerminal(s.getSubmitTime(), "SE");
+            assertThat(meterRegistry.find("cj_judge_e2e").tag("verdict", "SE").timer().count())
+                    .isEqualTo(1L);
         }
 
         @Test
