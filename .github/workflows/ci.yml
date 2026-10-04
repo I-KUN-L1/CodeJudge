@@ -3,7 +3,7 @@
 #
 # 触发：push 与 PR（master 主干）。
 # 产物：JaCoCo 覆盖率报告（artifact: jacoco-report-java-21）、前端 dist（artifact: judge-web-dist）。
-# 门禁：mvn verify 内含 JaCoCo check（根 pom，LINE 覆盖率起步 30%，见根 pom 插件段）。
+# 门禁：mvn verify 内含 JaCoCo check（根 pom 全局 LINE 下限 0.10 + contest 模块专属 0.70，见根 pom 插件段）。
 # 依赖扫描：osv-scanner 首期仅报告不阻断（|| true），高风险清零后改为 fail。
 # ============================================================
 name: CI

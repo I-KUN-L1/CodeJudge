@@ -205,9 +205,10 @@
                         2026-09-30 全模块实测基线（mvn test + jacoco:report，LINE）：
                           auth 0.549 / submission 0.416 / user 0.350 / gateway 0.260 /
                           common 0.120 / problem 0.124 / worker 0.089 / ai 0.066 / contest 0.047
-                        当前下限 = 最低模块防回退值（0.04）；抬升路径见 LAUNCH-CHECKLIST G1：
-                          先补 judge-worker/judge-ai/judge-contest → 全局抬到 0.30。
-                        ⚠️ 不要直接改 0.30 —— 会在 CI 首日变红（实测 judge-common 0.12 被拦）。
+                        2026-10-03 第六轮实测（contest 补测 84 例后）：contest 0.748；
+                        其余模块未动，最低为 judge-common 0.120 → 全局下限抬至 0.10（留安全余量）。
+                        judge-contest 模块专属下限 0.70 见 judge-contest/pom.xml（check-contest execution）。
+                        ⚠️ 抬全局下限前必须先跑全 reactor mvn verify 实证每个模块都过线。
                     -->
                     <execution>
                         <id>check</id>
@@ -223,7 +224,7 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.04</minimum>
+                                            <minimum>0.10</minimum>
                                         </limit>
                                     </limits>
                                 </rule>

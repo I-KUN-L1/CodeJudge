@@ -175,3 +175,91 @@ T0 / T2 / T3 / T4 / T5 / T9-T10 运行时验证 / T6（待拍板）/ T7（待 re
 | T5 | ZAP baseline | **维持 BLOCKED**：`docker images` 本轮确认 zap 镜像本地不存在、docker.io 拉取被拦 |
 | T7 | CI 徽章 / remote | 待用户建 remote，不变 |
 | T8 | G4 前端 E2E | 待排期，不变 |
+
+---
+
+## 第六轮：U2 JaCoCo contest 补测收口（2026-10-03）
+
+> 前置：U0 环境预检——Docker daemon 仍 500（dockerDesktopLinuxEngine 内部错误，硬约束 13：
+> AI 侧手段已穷尽，修复属用户动作）；宿主空闲 4.4/15.2GB（vmmemWSL 1.9GB；较 10-03 晨 3.1GB
+> 略回升但仍低于 soak 预检线 6GB）；无 CodeJudge 服务在跑（仅 IDE java 进程）。
+> 依赖 Docker 的 U1（soak）/ U3（扫描）维持 BLOCKED，未硬凑。
+
+### 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| U2a | contest 补测 6 类 66 例（18→84 例） | ✅ 新增：`ContestLifecycleServiceTest`（12 例：扫描健壮性/开赛 CAS 推送/结束终榜留档/封榜幂等/单竞赛异常不拖垮整轮）+ `ContestResultHandlerTest`（7 例：订阅契约/supports 矩阵/坏报文丢弃/dirty 登记与吞异常）+ `ContestRankServiceApplyTest`（13 例：applyResult 守卫与 Lua 参数契约逐位断言/freeze 幂等·锁回滚/空榜清 key/rank 三段解码渲染·榜外我的名次）+ `ContestRankPusherTest`（8 例：脏标记/双视图合并推送/内容签名去重/渲染失败静默/CONTEST_STATUS 绕过去重）+ `ContestServiceCreateContextTest`（13 例：建赛窗口/编排校验/缺省推导/自代理事务委托/CAS/context 实时状态推导/titlesOf 降级）+ `ContestRankWsHandlerTest`（10 例：full 视图特权门 fail-closed/订阅上限/CONNECTED+SNAPSHOT/PONG/注销）。`mvn -pl judge-contest test` **84/0** |
+| U2b | 覆盖率实测 | ✅ contest LINE **0.047 → 0.748**（jacoco.csv：covered=702 / missed=237；报告 `judge-contest/target/site/jacoco/`）。全 reactor verify 实测各模块分布：common 0.120 与 problem 0.124 为新最低 |
+| U2c | 棘轮抬升（双门禁） | ✅ 根 pom 全局 BUNDLE LINE 下限 **0.04 → 0.10**（低于新最低 common 0.120 留余量，注释更新基线与抬门纪律）；judge-contest/pom.xml 新增模块专属门禁 **check-contest 0.70**（锁住 contest 高位防回退，全局门只保底线） |
+| U2d | CI 同命令实证 | ✅ 全 reactor `mvn -B -ntp verify` **BUILD SUCCESS**（11 模块 321 例全绿，jacoco check 0.10 全部过线 + contest 0.70 过线）——与 `.github/workflows/ci.yml` 同命令，CI 首日不会因门禁变红 |
+| 顺手修 | CI yml 过时注释 | ✅ `.github/workflows/ci.yml` 头注已更正为「根 pom 全局 LINE 下限 0.10 + contest 模块专属 0.70」，与实际门禁一致 |
+
+### 硬约束遵守记录
+
+- 硬约束 14（judge-common 先 install）：本轮**未改 judge-common**，N/A；reactor 构建自然覆盖。
+- 硬约束 15（jacoco.skip 仅限本地、CI 不绕）：本轮**全程未用** `-Djacoco.skip=true`，verify 含门禁真跑。
+- 硬约束 17（给 Bean 加构造依赖必须真跑 mvn test）：新测试均为纯 Mockito 构造器注入，不动生产 Bean；contest 与全 reactor `mvn test` 真跑通过。
+
+### 受阻（本轮确认，不变）
+
+| # | 事项 | 卡点 |
+|---|---|---|
+| U1 | 有效 1h soak | **BLOCKED**：Docker daemon 500（用户动作恢复）；宿主空闲 4.4GB < 预检线 6GB。恢复后先做 soak.jmx 定时重登改造（三选一推荐 a，不动生产代码），跑法与 .jtl 事后复盘预案见 HANDOFF U1 |
+| U3 | trivy / ZAP 扫描 | **维持 BLOCKED**：需 Docker daemon + 外网（ghcr.io ~7KB/s、mirror.gcr.io 拒连、zap 镜像本地无）。命令已备（HANDOFF U3），不硬凑 |
+| U4-U6 / U8 / U9 | 外网/用户配合项 | 卡点与所需配合见本轮汇报 C 类，无变化 |
+
+### U1 首攻（2026-10-03 傍晚）：soak.jmx 定时重登落地；WSL2 VM 判定须重启宿主
+
+**已完成：soak.jmx 定时重登改造（PERF.md §3.8.1 三选一之 a，不动生产代码）**
+
+- 机制：两线程组的登录块由 `OnceOnlyController` 改为 `IfController` 主循环内检测——每线程维护
+  `LOGIN_TS`（UDV 初始 0；JSR223 后置脚本仅在登录成功时登记，失败回退 60s 重试防限流风暴），
+  距今超过 `reloginAfterSec`（默认 1500s=25min，为 30min TTL 留 5min 余量）+ `threadNum×
+  reloginJitterSec`（默认 10s）即重登。18 线程错峰散布约 2min，峰值 ≈2/s 不触碰登录限流（2/s+burst5）。
+- 验证：XML 解析通过（2×IfController / 2×JSR223 / 0×OnceOnly 残留）；10min shakedown 实测
+  18/18 登录成功（旧计划 30:10 必现的 401 风暴源头已移除）；`-JreloginAfterSec/-JreloginJitterSec`
+  可覆盖。⚠️ `run-perf.py -J` 参数必须空格分隔（argparse 短选项连写会被拆散报 unrecognized）。
+- 附带发现：引擎 16:22 恢复后全栈 21 容器自动拉起（8 服务 healthy）——compose restart 策略
+  在 daemon 恢复时自愈有效，重启后无需手工起栈。
+
+**环境结论（如实记录，停止恢复循环）**：WSL2 VM 反复病态——16:22 恢复后探活正常（10ms），
+16:29 一上压 30s 内劣化（吞吐 2500→6/s，全接口 P95=30s 超时，非 401）；16:50 再次恢复后
+**无负载** 4 分钟内 daemon API 再次 500，宿主→网关单请求 12.1s，vmmemWSL CPU 0%（排除 VM 内
+空转），宿主无换页压力（Pages/sec≈2）。病灶在宿主↔VM 通信层（vmcompute/HNS，与晨间
+`192.168.65.7:2376 no route to host` 同源），`wsl --shutdown` 重置不掉该层。**唯一正解：
+重启 Windows 宿主**（用户动作）。重启后：Docker Desktop 启动 → 栈自动拉起 → 10min shakedown
+→ 1h 全量（soak.jmx 已就绪，含 .jtl 落盘与事后复盘预案；25min 续签点在 1h 内自然验证）。
+
+---
+
+## 第七轮：U0 复检 + U2/U1 前置完成态复核（2026-10-04）
+
+> 本轮输入为 10-03 版提示词；第六轮（U2）与 U1 首攻（soak.jmx 续签）在上一会话已完成，
+> **改动尚未 commit**。本轮做环境复检与完成态实证复核（不重做），并核对工作区。
+
+### 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| U0 | 环境预检（10-04 16:37） | Docker daemon **未运行**（`docker version` 报 npipe `dockerDesktopLinuxEngine` 管道不存在；无任何 docker 进程；vmmemWSL 不存在）——较 10-03「daemon 500」更进一步，属 **Docker Desktop 本体未启动**，疑似宿主已重启但 Desktop 未拉起。宿主空闲 **6.36/15.22GB**（≥ soak 预检线 6GB，**达标**）。按硬约束 13，AI 侧不重试拉起 |
+| U2 复核 | 完成态实证（不重做） | `mvn -pl judge-contest test` **84/0 BUILD SUCCESS**（8.6s）；jacoco.csv 实测 **LINE 702/237 = 0.748**，与第六轮记录一致；双棘轮在 pom（根全局 0.10 / contest check-contest 0.70） |
+| U1 前置复核 | soak.jmx 定时重登（上一会话已落地） | git diff 复核：两线程组 `OnceOnlyController` → `IfController`（LOGIN_TS 距今 > 1500s + threadNum×10s 即重登，18 线程错峰 ≈2min、峰值 ≈2/s 不触限流）+ JSR223 后置登记 LOGIN_TS（仅成功登记，失败回退 60s 重试）；上一会话 10min shakedown 实测 18/18 登录成功 |
+
+### 受阻（不变，卡点如实）
+
+| # | 事项 | 卡点 |
+|---|---|---|
+| U1 | 有效 1h soak 全量 | **BLOCKED**：Docker daemon 未运行（用户动作：启动 Docker Desktop；若宿主尚未重启且 VM 病态依旧，先按 §5.18 结论重启 Windows）。恢复路径：栈随 restart 策略自动拉起 → 10min shakedown → 1h 全量（受管后台任务会随会话回收，.jtl 落盘事后复盘）→ RUNBOOK §3.2 观测 + verify-p1-login 43/0 + 补 PERF.md §3.8.2（当前 PERF.md 尚无该节，等实测数字） |
+| U3 | trivy / ZAP 扫描 | **维持 BLOCKED**：Docker daemon + 外网双卡点；命令已备（HANDOFF U3），不硬凑 |
+
+### 待用户
+
+1. **启动 Docker Desktop**（U1/U3 解锁前提；内存 6.36GB 已达标）。
+2. U4 Playwright（外网装 chromium + 排期）/ U5 remote+徽章（建 remote，5 处徽章占位替换，首推验 Actions）/ U6 告警凭据（webhook 给 Alertmanager）/ U8 HTTPS（证书+域名）/ U9 独立压测机（生产容量标定）——逐项卡点见本轮汇报，无变化。
+3. **确认入库**：第六轮 + U1 首攻全部改动仍在工作区未 commit（7 文件改动 + 6 个新测试类）。
+
+### 不做
+
+- 无新增。U7（E4 生产告警重标）依赖生产环境真实流量，属上线后动作，本轮不动。
+
