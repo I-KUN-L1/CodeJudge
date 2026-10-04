@@ -80,6 +80,8 @@ node_modules/
 judge-web/dist/
 judge-web/.env.local
 judge-web/.env.*.local
+judge-web/test-results/
+judge-web/playwright-report/
 # vitest 覆盖率报告：HTML 形态是 56 个文件（每次 npm run test:cov 重建），
 # 与 perf-test/results/ 同类 —— 纯派生产物，无入库价值（2026-09-22 首提交预演时发现遗漏）
 judge-web/coverage/
