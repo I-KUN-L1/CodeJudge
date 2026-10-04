@@ -637,3 +637,38 @@ server {
 | golang:1.22 | sha256:1cf6c45ba39db9fd6db16922041d074a63c935556a05c5ccb62d181034df7f02 |
 
 升级流程：换新 digest → 重跑 `python scripts/build-sandbox-images.py` → `python scripts/verify-p3.py` 回归。
+
+#### 8.4.1 漏洞扫描处置登记（U3/T5，2026-10-04 trivy + ZAP）
+
+扫描器：trivy（镜像 ghcr.io/aquasecurity/trivy，DB `--db-repository ghcr.io/aquasecurity/trivy-db`，
+mirror.gcr.io 拒连不可用）+ ZAP baseline（ghcr.io/zaproxy/zaproxy:stable）。
+原始证据：`docs/security-evidence/2026-10-04-trivy/`（镜像全量、Maven 模块逐个扫描）、
+`docs/security-evidence/2026-10-04-zap/`（baseline 报告 md/html/json）。
+
+**① 沙箱语言镜像**（承载不可信代码的编译/运行，边界由沙箱隔离承担，非平台攻击面）：
+
+| 镜像 | HIGH | CRITICAL | 处置 |
+|---|---:|---:|---|
+| judge-java21 | 0 | 0 | 干净 |
+| judge-python312 | 51 | 0 | 无 CRITICAL；HIGH 全为 Debian 13.7 发行版包 → 接受，随 base digest 升级刷新 |
+| judge-gcc13 | 481 | 32（去重 5） | 编译工具链库（glib/libxml2/linux-libc-dev/openexr/libaom），多为 fix_deferred → 接受 + 随 base 升级刷新 |
+| judge-go122 | 1144 | 26（去重 9） | 发行版库 + 19 个 Go 二进制各自内嵌 stdlib（同组 CVE × 19）；openssl/wget/stdlib/linux-libc-dev 已有 fixed 版，重建即清 → 接受 + 随 base 升级刷新 |
+
+**② Maven 依赖（11 模块 pom，fs 逐模块扫描）**——升级落位（根 pom properties + dependencyManagement，
+`mvn install` 11 模块全绿）：
+
+| 库 | 原版本 | 处置 | 结果 |
+|---|---|---|---|
+| tomcat-embed-core | 10.1.31（Boot 3.3.5 托管） | `tomcat.version=10.1.55`（逐档复扫驱动：31→35→55） | CVE-2025-24813/2026-41293 清除；**残留 CVE-2026-65182：修复版 10.1.58 未在 Central 发布，无法修复 → 接受 + CI 复扫跟进** |
+| netty-handler | 4.1.114.Final（Boot 托管） | `netty.version=4.1.137.Final` | CVE-2026-75595 清除 |
+| bcprov-jdk18on | 1.78（传递） | dependencyManagement 钉 `1.85`（78→81.1→85 复扫驱动） | CVE-2025-14813/2026-8763 清除 |
+| fastjson 1.2.69_noneautotype | （trivy POM 分析器经 optional 路径引入） | **误报**：11 模块 `mvn dependency:tree` 零命中，不在任何运行时 classpath | 接受（误报说明） |
+
+**③ ZAP baseline**（`zap-baseline.py -t http://judge-gateway:9080`，compose 网络内）：
+**High 0 / Medium 0 / Low 0** —— 高危清零达标。唯一 Info 级为网关根路径可缓存提示（10049）。
+局限：无认证爬行仅覆盖 3 个公开端点；上线后建议带 session 做深度 active scan（U7/U8 批次）。
+
+**方法论沉淀**：① trivy fs 扫多模块仓库会触发 POM 分析器并发死线（judge-worker/pom.xml
+`semaphore deadline`）——按模块逐个扫描绕过；② Maven Central 有 IP 级 429 限流（Retry-After
+1800s），离线扫描挂 `~/.m2:ro` + `--offline-scan`；③ trivy DB 的 fixed 版本可能超前于
+Central 实际发布（10.1.58 不存在），钉版前必须 `mvn` 实测。
