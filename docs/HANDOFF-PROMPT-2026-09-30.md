@@ -134,14 +134,13 @@ CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端�
 
 ### 未完成任务（本轮焦点，按解锁条件分组）
 
-#### U0. 环境预检与 Docker daemon 修复（用户动作；其余任务的前置）
+#### U0. 环境预检与 Docker daemon 修复（✅ 已完成 2026-10-04：宿主重启，daemon 恢复无复发）
 
-- 现状（10-04 第七轮复检）：**Docker Desktop 本体未启动**（无 docker 进程 / vmmemWSL 不存在 /
-  npipe 管道缺失）；宿主空闲 6.36/15.2GB（已达标 6GB 预检线）。
-- 用户动作顺序：① 直接启动 Docker Desktop → `docker version` 出 Server 段（栈随 restart 策略
-  自动拉起，无需手工起栈）；② 若 VM 病态依旧（daemon 500 / 探活异常）→ **重启电脑**
-  （先确认 zx-learn 等大内存负载不在跑，见硬约束 18d）。
-- AI 侧只做预检与记录（`docker version` / 内存余量 / 容器自启情况），不重复拉起手段（硬约束 13）。
+- ✅ **结案**：用户重启 Windows 后 Docker Desktop 启动，daemon 全程无复发（未重启时的复病链见
+  执行报告第七轮 / CONTEXT §5.20）；全栈 20 容器随 restart 策略自动拉起 8 服务 healthy；
+  **zx-\* 6 容器 restart 策略已改 `no` 并停机**（18d 约束永久落位）。
+- 复检手法存档：`docker version` / 宿主内存余量 / 容器自启情况，只做预检与记录，
+  不重复拉起手段（硬约束 13）。
 
 #### U1. T4.2 有效 1h soak（✅ 已完成 2026-10-04 第八轮，结案）
 
@@ -238,6 +237,9 @@ ZAP baseline H0/M0/L0；镜像重建（`build-app-images-prebuilt.py --worker-do
 **用法一（推荐，信息完整）**：把本文件全文作为第一条消息发给 AI。
 
 **用法二（精简指针版）**：复制以下代码块——
+
+> ⚠️ **本提示词已执行完毕（2026-10-04 第九轮收口，U0–U4 第一批全部结案），勿再按此开新会话。**
+> 续接任务请使用新版：**`docs/HANDOFF-PROMPT-2026-10-04.md`**。下文为历史存档。
 
 ```text
 请先完整阅读 docs/HANDOFF-PROMPT-2026-09-30.md（CodeJudge 上线收尾执行提示词，2026-10-03 版），

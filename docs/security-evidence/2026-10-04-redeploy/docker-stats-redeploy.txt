@@ -1,0 +1,21 @@
+﻿codejudge-alertmanager         2.21%     29.68MiB / 7.372GiB   0.39%     256kB / 124kB     1.19GB / 8.07MB
+codejudge-grafana              1.54%     117MiB / 7.372GiB     1.55%     120kB / 60.3kB    6.38GB / 28MB
+codejudge-judge-ai-1           5.09%     539.1MiB / 7.372GiB   7.14%     96.3kB / 2.44MB   106MB / 1.3MB
+codejudge-judge-auth-1         1.93%     452.6MiB / 7.372GiB   6.00%     156kB / 4.87MB    107MB / 1.26MB
+codejudge-judge-contest-1      0.22%     470.4MiB / 7.372GiB   6.23%     367kB / 3.05MB    99.2MB / 1.19MB
+codejudge-judge-gateway-1      0.19%     441.2MiB / 7.372GiB   5.85%     109kB / 6.27MB    75.5MB / 1.21MB
+codejudge-judge-problem-1      0.22%     433.4MiB / 7.372GiB   5.74%     122kB / 2.52MB    113MB / 1.32MB
+codejudge-judge-submission-1   0.17%     477.4MiB / 7.372GiB   6.32%     578kB / 3.5MB     94.8MB / 1.25MB
+codejudge-judge-user-1         1.94%     453.5MiB / 7.372GiB   6.01%     200kB / 8.83MB    120MB / 1.34MB
+codejudge-judge-web            0.00%     15.85MiB / 7.372GiB   0.21%     2.3kB / 126B      6.68MB / 12.3kB
+codejudge-judge-worker         0.18%     490.4MiB / 7.372GiB   6.50%     293kB / 3.01MB    105MB / 1.25MB
+codejudge-loki                 6.43%     85.39MiB / 7.372GiB   1.13%     331kB / 5.3kB     3.71GB / 36.2MB
+codejudge-mq-broker            3.08%     727.9MiB / 7.372GiB   9.64%     18.1MB / 7.75MB   370MB / 128MB
+codejudge-mq-console           0.57%     536.6MiB / 7.372GiB   7.11%     124kB / 79.1kB    128MB / 5.97MB
+codejudge-mq-namesrv           0.08%     238.5MiB / 7.372GiB   3.16%     2.87MB / 2.9MB    201MB / 110MB
+codejudge-mysql                0.48%     195MiB / 7.372GiB     2.58%     7.75GB / 35.7GB   2.28GB / 227MB
+codejudge-pg                   0.03%     38.05MiB / 7.372GiB   0.50%     311kB / 168kB     915MB / 10.2MB
+codejudge-prometheus           3.72%     113.9MiB / 7.372GiB   1.51%     720MB / 28.5MB    3.94GB / 53.3MB
+codejudge-promtail             1.41%     43.9MiB / 7.372GiB    0.58%     7.2kB / 329kB     3GB / 21.3MB
+codejudge-redis                0.22%     19.71MiB / 7.372GiB   0.26%     3.22GB / 1.18GB   669MB / 7.55MB
+NAME                           CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
