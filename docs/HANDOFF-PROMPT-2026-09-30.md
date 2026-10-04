@@ -23,10 +23,11 @@
 >   **U3** trivy/ZAP（BLOCKED 待 Docker+外网，命令已备）· **U5** remote+徽章（待用户）·
 >   **U4** Playwright E2E（待外网+排期）· **U6** 告警通道凭据（待用户）·
 >   **U7** 生产告警重标 · **U8** HTTPS · **U9** 独立压测机（生产化三件）。
-> - ⚠️ **环境现状（2026-10-04 第七轮复检）**：Docker Desktop **本体未启动**（无 docker 进程、
->   vmmemWSL 不存在、npipe dockerDesktopLinuxEngine 管道缺失；较 10-03 的 daemon 500 更进一步）。
->   宿主空闲 6.36/15.2GB，**已过 soak 预检线 6GB**。用户动作 = 启动 Docker Desktop 即可
->   （栈随 restart 策略自动拉起；若 VM 病态依旧再重启宿主）。依赖 Docker 的任务开跑前先 `docker version` 预检。
+> - ⚠️ **环境现状（2026-10-04 下午 U1 首攻）**：用户启动 Docker Desktop（**未重启宿主**）→
+>   daemon 16:41 恢复、全栈自启 healthy，**16:42-16:56 无负载 5 分钟内复病**（health 探测超时 →
+>   daemon API 500 → `docker ps`/请求挂死），与 §5.18 病灶同型。**唯一正解仍是重启 Windows**
+>   （zx-learn 不自启）；重启后第一动作 = 停 zx-learn 5 自启容器再预检。soak.jmx 续签已就绪、
+>   GW_LOGIN_RATE 默认 2/5 已核实。依赖 Docker 的任务开跑前先 `docker version` 预检。
 
 ---
 
