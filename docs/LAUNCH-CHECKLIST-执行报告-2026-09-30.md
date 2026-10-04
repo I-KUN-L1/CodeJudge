@@ -304,3 +304,29 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
   `perf-test/results/soak.jtl`（约 2.2GB，890 万行原始样本）、`perf-test/results/soak-jmeter.log`
   （30s summariser 全量日志）。
 
+## 第九轮：U3 漏洞扫描收口 + U4 E2E 冒烟（2026-10-04 晚）
+
+> U0 恢复（宿主重启）后 Docker + 外网可用，U3 解除 BLOCKED；U4 同窗口完成第一批。
+
+### A 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| U3a-镜像 | trivy 扫 4 张基础/沙箱镜像 | ✅ java21 干净（0H/0C）；python312 51H 0C；gcc13 481H 32C；go122 1144H 26C——全部为 OS 包陈旧项，随 base 镜像升级刷新，处置「接受+跟进」 |
+| U3a-依赖 | trivy fs 逐模块扫 9 模块 POM | ✅ 多目录并发 POM 分析器死线 bug（semaphore deadline exceeded，--timeout 15m/--offline-scan 均无效）→ **逐模块单独扫描绕过**；3 个真实 CRITICAL：tomcat 10.1.31 / netty 4.1.114.Final / bcprov 1.78 |
+| U3a-升级 | 三项依赖钉版落位 | ✅ 根 pom properties 钉 **tomcat 10.1.55 / netty 4.1.137.Final / bcprov 1.85**（dependencyManagement 钉 bcprov 覆盖传递依赖）。打地鼠记录：tomcat 10.1.58 Central 未发布（mvn "was not found"）→ 回退 10.1.55，残留 CVE-2026-65182 记「上游未发布、接受+跟进」；bcprov 1.81.1 复扫又出 CVE-2026-8763 → 直接钉 1.85 清零；**fastjson CRITICAL 判定误报**（11 模块 dependency:tree 零命中，trivy POM 分析器 optional 路径过度近似）。`mvn install` 11 模块 BUILD SUCCESS |
+| U3a-复验 | judge-api 复扫终态 | ✅ 仅剩 fastjson 误报 + tomcat CVE-2026-65182（已接受项），真实 CRITICAL 清零 |
+| U3b | ZAP baseline 扫描 | ✅ **H0 / M0 / L0** 高中低危清零（仅 1 条 Informational：Storable/Cacheable Content，针对网关根路径 4xx 响应，无敏感信息不处置）。compose 网络内打 http://judge-gateway:9080，报告三件套 md/html/json 归档 |
+| U3-重部署 | 升级后镜像重建 + 回归 | ✅ 多阶段 Dockerfile 因 docker.io 被墙（maven 构建器拉不动）不可用 → `scripts/build-app-images-prebuilt.py --worker-docker-cli` 从本地 jar 构建 8 服务镜像（8/8 OK）→ `docker compose --profile app up -d` 重建容器 → **8/8 healthy**（gateway 对外 404 为 ActuatorGuardFilter 严格模式预期）→ **verify-p1-login 43/0** 回归全过 |
+| U3-落账 | 处置登记 + 证据 | ✅ DEPLOYMENT.md §8.4.1（镜像表/依赖表/ZAP 结果/方法论）；证据归档 `docs/security-evidence/2026-10-04-trivy/`（images-scan-full.txt / fs-modules-scan.txt / fs-api-after-upgrade.txt）+ `2026-10-04-zap/`（md/html/json + zap.yaml），commit dbb32e7 |
+| U4 | Playwright E2E 冒烟 | ✅ 两条链路（登录→落地 /problems；题库列表有数据）**2/2 通过**；@playwright/test 落 devDependencies，test-results/playwright-report 入 gitignore，commit 6c85b04 |
+
+### B 受阻 / C 待用户 / D 不做
+
+- U3/U4 无新增受阻。剩余：U5（remote 仓库+徽章）、U6（告警凭据）、U8（HTTPS 证书域名）、
+  U9（独立压测机）——全部需用户资源；U7 属上线后。
+- 方法论沉淀（复用价值）：①trivy 逐模块扫描绕 POM 分析器并发死线；②`--offline-scan` +
+  挂 `~/.m2:ro` 应对 Maven Central 429（Retry-After 1800s）；③trivy DB fixed 版本可能超前
+  Central 实际发布（10.1.58 教训），钉版前先 `mvn` 实证；④`build-app-images-prebuilt.py`
+  是 docker.io 被墙环境唯一可用镜像构建路径。
+

@@ -22,14 +22,18 @@
 >   0 错误 / 2466.6 req/s / 四 GET P95 8–12ms**；soak.jmx 定时重登实测两轮（T+25min/T+50min）
 >   如期触发无 401，§3.8.1 风暴根因闭环；§3.2 四项观测 + verify-p1-login **43/0** 全过。
 >   数字与观测全文落 PERF.md §3.8.2。
+>   **U3 已完成（2026-10-04 第九轮）**：trivy 镜像 4 张 + fs 逐模块 9 模块；3 个真实
+>   CRITICAL 升级落位（**tomcat 10.1.55 / netty 4.1.137.Final / bcprov 1.85**，fastjson 判误报，
+>   tomcat 残留 CVE-2026-65182 系上游 10.1.58 未发布→接受+跟进）；ZAP baseline **H0/M0/L0**；
+>   8 服务镜像重建重部署 8/8 healthy，verify-p1-login **43/0** 回归全过（dbb32e7）。
+>   **U4 第一批已完成（6c85b04）**：Playwright E2E 冒烟两条链路 **2/2 通过**。
 > - **未完成汇总**（详见下文「未完成任务」区）：
->   **U3** trivy/ZAP（BLOCKED 待外网，Docker 已恢复，命令已备）· **U5** remote+徽章（待用户）·
->   **U4** Playwright E2E（待外网+排期）· **U6** 告警通道凭据（待用户）·
+>   **U4** Playwright E2E 剩余链路（选题→提交→判题→榜单→AI 点评，渐进补）·
+>   **U5** remote+徽章（待用户）· **U6** 告警通道凭据（待用户）·
 >   **U7** 生产告警重标 · **U8** HTTPS · **U9** 独立压测机（生产化三件）。
-> - ✅ **环境现状（2026-10-04 傍晚）**：宿主已重启，Docker daemon 恢复后**全程无复发**
->   （重启前病灶链见执行报告第七轮/CONTEXT §5.20）；CodeJudge 全栈 20 容器 healthy；
->   **zx-\* 6 容器 restart 策略已改 `no` 并停机**（18d 约束永久落位）。依赖 Docker 的任务
->   （U3 扫描）开跑前仍先 `docker version` 预检。
+> - ✅ **环境现状（2026-10-04 晚）**：宿主已重启，Docker daemon 恢复后**全程无复发**
+>   （重启前病灶链见执行报告第七轮/CONTEXT §5.20）；CodeJudge 全栈 20 容器 healthy
+>   （第九轮已用升级后依赖重建 8 服务镜像并重部署）。
 
 ---
 
@@ -38,9 +42,9 @@
 CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端，`D:\1\CodeJudge`）静态交付全绿
 （`bash docs/launch-verify.sh` → 42/0），容器化全栈已于 2026-10-01 实测跑通
 （health / 登录 / 判题 / 日志→Loki / 压测全链路），五个收尾 commit 已落库。
-**当前无 CodeJudge 服务在跑，Docker daemon 故障中（500）。**
-剩余工作集中在：soak 长稳收口、扫描类（需外网）、CI/remote（需用户）、测试覆盖率、生产化三件（E4/M2/M4）。
-权威进度读 `docs/CONTEXT.md`（§5.13–§5.16）与执行报告（第二～第五轮表）。
+**2026-10-04 晚现状：宿主已重启，全栈 20 容器 healthy（8 服务镜像已含升级后依赖重部署）。**
+剩余工作集中在：E2E 剩余链路（渐进）、CI/remote（需用户）、生产化三件（E4/M2/M4）。
+权威进度读 `docs/CONTEXT.md`（§5.13–§5.22）与执行报告（第二～第九轮表）。
 
 ## 硬约束（先读，都是踩过的坑）
 
@@ -175,27 +179,22 @@ CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端�
   contest 与全 reactor `mvn test` 真跑（17）。证据与坑见执行报告「第六轮」/ CONTEXT §5.17。
 - 下一批覆盖率短板：judge-common 0.120 / problem 0.124 / gateway 0.260（抬全局到 0.30 的路径）。
 
-#### U3. T5 扫描类（需外网；命令已备，BLOCKED 不许硬凑）
+#### U3. T5 扫描类（✅ 已完成 2026-10-04 第九轮，处置全文见 DEPLOYMENT.md §8.4.1）
 
-1. trivy（10-01 实测：ghcr.io ~7KB/s ETA 5h、mirror.gcr.io 拒连——待有网环境）：
-   ```bash
-   for img in java21 python312 gcc13 go122; do
-     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
-       image --severity HIGH,CRITICAL --quiet codejudge/judge-$img:latest
-   done
-   docker run --rm -v "D:/1/CodeJudge:/repo:ro" aquasec/trivy:latest fs --scanners vuln \
-     --severity HIGH,CRITICAL --quiet /repo
-   ```
-   （Windows 下 docker run 加 `MSYS_NO_PATHCONV=1`。）
-   HIGH/CRITICAL 有命中逐条处置（升级 base / 白名单说明），写进 DEPLOYMENT.md §8.4 旁。
-2. ZAP baseline（zap 镜像本地不存在、docker.io 拉不动）：`zap-baseline.py -t http://host.docker.internal:9080`，高危清零。
+**结果**：镜像 4 张（java21 净 / python312 51H / gcc13 481H+32C / go122 1144H+26C，OS 包项接受）
++ fs 逐模块 9 模块（并发扫有 POM 分析器死线 bug，须逐模块）；3 真实 CRITICAL 钉版清零
+（tomcat 10.1.55 / netty 4.1.137.Final / bcprov 1.85），fastjson 误报（dependency:tree 零命中）；
+ZAP baseline H0/M0/L0；镜像重建（`build-app-images-prebuilt.py --worker-docker-cli`，被墙环境
+唯一构建路径）+ 重部署 + verify-p1-login 43/0。证据 `docs/security-evidence/2026-10-04-{trivy,zap}/`。
+遗留跟进：tomcat CVE-2026-65182（上游 10.1.58 发布后升版复扫）；trivy DB 拉取用
+`--db-repository ghcr.io/aquasecurity/trivy-db`（mirror.gcr.io 拒连）。
 
-#### U4. T8 Playwright E2E（需外网装 chromium；工作量独立可排期）
+#### U4. T8 Playwright E2E（✅ 第一批已完成 2026-10-04：冒烟 2/2，6c85b04；剩余链路渐进补）
 
-- 覆盖：登录 → 选题 → 编辑 → 提交 → 看判题结果 → 查榜单 → AI 点评；
-  先做登录+题库两条冒烟链路跑通框架，其余渐进补。
-- 基础设施：`judge-web` 内 `npx playwright install chromium`（下载浏览器需网）。
-- 注意登录限流（2 req/s 突发 5）：E2E 复用会话为主，避免循环反复登录。
+- **已完成**：登录 → 落地 /problems；题库列表有数据。两条冒烟链路 2/2 通过
+  （serial + storageState 复用避登录限流；`judge-web/e2e/smoke.spec.js`，
+  凭据 13900000001/123456 与 verify-p1-login 同源；跑法 `cd judge-web && npm run test:e2e`）。
+- **剩余（渐进补）**：选题 → 编辑 → 提交 → 看判题结果 → 查榜单 → AI 点评。
 
 #### U5. T7 remote / 徽章 / 首次 Actions（需用户建 remote）
 
