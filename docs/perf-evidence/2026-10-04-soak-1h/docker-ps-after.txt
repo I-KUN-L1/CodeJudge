@@ -1,0 +1,20 @@
+﻿codejudge-judge-gateway-1	Up About an hour (healthy)
+codejudge-judge-auth-1	Up About an hour (healthy)
+codejudge-judge-contest-1	Up About an hour (healthy)
+codejudge-judge-submission-1	Up About an hour (healthy)
+codejudge-judge-user-1	Up About an hour (healthy)
+codejudge-judge-ai-1	Up About an hour (healthy)
+codejudge-judge-problem-1	Up About an hour (healthy)
+codejudge-mq-broker	Up About an hour
+codejudge-mysql	Up About an hour (healthy)
+codejudge-redis	Up About an hour (healthy)
+codejudge-pg	Up About an hour (healthy)
+codejudge-mq-namesrv	Up About an hour
+codejudge-judge-worker	Up About an hour (healthy)
+codejudge-judge-web	Up About an hour
+codejudge-promtail	Up About an hour
+codejudge-loki	Up About an hour (healthy)
+codejudge-mq-console	Up About an hour
+codejudge-grafana	Up About an hour (healthy)
+codejudge-alertmanager	Up About an hour (healthy)
+codejudge-prometheus	Up About an hour (healthy)
