@@ -23,6 +23,10 @@ Thumbs.db
 logs/
 *.log
 nohup.out
+# 例外：测试证据归档目录内的日志属于证据本体，必须入库可追溯
+!docs/perf-evidence/**/*.log
+!docs/security-evidence/**/*.log
+!docs/e2e-evidence/**/*.log
 
 # ---------- 环境变量与凭据（仓库零硬编码，只保留模板） ----------
 .env
