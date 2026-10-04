@@ -1,0 +1,8 @@
+﻿
+Running 2 tests using 1 worker
+
+  ✓  1 e2e\smoke.spec.js:14:1 › 登录冒烟链路：手机号+密码 → 登录成功落地题库 (1.0s)
+  ✓  2 e2e\smoke.spec.js:30:1 › 题库冒烟链路：题库列表可渲染且有题目数据 (756ms)
+
+  2 passed (5.1s)
+exit=0
