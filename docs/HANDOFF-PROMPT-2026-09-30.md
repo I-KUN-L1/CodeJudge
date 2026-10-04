@@ -15,15 +15,18 @@
 >   T9（cj_judge_e2e 六 verdict 序列对齐）｜ T10（Loki 全链路 + requestId 命中）｜
 >   T11 已落地五项（MinIO app profile / broker store 卷 / 提交页列宽 / READINESS 同步 / JaCoCo 首批 6 类 49 例）。
 >   **容器化全栈（compose --profile app，8 服务 + web）已于 2026-10-01 实测跑通全链路。**
+>   **U2 已完成（2026-10-03 第六轮）**：contest 覆盖率 0.047→**0.748**（6 类 66 例新测试，
+>   contest 84 例全绿），双棘轮落 pom（全局 0.04→0.10 + contest 专属 0.70），
+>   全 reactor `mvn verify` BUILD SUCCESS（11 模块 321 例，CI 同命令）。
 > - **未完成汇总**（详见下文「未完成任务」区）：
->   **T4.2 有效 1h soak**（30min 处被 access token TTL 截断，需续签改造，复盘见 PERF.md §3.8.1）·
->   **T5** trivy/ZAP（BLOCKED 待外网，命令已备）· **T7** remote+徽章（待用户）·
->   **T8** Playwright E2E（待外网+排期）· **F1** 告警通道凭据（待用户）·
->   **JaCoCo 0.04→0.30**（contest 0.05 短板，可立即做）·
->   **E4** 生产告警重标 · **M2** HTTPS · **M4** 独立压测机（生产化三件）。
-> - ⚠️ **环境现状（2026-10-03）**：Docker daemon 再次故障（`docker ps` 返回
->   dockerDesktopLinuxEngine 500；vmmemWSL 占 4GB，宿主空闲仅 3.1/15.2GB）。
->   依赖 Docker 的任务开跑前先 `docker version` 预检；修复属用户动作（见 U0）。
+>   **U1 有效 1h soak**（BLOCKED 待 Docker 恢复；soak.jmx 定时重登改造**已就绪**，见 §5.18/CONTEXT）·
+>   **U3** trivy/ZAP（BLOCKED 待 Docker+外网，命令已备）· **U5** remote+徽章（待用户）·
+>   **U4** Playwright E2E（待外网+排期）· **U6** 告警通道凭据（待用户）·
+>   **U7** 生产告警重标 · **U8** HTTPS · **U9** 独立压测机（生产化三件）。
+> - ⚠️ **环境现状（2026-10-04 第七轮复检）**：Docker Desktop **本体未启动**（无 docker 进程、
+>   vmmemWSL 不存在、npipe dockerDesktopLinuxEngine 管道缺失；较 10-03 的 daemon 500 更进一步）。
+>   宿主空闲 6.36/15.2GB，**已过 soak 预检线 6GB**。用户动作 = 启动 Docker Desktop 即可
+>   （栈随 restart 策略自动拉起；若 VM 病态依旧再重启宿主）。依赖 Docker 的任务开跑前先 `docker version` 预检。
 
 ---
 
@@ -124,10 +127,11 @@ CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端�
 
 #### U0. 环境预检与 Docker daemon 修复（用户动作；其余任务的前置）
 
-- 现状（10-03）：daemon 500（dockerDesktopLinuxEngine 内部错误）、vmmemWSL 4GB、宿主空闲 3.1/15.2GB。
-- 用户动作顺序：① 托盘退出 Docker Desktop → `explorer.exe "C:\Program Files\Docker\Docker\Docker Desktop.exe"`
-  中转重启 → `docker version` 出 Server 段；② 仍 500 → **重启电脑**（先确认 zx-learn 等
-  大内存负载不在跑，见硬约束 18d）。
+- 现状（10-04 第七轮复检）：**Docker Desktop 本体未启动**（无 docker 进程 / vmmemWSL 不存在 /
+  npipe 管道缺失）；宿主空闲 6.36/15.2GB（已达标 6GB 预检线）。
+- 用户动作顺序：① 直接启动 Docker Desktop → `docker version` 出 Server 段（栈随 restart 策略
+  自动拉起，无需手工起栈）；② 若 VM 病态依旧（daemon 500 / 探活异常）→ **重启电脑**
+  （先确认 zx-learn 等大内存负载不在跑，见硬约束 18d）。
 - AI 侧只做预检与记录（`docker version` / 内存余量 / 容器自启情况），不重复拉起手段（硬约束 13）。
 
 #### U1. T4.2 有效 1h soak（U0 恢复后第一个跑；先做续签改造）
@@ -148,13 +152,18 @@ CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端�
    .jtl 分阶段抽样解析，数据不丢）。
 4. 跑后：RUNBOOK §3.2 观测项 + `verify-p1-login.py` 43/0 + 数字补 PERF.md §3.8.2 与执行报告。
 
-#### U2. JaCoCo 棘轮 0.04 → 0.30（不依赖环境，可立即做）
+#### U2. JaCoCo 棘轮 0.04 → 0.30（✅ 已完成 2026-10-03 第六轮，超出目标）
 
-- 现状：LINE ai 0.21 / worker 0.136 / contest 0.05（短板），门禁 0.04 仍绿。
-- 下批优先 contest（体量大且难测）：评估只对 service 包设 per-class 棘轮，或补
-  lifecycle / result handler 的 mockito 测试。
-- 纪律：本地构建 `-Djacoco.skip=true`（**CI 不绕**，硬约束 15）；动 judge-common 先 `install`
-  （硬约束 14）；给既有 Bean 加构造依赖必须真跑 `mvn test`（硬约束 17）。
+- ✅ **contest 补测 6 类 66 例（18→84 例）**：lifecycle / result handler / rank service
+  （Lua 参数逐位断言 + 三段解码渲染）/ pusher / service 建赛与 context / WS 特权门。
+  `mvn -pl judge-contest test` **84/0**。
+- ✅ **覆盖率**：contest LINE **0.047 → 0.748**（jacoco.csv 702/237）。
+- ✅ **双棘轮**：根 pom 全局下限 0.04 → **0.10**（新最低 common 0.120 留余量）；
+  judge-contest 模块专属 **check-contest 0.70** 锁高位。
+- ✅ **CI 同命令实证**：全 reactor `mvn -B -ntp verify` **BUILD SUCCESS**（11 模块 321 例全绿）。
+- 纪律遵守：未改 judge-common（14 N/A）；全程未用 `-Djacoco.skip=true`（15）；
+  contest 与全 reactor `mvn test` 真跑（17）。证据与坑见执行报告「第六轮」/ CONTEXT §5.17。
+- 下一批覆盖率短板：judge-common 0.120 / problem 0.124 / gateway 0.260（抬全局到 0.30 的路径）。
 
 #### U3. T5 扫描类（需外网；命令已备，BLOCKED 不许硬凑）
 

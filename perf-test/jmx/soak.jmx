@@ -40,6 +40,12 @@
     计划性质：**长稳（soak）** —— 低并发恒定负载跑 1h，用于探内存泄漏 / 连接耗尽 / 慢查询累积。
      判定口径：P95 与错误率沿用统一门槛；吞吐只报数不判定（恒定负载模型下低并发吞吐天然低）。
      观测配套：跑的同时盯 Grafana(jvm/actuator) 与 judge_queue_backlog；结束后看容器内存曲线。
+     token 续签（收口 PERF.md §3.8.1 的 401 风暴）：每线程维护 LOGIN_TS，主循环每次迭代检测
+       「距今 > reloginAfterSec（默认 1500s=25min，为 30min TTL 留 5min 余量）+ threadNum×
+       reloginJitterSec（默认 10s）」即重登。18 线程错峰散布约 2 分钟，峰值并发登录约 2/s，
+       不触碰登录限流 replenish=2/s。登录失败时经 JSR223 后置脚本回退 LOGIN_TS，约 60s 后重试
+       （回退量 1440s 与默认阈值 1500s 耦合，若改 reloginAfterSec 需留意）。可用
+       -JreloginAfterSec / -JreloginJitterSec 覆盖，无需改本文件。
     4) 自定义并发 / 时长 —— 通过 -J 覆盖 tgBrowse.threads / tgRank.duration 等。
     （本节刻意不写带连续减号的完整命令行：XML 注释里不允许出现两个连续的减号，
       写了会让整个计划文件解析失败，JMeter 报 "not well-formed"。这是个反复踩到的坑。）
@@ -80,6 +86,11 @@
           <elementProp name="CONTEST_ID" elementType="Argument">
             <stringProp name="Argument.name">CONTEST_ID</stringProp>
             <stringProp name="Argument.value">${__P(contestId,5001)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="LOGIN_TS" elementType="Argument">
+            <stringProp name="Argument.name">LOGIN_TS</stringProp>
+            <stringProp name="Argument.value">0</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
@@ -153,7 +164,11 @@
           </collectionProp>
         </HeaderManager>
         <hashTree/>
-        <OnceOnlyController guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" testname="仅首次：登录" enabled="true"/>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="token 缺失或临近过期 → 登录/重登" enabled="true">
+          <stringProp name="IfController.condition">${__jexl3(${LOGIN_TS} == 0 || ${__time()} - ${LOGIN_TS} &gt; (${__P(reloginAfterSec,1500)} + ${__threadNum} * ${__P(reloginJitterSec,10)}) * 1000,)}</stringProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+        </IfController>
         <hashTree>
           <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /accounts/login" enabled="true">
             <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
@@ -191,6 +206,18 @@
               <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
               <stringProp name="JSONPostProcessor.defaultValues">NO_TOKEN</stringProp>
             </JSONPostProcessor>
+            <hashTree/>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="登记登录时刻 LOGIN_TS" enabled="true">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">def tok = vars.get("token")
+long now = System.currentTimeMillis()
+if (tok != null &amp;&amp; !"NO_TOKEN".equals(tok)) {
+    vars.put("LOGIN_TS", String.valueOf(now))
+} else {
+    vars.put("LOGIN_TS", String.valueOf(now - 1440000L))
+}</stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223PostProcessor>
             <hashTree/>
           </hashTree>
         </hashTree>
@@ -305,7 +332,11 @@
           </collectionProp>
         </HeaderManager>
         <hashTree/>
-        <OnceOnlyController guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" testname="仅首次：登录" enabled="true"/>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="token 缺失或临近过期 → 登录/重登" enabled="true">
+          <stringProp name="IfController.condition">${__jexl3(${LOGIN_TS} == 0 || ${__time()} - ${LOGIN_TS} &gt; (${__P(reloginAfterSec,1500)} + ${__threadNum} * ${__P(reloginJitterSec,10)}) * 1000,)}</stringProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+        </IfController>
         <hashTree>
           <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /accounts/login" enabled="true">
             <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
@@ -343,6 +374,18 @@
               <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
               <stringProp name="JSONPostProcessor.defaultValues">NO_TOKEN</stringProp>
             </JSONPostProcessor>
+            <hashTree/>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="登记登录时刻 LOGIN_TS" enabled="true">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">def tok = vars.get("token")
+long now = System.currentTimeMillis()
+if (tok != null &amp;&amp; !"NO_TOKEN".equals(tok)) {
+    vars.put("LOGIN_TS", String.valueOf(now))
+} else {
+    vars.put("LOGIN_TS", String.valueOf(now - 1440000L))
+}</stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223PostProcessor>
             <hashTree/>
           </hashTree>
         </hashTree>
