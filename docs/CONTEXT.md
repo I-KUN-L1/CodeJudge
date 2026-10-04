@@ -749,6 +749,26 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
   U1 恢复路径不变：**重启 Windows**（zx-learn 不自启）→ Docker Desktop → 停 zx-learn 5 容器 →
   预检 → 1h soak（首 10min 兼 shakedown 劣化监测）。
 
+### 5.21 2026-10-04 傍晚：宿主重启后 U1 收口——1h soak 全绿，T4.2 结案
+
+- **宿主重启生效**：daemon 恢复后全程无复发（对比 §5.20 未重启 5min 复病）；全栈 20 容器
+  自动拉起 8 服务 healthy；网关单请求 0.52s。**zx-\* 6 容器 `docker update --restart=no`
+  + stop**（运行时策略才是自启开关，compose 文件只是源头同步）——zx-learn-mysql 原来是
+  Created 态从未跑过。
+- **1h soak（`--plan soak --no-html`）**：有效窗口 3599.8s，**8,879,545 样本 0 错误
+  2466.6 req/s**；四 GET P95 8–12ms；登录 54 样本 P95 192ms；门槛 5 PASS/0 FAIL。
+  数字与观测全文落 **PERF.md §3.8.2**。
+- **续签机制闭环**：54 登录 = 18 首登 + 18@T+25min + 18@T+50min，两轮错峰重登如期触发、
+  全程无 401——§3.8.1 的 401 风暴根因实测移除。
+- **§3.2 观测**：JVM 锯齿 min 全服务回落 134–164MB 无爬升（max 为 GC 前相位，problem 425MB
+  < 堆限，**无泄漏特征**）；Hikari pending 全程 0 / active 结束归零；backlog=0；死信 7 条
+  全为 10-01/10-03 历史遗留 0 新增；verify-p1-login **43/0**。
+- **经验**：①Prometheus 聚合函数套区间必须用子查询步长 `[70m:30s]`（否则返回空）；②后台
+  shell 任务句柄不能 TaskOutput 阻塞轮询，用「Start-Sleep 合并探针」按 8–10min 节奏观测；
+  ③jtl 登录样本计数（Select-String 计数）是验证重登触发的最直接证据。
+- 剩余：U3（Docker+外网）/ U4（外网+排期）/ U5（remote）/ U6（凭据）/ U7/U9（上线后）/
+  U8（证书域名），卡点同 HANDOFF。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash
