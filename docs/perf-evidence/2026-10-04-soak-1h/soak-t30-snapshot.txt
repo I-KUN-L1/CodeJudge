@@ -1,0 +1,27 @@
+﻿### hikari_pending
+judge-user = 0
+judge-ai = 0
+judge-contest = 0
+judge-auth = 0
+judge-problem = 0
+judge-submission = 0
+judge-worker = 0
+### hikari_active
+judge-user = 0
+judge-ai = 0
+judge-contest = 0
+judge-auth = 0
+judge-problem = 7
+judge-submission = 1
+judge-worker = 0
+### backlog
+judge-submission = 0
+### jvm
+judge-worker = 164,211,872
+judge-user = 208,548,320
+judge-gateway = 233,868,840
+judge-ai = 200,987,320
+judge-contest = 208,431,904
+judge-auth = 172,627,360
+judge-problem = 338,647,480
+judge-submission = 203,204,344

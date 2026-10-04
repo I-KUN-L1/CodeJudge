@@ -1,0 +1,19 @@
+﻿captured: 2026-10-04 18:30:43 window: last 70min (step 30s)
+min_over_time (MB):
+judge-ai = 137
+judge-auth = 150
+judge-contest = 175
+judge-gateway = 152
+judge-problem = 191
+judge-submission = 171
+judge-user = 149
+judge-worker = 154
+max_over_time (MB):
+judge-ai = 211
+judge-auth = 242
+judge-contest = 309
+judge-gateway = 311
+judge-problem = 425
+judge-submission = 293
+judge-user = 268
+judge-worker = 238

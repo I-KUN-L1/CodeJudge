@@ -297,5 +297,10 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
 
 - 无新增受阻项。剩余未完成任务与上轮一致：U3（Docker+外网）、U4（外网+排期）、U5（remote）、
   U6（凭据）、U7/U9（上线后/生产化）、U8（证书域名）。
-- 证据文件：`perf-test/results/soak.jtl`（完整落盘）、`$TEMP/soak-t0|t30|t60-snapshot.txt`（Prometheus 快照）。
+- 证据文件（已归档 `docs/perf-evidence/2026-10-04-soak-1h/`，随库提交）：`run-perf-console.log`
+  （run-perf.py 全程控制台输出含最终报告表）、`soak-t0|t30|t60-snapshot.txt`（Prometheus 快照）、
+  `prom-jvm-envelope-70min.txt`（JVM 锯齿包络 min/max）、`docker-ps-after.txt`/`docker-stats-after.txt`
+  （跑后系统状态）。大体量原始数据（gitignore 内，留存本机磁盘）：
+  `perf-test/results/soak.jtl`（约 2.2GB，890 万行原始样本）、`perf-test/results/soak-jmeter.log`
+  （30s summariser 全量日志）。
 
