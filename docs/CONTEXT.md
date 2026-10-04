@@ -769,6 +769,27 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
 - 剩余：U3（Docker+外网）/ U4（外网+排期）/ U5（remote）/ U6（凭据）/ U7/U9（上线后）/
   U8（证书域名），卡点同 HANDOFF。
 
+### 5.22 2026-10-04 晚：U3 漏洞扫描收口（三 CRITICAL 升级落位 + 重部署回归 43/0）+ U4 E2E 冒烟 2/2
+
+- **U3a trivy**：4 张基础/沙箱镜像（java21 净 / python312 51H / gcc13 481H+32C / go122 1144H+26C，
+  OS 包陈旧项接受+随 base 刷新）；9 模块 POM 逐个扫——**多目录并发 POM 分析器有死线 bug**
+  （semaphore deadline exceeded，加 timeout/offline 均无效），逐模块单独扫绕过。真实 CRITICAL
+  3 个：tomcat 10.1.31 / netty 4.1.114.Final / bcprov 1.78。
+- **升级钉版**：根 pom 钉 tomcat 10.1.55 / netty 4.1.137.Final / bcprov 1.85（dependencyManagement
+  覆盖传递依赖）。教训：**trivy DB 标记的 fixed 版本可能超前 Central 实际发布**（tomcat 10.1.58
+  mvn "was not found"，回退 10.1.55，残留 CVE-2026-65182 记接受+跟进）；bcprov 1.81.1 复扫又出
+  CVE-2026-8763 → 直接 1.85。**fastjson CRITICAL 系误报**（11 模块 dependency:tree 零命中）。
+  Maven Central 429 后 IP 级封 30min → `--offline-scan` + 挂 `~/.m2:ro`。
+- **重部署**：多阶段 Dockerfile 拉不动 maven 构建器（docker.io 被墙）→
+  `build-app-images-prebuilt.py --worker-docker-cli` 本地 jar 构建 8 镜像 → compose up -d
+  重建 → 8/8 healthy → **verify-p1-login 43/0**。`build-app-images-prebuilt.py` 是被墙环境
+  唯一可用构建路径。
+- **U3b ZAP**：baseline H0/M0/L0（仅 1 条 Info 级缓存提示不处置）；**U4**：Playwright 冒烟
+  2/2（serial + storageState 复用避登录限流；凭据 13900000001/123456 与 verify-p1-login 同源）。
+- 落账：DEPLOYMENT.md §8.4.1 + `docs/security-evidence/2026-10-04-{trivy,zap}/`，dbb32e7；
+  U4 为 6c85b04。执行报告第九轮。
+- 剩余：U5（remote+徽章）/ U6（告警凭据）/ U8（HTTPS）/ U9（独立压测机）需用户资源；U7 上线后。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash
