@@ -263,3 +263,15 @@ T0 / T2 / T3 / T4 / T5 / T9-T10 运行时验证 / T6（待拍板）/ T7（待 re
 
 - 无新增。U7（E4 生产告警重标）依赖生产环境真实流量，属上线后动作，本轮不动。
 
+### U1 首攻（10-04 下午）：用户启动 Docker 未重启宿主，VM 复病，U1 再标 BLOCKED
+
+时间线（证据链完整）：16:41 `docker version/ps` 正常、全栈 20 容器随 restart 策略自动拉起
+（8 服务 healthy，含 zx-learn 基础设施 5 容器意外自启）；16:42 宿主空闲 1.32GB +
+host→容器 health 探测 5/8 超时；16:43 `docker stats` daemon API **500**；16:55 `docker ps`
+挂起无输出；16:56 host→网关单请求挂死。**全程无压测负载，恢复后约 5 分钟内劣化**，
+与 §5.18「宿主↔VM 通信层病灶（vmcompute/HNS）」同型。经确认用户仅启动了 Docker Desktop、
+**未重启 Windows**——复发符合预期（病灶未重置）。处置：停止恢复循环（硬约束 13/教训），
+soak 未开跑，**U1 维持 BLOCKED 待用户重启宿主**。重启后流程：启动 Docker Desktop →
+AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存≥6GB/GW_LOGIN_RATE 默认
+2/5 已核实）→ 10min shakedown 并入 1h soak 首 10min 劣化监测 → 1h 全量。
+

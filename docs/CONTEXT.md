@@ -737,6 +737,18 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
   contest pom 棘轮 / soak.jmx 续签 / 3 文档；+6 个新测试类未跟踪），待用户确认后入库。
 - 未动：U3（Docker+外网双卡点）/ U4 / U5 / U6 / U8 / U9（卡点同 HANDOFF）；U7 属上线后动作。
 
+### 5.20 2026-10-04 下午：用户启动 Docker（未重启宿主）→ VM 5 分钟内复病，U1 仍 BLOCKED
+
+- 用户启动 Docker Desktop 后 16:41 daemon 正常、全栈 20 容器自动拉起（8 服务 healthy）；
+  **16:42-16:56 无负载劣化**：宿主空闲 1.32GB + health 探测 5/8 超时 → daemon API 500
+  （docker stats）→ `docker ps` 挂起 → host→网关单请求挂死。与 §5.18 病灶同型，复发符合
+  「未重启宿主」预期（用户确认只启动了 Docker）。
+- 新增事实：**zx-learn 基础设施 5 容器（redis/pg/mq/namesrv/console）会随 restart 策略自启**，
+  与 CodeJudge 全栈共存触发 18d 约束——重启后 Docker 恢复的第一动作是先停这 5 容器再预检。
+- 处置：停止恢复循环；soak 未开跑（GW_LOGIN_RATE 默认 2/5 已核实 .env，跑前无需放宽）。
+  U1 恢复路径不变：**重启 Windows**（zx-learn 不自启）→ Docker Desktop → 停 zx-learn 5 容器 →
+  预检 → 1h soak（首 10min 兼 shakedown 劣化监测）。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash
