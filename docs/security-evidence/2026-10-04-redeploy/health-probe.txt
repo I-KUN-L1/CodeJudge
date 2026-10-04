@@ -1,0 +1,9 @@
+﻿9081 -> 200
+9082 -> 200
+9083 -> 200
+9084 -> 200
+9085 -> 200
+9086 -> 200
+9087 -> 200
+9080 -> 404 (ActuatorGuardFilter strict-mode expected for external source; container-internal healthcheck = healthy)
+probe at 2026-10-04 20:19:55

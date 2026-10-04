@@ -1,0 +1,116 @@
+# CodeJudge 上线收尾执行提示词（2026-10-04 版）
+
+> 接替 `docs/HANDOFF-PROMPT-2026-09-30.md`（该版 U0–U4 第一批已全部结案，勿按旧版开新会话）。
+> 权威进度：`docs/CONTEXT.md`（§5.13–§5.22）、执行报告 `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`
+> （第二～第九轮）、`docs/PERF.md` §3.8、`docs/DEPLOYMENT.md` §8.4.1。
+
+---
+
+## 一、任务背景（一句话版）
+
+CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端，仓库 `D:\1\CodeJudge`）：
+静态交付全绿（`launch-verify.sh` 42/0）、容器化全栈实测跑通、**1h soak 全绿
+（8,879,545 样本 0 错误 / 2466.6 req/s / 四 GET P95 8–12ms）**、漏洞扫描收口
+（3 个真实 CRITICAL 依赖升级落位 + ZAP H0/M0/L0）、E2E 冒烟 2/2。
+**2026-10-04 晚现状：宿主已重启，全栈 20 容器 healthy，8 服务镜像已含升级后依赖重部署，
+verify-p1-login 43/0。** 剩余工作全部为「渐进补测试 / 用户资源依赖 / 上线后动作」。
+
+## 二、已完成进度（勿重做）
+
+| 任务 | 结果 | 证据/提交 |
+|---|---|---|
+| U0 环境 | 宿主重启后 daemon 无复发；zx-\* 6 容器自启永久关闭（compose 源头 + 运行时策略双落位） | CONTEXT §5.20/§5.21 |
+| U1 1h soak（T4.2 结案） | 8,879,545 样本 0 错误 2466.6 req/s；soak.jmx 定时重登实测 54=18+18+18 无 401；§3.2 四项观测过 | PERF.md §3.8.1/§3.8.2；perf-evidence/2026-10-04-soak-1h/（becf8be） |
+| U2 JaCoCo | contest 补测 84 例 LINE 0.047→0.748；双棘轮 全局 0.10 + contest 0.70；全 reactor verify 11 模块绿 | 执行报告「第六轮」/ CONTEXT §5.17 |
+| U3 trivy | 镜像 4 张 + fs 逐模块 9 模块；**tomcat 10.1.55 / netty 4.1.137.Final / bcprov 1.85** 钉版清零；fastjson 判误报；镜像重建重部署 8/8 healthy + verify-p1-login 43/0 | DEPLOYMENT.md §8.4.1；security-evidence/2026-10-04-{trivy,redeploy}/（dbb32e7） |
+| U3 ZAP | baseline H0/M0/L0（仅 1 条 Info 级缓存提示，不处置） | security-evidence/2026-10-04-zap/（dbb32e7） |
+| U4 第一批 | Playwright E2E 冒烟 2 条链路 2/2 通过（登录→落地；题库列表） | e2e-evidence/2026-10-04-smoke/（6c85b04） |
+
+## 三、未完成任务队列（按优先级与解锁条件）
+
+### U4b. Playwright E2E 剩余链路（无外部依赖，可立即做）
+- **目标**：补齐 选题 → 编辑 → 提交 → 看判题结果 → 查榜单 → AI 点评。
+- **做法**：扩展 `judge-web/e2e/smoke.spec.js`（或新增分文件）；沿用 serial 模式 +
+  storageState 复用（登录限流 2 req/s burst 5，严禁循环反复登录）；提交用种子题目 +
+  学员账号 13900000001/123456；判题结果断言走轮询页面状态而非固定 sleep。
+- **验收**：全部链路 `npm run test:e2e` 通过；日志归档 `docs/e2e-evidence/<日期>-<主题>/`；
+  执行报告追加轮次 + CONTEXT 追加小节。
+- **注意**：必须在 `judge-web/` 目录内跑（仓库根会误扫 vitest）；Chromium 与本地
+  @playwright/test 版本必须匹配（`npm exec playwright install chromium` 用本地版本补装）。
+
+### U5. remote 仓库 / README 徽章 / 首次 Actions（需用户：创建远程仓库）
+1. 用户建 remote 后：`git remote add origin <url>` 并推送。
+2. 替换 README 徽章占位符 `YOUR_GITHUB_ORG/CodeJudge`（共 5 处：CI/Java/Spring Boot/License/Coverage）。
+3. 首推后确认 GitHub Actions 真跑 `.github/workflows/ci.yml`（本地从未跑过 Actions；
+   CI 门禁 = 全局 LINE 0.10 + contest 0.70，本地同命令已实证 BUILD SUCCESS，首日不会变红）。
+
+### U6. F1 告警通道（需用户：提供凭据）
+- Slack/钉钉/邮件 webhook 凭据 → 配置进 Alertmanager（`deploy/monitoring/`）→
+  配一条测试告警验证触达。
+
+### U8. HTTPS（需用户：域名 + 证书）
+- 网关 9080 前置 TLS 终结（或网关自身 SSL）；证书/域名到位前不硬凑。
+
+### U9. 独立压测机（需用户：第二台机器）
+- 1h soak 目前与本机共宿主；独立压测机到位后复跑对标（soak.jmx 已含定时重登，可直接搬）。
+
+### U7. E4 生产告警重标（上线后动作）
+- 全部告警阈值仅适用本地基线；上线后按真实流量用 `scripts/recalibrate-alerts.py` 重标
+  （脚本已有两道守卫：样本稀疏不计入、无提交流量不改阈值）。
+
+### 遗留跟进：tomcat CVE-2026-65182（非阻塞，条件触发）
+- 现状：trivy DB 标记修复版 10.1.58，但 Central 尚未发布（mvn "was not found" 实证），按
+  「接受+跟进」登记（DEPLOYMENT.md §8.4.1）。
+- 触发条件：`https://repo1.maven.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/`
+  出现 10.1.58+ → 根 pom `<tomcat.version>` 升版 → `mvn install` → trivy 复扫 judge-api
+  → 8 镜像重建重部署 → verify-p1-login 回归。
+
+## 四、硬约束精选（都是踩过的坑，全量见旧版 HANDOFF「硬约束」节）
+
+1. **构建**：改 judge-common 先 `mvn install`；`jacoco.skip` 仅限本地、CI 禁用；给既有 Bean
+   加构造依赖必须真跑 `mvn test`；`mvn` 不在 PATH，用 wrapper dist
+   `C:\Users\20670\.m2\wrapper\dists\apache-maven-3.9.16-bin\...\bin\mvn.cmd`。
+2. **镜像**：docker.io 被墙，多阶段 Dockerfile 不可用；唯一构建路径
+   `python scripts/build-app-images-prebuilt.py --worker-docker-cli`（本地 jar → 运行时镜像），
+   然后 `docker compose --profile app up -d`；重部署后必跑 verify-p1-login。
+3. **trivy**：fs 多目录并发有 POM 分析器死线 bug → 逐模块扫；DB 用
+   `--db-repository ghcr.io/aquasecurity/trivy-db`；Central 429 后 IP 封 30min →
+   `--offline-scan` + 挂 `~/.m2:ro`；DB fixed 版本可能超前 Central，钉版前先 mvn 实证。
+4. **环境**：`python` 用 `C:\Users\20670\AppData\Local\Programs\Python\Python311\python.exe`
+   且设 `PYTHONPYCACHEPREFIX=$env:TEMP\pycache`；detached 服务进程启动必须关沙箱；
+   后台任务句柄不能 TaskOutput 轮询 → `Start-Sleep ≤570s` 合并探针；会话结束杀后台任务
+   （长跑须有落盘事后复盘预案）；PowerShell 原生命令进管道会挂（mvn/npm 用纯重定向），
+   git 提交信息用单行 `-m`；`run-perf.py -J` 参数必须空格分隔。
+5. **安全**：生产 `.env` 必须 `CJ_DOC_WHITELIST_ENABLED=false` + 设 `CJ_ACTUATOR_TOKEN`
+   （轮换同步 Prometheus yml，两处）；`/problems/{id}` 永不加入网关白名单；
+   用户信息非管理员脱敏。
+6. **资源**：CodeJudge 全栈与 zx-learn 不同机同跑（zx-learn 自启已永久关闭）；9 容器同启
+   曾压垮 daemon（分批 up -d）；WSL2 VM 无负载复病 = 唯一正解重启 Windows，停止恢复循环。
+
+## 五、汇报格式
+
+按 **A/B/C/D** 分类：A 已完成（附证据与提交号）/ B 受阻（附精确卡点）/ C 待用户（附所需资源）/
+D 不做（附理由）。阻塞项标注 BLOCKED 不许假绿（**假绿比 FAIL 危险**）。
+每轮同步：执行报告追加轮次表 + `docs/CONTEXT.md` 追加小节 + 本文件状态更新 + project memory。
+
+---
+
+## 六、可直接粘贴的新对话提示词
+
+```text
+请先完整阅读 docs/HANDOFF-PROMPT-2026-10-04.md（CodeJudge 上线收尾执行提示词，2026-10-04 版），
+理解任务背景、已收口进度（勿重做）与未完成任务队列，然后按以下顺序执行：
+
+1. U0 环境预检：docker version + 宿主内存余量 + 容器健康状态，报告现状；异常则先按
+   文档「硬约束精选」第 6 条处置，不许硬凑。
+2. 立即可做：U4b Playwright E2E 剩余链路（选题→编辑→提交→判题结果→榜单→AI 点评）。
+   严格复用 storageState 避免登录限流；跑法必须在 judge-web/ 目录内；完成后日志归档
+   docs/e2e-evidence/<日期>-<主题>/ 并提交。
+3. 无外部资源可做的任务结束后，逐项输出 U5/U6/U8/U9 的精确卡点与所需用户配合
+   （remote 仓库 / 告警 webhook 凭据 / 域名证书 / 独立压测机），不得跳过验收假绿。
+4. 遗留跟进检查（仅当有网）：查询 Maven Central tomcat-embed-core 是否已发布 10.1.58+；
+   若已发布则按文档「遗留跟进」节流程执行升版→复扫→重部署→回归。
+
+汇报按 A/B/C/D 分类（已做附证据 / 受阻附卡点 / 待用户 / 不做附理由），
+同步更新执行报告（新开「第十轮」）与 CONTEXT.md（追加 §5.23+），结束后给上线提醒总结。
+```
