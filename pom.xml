@@ -53,6 +53,15 @@
         <postgresql.version>42.7.4</postgresql.version>
         <!-- pgvector JDBC 封装：把 float[] 以二进制形式绑定到 vector 列，避免手写字符串转换 -->
         <pgvector.version>0.1.5</pgvector.version>
+
+        <!-- 安全升级（U3/T5 trivy 扫描处置，见 DEPLOYMENT.md §8.4.1）：
+             Boot 3.3.5 托管的 tomcat 10.1.31 与 netty 4.1.114.Final 按修复线升级。
+             tomcat 钉 10.1.55 = Central 实际最高（DB 标记的修复版 10.1.58 尚未发布，
+             残留 CVE-2026-65182 接受+跟进）；netty 4.1.137.Final（CVE-2026-75595 修复版） -->
+        <tomcat.version>10.1.55</tomcat.version>
+        <netty.version>4.1.137.Final</netty.version>
+        <!-- bouncycastle 1.78（CVE-2025-14813）→ 1.81.1 复扫暴露 CVE-2026-8763 → 钉 1.85 -->
+        <bouncycastle.version>1.85</bouncycastle.version>
     </properties>
 
     <dependencyManagement>
@@ -72,6 +81,13 @@
                 <version>${spring-cloud-alibaba.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- bouncycastle 钉版：覆盖传递依赖带入的 1.78（trivy CVE-2025-14813 处置，§8.4.1） -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
             </dependency>
 
             <!-- MyBatis-Plus -->
