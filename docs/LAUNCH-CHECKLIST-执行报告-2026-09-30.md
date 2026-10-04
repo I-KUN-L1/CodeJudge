@@ -275,3 +275,27 @@ soak 未开跑，**U1 维持 BLOCKED 待用户重启宿主**。重启后流程�
 AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存≥6GB/GW_LOGIN_RATE 默认
 2/5 已核实）→ 10min shakedown 并入 1h soak 首 10min 劣化监测 → 1h 全量。
 
+---
+
+## 第八轮：U1 有效 1h soak 收口（2026-10-04，T4.2 结案）
+
+> 宿主重启后执行。数字与观测全文见 `docs/PERF.md` §3.8.2。
+
+### A 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| 环境恢复 | 宿主重启 + Docker Desktop + 栈自启 | daemon 正常；CodeJudge 20 容器自动拉起 8 服务 healthy；**zx-\* 6 容器（含 zx-learn-mysql）restart 策略改 `no` 并停机**（18d 约束；zx-learn docker-compose.yml 源头同步改 `"no"`）；网关单请求 0.52s（对比病态期 12s+） |
+| 预检 | 跑前四项 | daemon ✓ / 8 端口 ✓ / `GW_LOGIN_RATE` 默认 2/5 ✓ / soak.jmx 续签就绪 ✓ |
+| **U1** | **有效 1h soak** | **8,879,545 样本，0 错误（0.000%），2466.6 req/s，有效窗口 3599.8s**；四 GET P95 8–12ms；登录 P95 192ms；门槛判定 5 PASS / 0 FAIL |
+| 续签验证 | §3.8.1 根因闭环 | 登录样本 **54 = 18 首登 + 18@T+25min + 18@T+50min**，两轮错峰重登如期触发，全程无 401 |
+| §3.2 观测 | 四项全过 | JVM 锯齿 min 回落 134–164MB 无爬升（无泄漏）；Hikari pending 全程 0 / active 归零；backlog=0；死信 7 条全为历史遗留 0 新增 |
+| §5.3 静默损坏 | 无新增 | `ops-dead-tasks.py` 7 条（10-01/10-03 历史）与 Prometheus 口径一致 |
+| 收尾验收 | verify-p1-login | **43/0** 全过 |
+
+### B 受阻 / C 待用户 / D 不做
+
+- 无新增受阻项。剩余未完成任务与上轮一致：U3（Docker+外网）、U4（外网+排期）、U5（remote）、
+  U6（凭据）、U7/U9（上线后/生产化）、U8（证书域名）。
+- 证据文件：`perf-test/results/soak.jtl`（完整落盘）、`$TEMP/soak-t0|t30|t60-snapshot.txt`（Prometheus 快照）。
+

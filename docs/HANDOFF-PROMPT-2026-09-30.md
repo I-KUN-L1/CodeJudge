@@ -18,16 +18,18 @@
 >   **U2 已完成（2026-10-03 第六轮）**：contest 覆盖率 0.047→**0.748**（6 类 66 例新测试，
 >   contest 84 例全绿），双棘轮落 pom（全局 0.04→0.10 + contest 专属 0.70），
 >   全 reactor `mvn verify` BUILD SUCCESS（11 模块 321 例，CI 同命令）。
+>   **U1 已完成（2026-10-04 第八轮，T4.2 结案）**：宿主重启后有效 1h soak——**8,879,545 样本
+>   0 错误 / 2466.6 req/s / 四 GET P95 8–12ms**；soak.jmx 定时重登实测两轮（T+25min/T+50min）
+>   如期触发无 401，§3.8.1 风暴根因闭环；§3.2 四项观测 + verify-p1-login **43/0** 全过。
+>   数字与观测全文落 PERF.md §3.8.2。
 > - **未完成汇总**（详见下文「未完成任务」区）：
->   **U1 有效 1h soak**（BLOCKED 待 Docker 恢复；soak.jmx 定时重登改造**已就绪**，见 §5.18/CONTEXT）·
->   **U3** trivy/ZAP（BLOCKED 待 Docker+外网，命令已备）· **U5** remote+徽章（待用户）·
+>   **U3** trivy/ZAP（BLOCKED 待外网，Docker 已恢复，命令已备）· **U5** remote+徽章（待用户）·
 >   **U4** Playwright E2E（待外网+排期）· **U6** 告警通道凭据（待用户）·
 >   **U7** 生产告警重标 · **U8** HTTPS · **U9** 独立压测机（生产化三件）。
-> - ⚠️ **环境现状（2026-10-04 下午 U1 首攻）**：用户启动 Docker Desktop（**未重启宿主**）→
->   daemon 16:41 恢复、全栈自启 healthy，**16:42-16:56 无负载 5 分钟内复病**（health 探测超时 →
->   daemon API 500 → `docker ps`/请求挂死），与 §5.18 病灶同型。**唯一正解仍是重启 Windows**
->   （zx-learn 不自启）；重启后第一动作 = 停 zx-learn 5 自启容器再预检。soak.jmx 续签已就绪、
->   GW_LOGIN_RATE 默认 2/5 已核实。依赖 Docker 的任务开跑前先 `docker version` 预检。
+> - ✅ **环境现状（2026-10-04 傍晚）**：宿主已重启，Docker daemon 恢复后**全程无复发**
+>   （重启前病灶链见执行报告第七轮/CONTEXT §5.20）；CodeJudge 全栈 20 容器 healthy；
+>   **zx-\* 6 容器 restart 策略已改 `no` 并停机**（18d 约束永久落位）。依赖 Docker 的任务
+>   （U3 扫描）开跑前仍先 `docker version` 预检。
 
 ---
 
@@ -123,6 +125,8 @@ CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端�
 | T9 SLO e2e 指标 | `cj_judge_e2e_seconds_*` 六 verdict 序列与实测 12 终态对齐；看板 9 出数 | 执行报告「第五轮」 |
 | T10 日志→Loki | prod JSON 生效（gateway 本地 logback 覆盖）；Loki `{application="judge-*"} \| json` 全链路命中 | 同上 |
 | T11 已落地五项 | MinIO app profile / broker store 卷（init 容器）/ 提交页列宽 / LAUNCH-READINESS 同步（§E/§F/§H）/ JaCoCo 首批（6 类 49 例：ai 0.21 / worker 0.136 / contest 0.05） | LAUNCH-READINESS |
+| U2 contest 补测 | LINE 0.047→**0.748**（6 类 66 例，84 例全绿）；双棘轮 0.10 + contest 0.70；全 reactor verify SUCCESS | 执行报告「第六轮」/ CONTEXT §5.17 |
+| **U1 有效 1h soak** | **8,879,545 样本 0 错误 / 2466.6 req/s**；四 GET P95 8–12ms；续签两轮（T+25/T+50min）无 401；§3.2 四项观测过；verify-p1-login **43/0** | PERF.md §3.8.2 / 执行报告「第八轮」/ CONTEXT §5.21 |
 
 ### 未完成任务（本轮焦点，按解锁条件分组）
 
@@ -135,7 +139,12 @@ CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端�
   （先确认 zx-learn 等大内存负载不在跑，见硬约束 18d）。
 - AI 侧只做预检与记录（`docker version` / 内存余量 / 容器自启情况），不重复拉起手段（硬约束 13）。
 
-#### U1. T4.2 有效 1h soak（U0 恢复后第一个跑；先做续签改造）
+#### U1. T4.2 有效 1h soak（✅ 已完成 2026-10-04 第八轮，结案）
+
+- ✅ **结案**：宿主重启后有效 1h soak 全绿（8,879,545 样本 0 错误 / 2466.6 req/s / 四 GET
+  P95 8–12ms / 门槛 5 PASS 0 FAIL）；soak.jmx 定时重登实测两轮（T+25min、T+50min）无 401；
+  RUNBOOK §3.2 四项观测全过（无泄漏/连接池零累积/队列归零/无静默损坏）；verify-p1-login **43/0**。
+  证据与全文数字见 **PERF.md §3.8.2**、执行报告「第八轮」、CONTEXT §5.21。
 
 背景：1h 首跑已复盘（**PERF.md §3.8.1**）——前 30 分钟 4,465,338 样本 **0 错误**（干净）；
 第 30:10 分起 access token 同时过期 → 鉴权接口全 401（~82%/区间），`/problems/page`
