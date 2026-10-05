@@ -659,7 +659,7 @@ mirror.gcr.io 拒连不可用）+ ZAP baseline（ghcr.io/zaproxy/zaproxy:stable�
 
 | 库 | 原版本 | 处置 | 结果 |
 |---|---|---|---|
-| tomcat-embed-core | 10.1.31（Boot 3.3.5 托管） | `tomcat.version=10.1.55`（逐档复扫驱动：31→35→55） | CVE-2025-24813/2026-41293 清除；**残留 CVE-2026-65182：修复版 10.1.58 未在 Central 发布，无法修复 → 接受 + CI 复扫跟进** |
+| tomcat-embed-core | 10.1.31（Boot 3.3.5 托管） | `tomcat.version=10.1.59`（逐档复扫驱动：31→35→55→**59**） | CVE-2025-24813/2026-41293 清除；**CVE-2026-65182 结案（2026-10-05 遗留跟进）：Central 实际发布 10.1.59（10.1.58 被官方跳过）→ 升版→复扫零命中→8 镜像重建重部署 8/8 healthy→verify-p1-login 43/0→E2E 回归 5/5，证据见 `docs/security-evidence/2026-10-05-tomcat-1059/`** |
 | netty-handler | 4.1.114.Final（Boot 托管） | `netty.version=4.1.137.Final` | CVE-2026-75595 清除 |
 | bcprov-jdk18on | 1.78（传递） | dependencyManagement 钉 `1.85`（78→81.1→85 复扫驱动） | CVE-2025-14813/2026-8763 清除 |
 | fastjson 1.2.69_noneautotype | （trivy POM 分析器经 optional 路径引入） | **误报**：11 模块 `mvn dependency:tree` 零命中，不在任何运行时 classpath | 接受（误报说明） |
@@ -671,4 +671,5 @@ mirror.gcr.io 拒连不可用）+ ZAP baseline（ghcr.io/zaproxy/zaproxy:stable�
 **方法论沉淀**：① trivy fs 扫多模块仓库会触发 POM 分析器并发死线（judge-worker/pom.xml
 `semaphore deadline`）——按模块逐个扫描绕过；② Maven Central 有 IP 级 429 限流（Retry-After
 1800s），离线扫描挂 `~/.m2:ro` + `--offline-scan`；③ trivy DB 的 fixed 版本可能超前于
-Central 实际发布（10.1.58 不存在），钉版前必须 `mvn` 实测。
+Central 实际发布（10.1.58 被官方跳过、10.1.59 才是实际修复版），钉版前必须查 Central
+metadata + `mvn` 实测。

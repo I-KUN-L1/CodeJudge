@@ -56,9 +56,10 @@
 
         <!-- 安全升级（U3/T5 trivy 扫描处置，见 DEPLOYMENT.md §8.4.1）：
              Boot 3.3.5 托管的 tomcat 10.1.31 与 netty 4.1.114.Final 按修复线升级。
-             tomcat 钉 10.1.55 = Central 实际最高（DB 标记的修复版 10.1.58 尚未发布，
-             残留 CVE-2026-65182 接受+跟进）；netty 4.1.137.Final（CVE-2026-75595 修复版） -->
-        <tomcat.version>10.1.55</tomcat.version>
+             tomcat 10.1.55 → 10.1.59（2026-10-05 复查 Central，10.1.58 被官方跳过、
+             10.1.59 实际发布，CVE-2026-65182 触发条件达成，遗留跟进结案）；
+             netty 4.1.137.Final（CVE-2026-75595 修复版） -->
+        <tomcat.version>10.1.59</tomcat.version>
         <netty.version>4.1.137.Final</netty.version>
         <!-- bouncycastle 1.78（CVE-2025-14813）→ 1.81.1 复扫暴露 CVE-2026-8763 → 钉 1.85 -->
         <bouncycastle.version>1.85</bouncycastle.version>
