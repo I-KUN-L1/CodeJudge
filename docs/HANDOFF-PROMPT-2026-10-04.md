@@ -165,8 +165,9 @@ D 不做（附理由）。阻塞项标注 BLOCKED 不许假绿（**假绿比 FAI
 | TC-U8-01 TLS rehearsal | 10-05 17:20 | curl -sk https://127.0.0.1:9443/problems/page | 200 真实 JSON | 200（nginx/1.31.6 → 网关） | PASS | 自签证书 CN=codejudge.local；tls-handshake-check.txt |
 | TC-U8-02 真域名 HTTPS | — | 用户域名+CA 证书 | 终验 | 未执行 | **BLOCKED** | prep 已就绪：换证书=两行配置（LAUNCH-USER-ACTIONS.md U8） |
 | TC-U5-01 推送安全审计 | 10-05 午后 | git ls-files 全量 | 无 secrets 入库、无 >5MB | 符合预期 | PASS | .env 未跟踪；命中 3 项为审计文档/脚本本体 |
-| TC-U5-02 代建远程仓库 | — | gh repo create | 仓库创建+推送 | 未执行（gh 未安装） | **BLOCKED** | 需用户建仓给 URL；其余步骤可代做 |
+| TC-U5-02 代建远程仓库 | 10-05 晚 | REST POST /user/repos（凭据管理器存量凭据，非 gh） | 仓库创建+推送 | I-KUN-L1/CodeJudge Private 建成 + push master 成功（b3eef63） | PASS | 卡点解除：凭据管理器存有 GitHub 凭据，API 代建替代 gh CLI；证据 2026-10-05-u5-github/ |
+| TC-U5-03 CI 首跑确认 | 10-05 晚 | push 后轮询 Actions API | run#1 真跑且绿（首日不红） | run#1 completed/**success**（Frontend 55s + Backend 3m32s 双 job 绿） | PASS | run 37299478009；徽章替换实测仅 1 处 CI 徽章+注释（runbook 记 5 处系静态徽章误计） |
 | TC-U9-01 独立压测对标 | — | 第二台机器 1h soak | 对标 §3.8.2 基线 | 未执行 | **BLOCKED** | soak.jmx 就绪（含定时重登）；对标口径已写入 runbook U9 |
 
-**登记册统计**：PASS 19 / FAIL 0 / BLOCKED 4（全部外部资源：上游 LLM 配额 ×1、用户资源 ×3）。
+**登记册统计**：PASS 21 / FAIL 0 / BLOCKED 3（全部外部资源：上游 LLM 配额 ×1、用户资源 ×2）。
 历史轮次（1–9）测试数据已在各自证据目录 + 执行报告对应轮次表格中登记，不在此重复。

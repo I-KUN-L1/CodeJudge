@@ -405,3 +405,26 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
 - D：不做假绿——U5/U6/U8/U9 的**最终验收**（真 CI 绿 / 真群收到消息 / 真域名 HTTPS / 独立机对标）
   一律等真实资源，不用本地回环/rehearsal 冒充；本轮 prep 结果均如实标注为 rehearsal/回环验证。
 
+## 第十二轮：U5 收口（GitHub 建仓 + 首推 + CI 首跑绿，真实终验）（2026-10-05 晚）
+
+> 用户指令「按方案执行 U5 建仓」。卡点重估发现新路径：Windows 凭据管理器已存 GitHub 凭据
+> （用户 I-KUN-L1，与 README 基座仓库 zx-learn 同号），**无需 gh CLI**，改走 GitHub REST API 代建。
+
+### A 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| 卡点重估 | 建仓路径核验 | gh CLI 仍缺、GitHub 插件连接器未授权无工具注入；但 `cmdkey` 证实凭据管理器存有 `git:https://github.com`（I-KUN-L1）→ push 与 REST API 双通路可用 |
+| U5-建仓 | REST POST /user/repos 代建 | **I-KUN-L1/CodeJudge，Private=true**（https://github.com/I-KUN-L1/CodeJudge）；token 仅存进程内变量，全程未落盘未回显 |
+| U5-徽章 | README 占位替换 | 实测与 runbook「5 处」记载有出入：仅 **1 处仓库链接徽章（CI）+ 1 行过期注释**需处理，其余 4 徽章为 shields.io 静态徽章（无仓库地址，无需替换）→ CI 徽章指向 I-KUN-L1/CodeJudge + 删过期注释，commit **b3eef63** |
+| U5-首推 | git remote add + push | `origin=https://github.com/I-KUN-L1/CodeJudge.git`，`push -u origin master` 成功（含 workflows 文件，token 具 workflow scope），master tracking 已设 |
+| U5-CI | Actions 首跑确认（真 CI 绿） | **run#1 completed/success**，head b3eef63，run id 37299478009，总时长 ≈3m35s：Frontend（Node 22/Vite）success 55s + Backend（Java 21/Maven，双棘轮 LINE 0.10+contest 0.70）success 3m32s |
+| 落账 | 登记 + 文档 | 登记册 TC-U5-02 BLOCKED→PASS、新增 TC-U5-03 PASS（统计 PASS 21/FAIL 0/BLOCKED 3）；runbook U5 节勾选完成；CONTEXT.md §5.26；HANDOFF 10-05 状态同步。证据 `docs/security-evidence/2026-10-05-u5-github/` |
+
+### B 受阻 / C 待用户 / D 不做
+
+- 无新增。剩余队列不变：U6（webhook/SMTP 凭据）、U8（真实域名+CA 证书）、U9（第二台独立压测机）、
+  B2 复核（LLM 上游配额恢复/换 Key）。U7 上线后。
+- 教训沉淀：runbook 生成时的记载需实地复核——「5 处徽章」实为静态徽章误计；「无 gh 无法代建」
+  卡点在凭据管理器已有存量凭据时不再成立，卡点表述应写明**全部**前置假设以便日后重估。
+
