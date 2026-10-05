@@ -420,11 +420,17 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
 | U5-首推 | git remote add + push | `origin=https://github.com/I-KUN-L1/CodeJudge.git`，`push -u origin master` 成功（含 workflows 文件，token 具 workflow scope），master tracking 已设 |
 | U5-CI | Actions 首跑确认（真 CI 绿） | **run#1 completed/success**，head b3eef63，run id 37299478009，总时长 ≈3m35s：Frontend（Node 22/Vite）success 55s + Backend（Java 21/Maven，双棘轮 LINE 0.10+contest 0.70）success 3m32s |
 | 落账 | 登记 + 文档 | 登记册 TC-U5-02 BLOCKED→PASS、新增 TC-U5-03 PASS（统计 PASS 21/FAIL 0/BLOCKED 3）；runbook U5 节勾选完成；CONTEXT.md §5.26；HANDOFF 10-05 状态同步。证据 `docs/security-evidence/2026-10-05-u5-github/` |
+| U6-接入 | email 通道接入 AM（用户提供 QQ SMTP 凭据） | ✅ `.env` 7 行填入（仅存 .env 不入 git）→ `--force-recreate alertmanager` → 渲染配置全对（`smtp.qq.com:587` + STARTTLS、默认+critical 双路由 `email`、收件人就位、授权码非空未回显） |
+| U6-排障 | QQ SMTP 535 复盘 | ✅ 首测 12+ 重试持续 **535 Login fail**（非瞬态）→ 临时回退 null 止血（防无效重试加重频控）→ 根因=**授权码属 2067063203@qq.com 而发件账号误填 10086@qq.com** → 按用户指示切换发件账号后一次通过 |
+| U6-终验 | 真邮箱收信（真实终验） | ✅ 测试告警 POST 200 + 真实告警 `JudgeDeadTasksPresent`（critical）10s group_wait 触发 → 80s 观察窗**零错误行** → `alertmanager_notifications_total{integration="email"} = 1`（成功计数）→ **收件人确认收到**（`[FIRING] CodeJudge JudgeDeadTasksPresent (2)`）。AM 保持 email 双路由生产位 |
+| U6-落账 | 登记 + 证据 | ✅ 登记册 TC-U6-04 PASS（统计 **PASS 22/FAIL 0/BLOCKED 3**）；runbook U6 勾选；CONTEXT.md §5.27；证据 `docs/security-evidence/2026-10-05-u6-email-channel/`（含 535 排障摘录） |
 
 ### B 受阻 / C 待用户 / D 不做
 
-- 无新增。剩余队列不变：U6（webhook/SMTP 凭据）、U8（真实域名+CA 证书）、U9（第二台独立压测机）、
-  B2 复核（LLM 上游配额恢复/换 Key）。U7 上线后。
-- 教训沉淀：runbook 生成时的记载需实地复核——「5 处徽章」实为静态徽章误计；「无 gh 无法代建」
-  卡点在凭据管理器已有存量凭据时不再成立，卡点表述应写明**全部**前置假设以便日后重估。
+- 无新增。剩余队列：U8（真实域名+CA 证书）、U9（第二台独立压测机）、B2 复核（LLM 上游配额
+  恢复/换 Key）。U7 上线后。
+- 教训沉淀：①runbook 生成时的记载需实地复核——「5 处徽章」实为静态徽章误计；「无 gh 无法代建」
+  卡点在凭据管理器已有存量凭据时不再成立，卡点表述应写明**全部**前置假设以便日后重估；
+  ②QQ SMTP 授权码与发件账号**同号绑定**，AM email 通道排障先核对 FROM=AUTH_USERNAME；
+  ③凭据侧持续认证失败时及时止血（回退 null），避免无效重试触发上游频控。
 

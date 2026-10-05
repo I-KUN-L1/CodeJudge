@@ -862,6 +862,22 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
   runbook U5 勾选；证据 `docs/security-evidence/2026-10-05-u5-github/`。
   剩余队列：U6 凭据、U8 域名证书、U9 独立压测机、B2 LLM 配额（全部外部资源）。
 
+### 5.27 2026-10-05 晚：U6 收口——email 告警通道真实终验（第十二轮续）
+
+- **接入**：用户提供 QQ SMTP 凭据 → `.env` 7 行（**凭据只存 .env 不入 git**）→ recreate AM →
+  渲染配置全对（`smtp.qq.com:587` + `smtp_require_tls: true`、默认+critical 双路由 `email`、
+  收件人 2067063203@qq.com）。
+- **排障（535）**：首测 12+ 重试持续 `535 Login fail`（非瞬态）→ 临时回退 null 止血（防频控）
+  → **根因=授权码与发件账号不同号**（码属 2067063203@qq.com，FROM 误填 10086@qq.com）→
+  切换发件账号后一次通过。**教训：QQ 授权码与发件账号同号绑定，AM email 排障先核对
+  `SMTP_FROM == SMTP_AUTH_USERNAME`；凭据侧持续失败要及时止血。**
+- **终验（真实）**：注入测试告警 + 真实告警 `JudgeDeadTasksPresent`（critical，10s group_wait）
+  → 80s 窗口零错误 → **`alertmanager_notifications_total{integration="email"} = 1`**（成功计数，
+  仅成功时递增）→ **收件人确认收到**。AM 保持 email 双路由生产位；测试后无需还原
+  （本次接入即目标态，null 仅作排障中间态）。
+- 落账：登记册 TC-U6-04 PASS（**PASS 22/FAIL 0/BLOCKED 3**）；runbook U6 勾选；
+  证据 `docs/security-evidence/2026-10-05-u6-email-channel/`。剩余队列：U8/U9/B2。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash
