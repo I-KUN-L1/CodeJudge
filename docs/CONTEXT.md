@@ -826,6 +826,28 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
 - 落账：DEPLOYMENT.md §8.4.1 改结案登记；证据 `docs/security-evidence/2026-10-05-tomcat-1059/`。
   U3 唯一悬留 CVE 就此清零；剩余任务 U5/U6/U8/U9 全部卡用户资源，U7 上线后。
 
+### 5.25 2026-10-05 下午：TZ 时钟缺陷修复落位（第十一轮 B1）+ 告警/TLS 链路回环验证（C 环节 prep 拉满）
+
+- **B1 TZ 修复（真修）**：`docker-compose.yml` 为 8 个 app 服务加 `TZ: Asia/Shanghai` →
+  `--profile app up -d` 滚动重建（不动基础设施、无需重编译）→ 容器 date/日志/生命周期调度全 CST；
+  旧 UTC 窗口演示赛被正确判「已结束」并落 FINAL 快照（存库 UTC 墙钟字符串按 CST 语义提前 8h 过期，
+  均为可丢弃测试资产，迁移语义符合预期）。E2E fixture 回切宿主本地时间（金丝雀）→ 回归
+  **5/5（9.7s）** + verify-p1-login **43/0**。证据 `docs/e2e-evidence/2026-10-05-tz-fix/`。
+  **教训：openssl（Git for Windows 3.5.6）经 PowerShell 传 `-subj` 会被 MSYS 路径转换吞掉 →
+  `$env:MSYS_NO_PATHCONV='1'` + 标准格式 `/CN=...`；PS5.1 `Set-Content -Encoding utf8` 带 BOM
+  会让 Alertmanager API 400。**
+- **B2 LLM 429 复测仍 429**（17:08，chat+embeddings 双通道；设计内降级正常）——纯上游配额，
+  日志摘录归档；B3 sandbox-init 当日复验有效（E2E T3 判题 AC）。
+- **U6 prep**：alertmanager 临时切 webhook 路由 → 真实告警（JudgeDeadTasksPresent，历史死信）
+  + 合成告警（API 注入）都投递到本地 sink（HTTP 200）→ **Prometheus→AM→webhook 全链实证**，
+  验证后恢复 null 路由。**U8 prep**：`docker-compose.tls.yml`（`--profile tls`，nginx:alpine
+  复用本地镜像，9443）+ 自签证书 → `curl -sk https://127.0.0.1:9443/problems/page` 200 真实
+  JSON；换真证书=两行配置。**U5 prep**：推送安全/体积审计通过（.env 未入库、无 >5MB 文件），
+  `gh` 未装不可代建仓。**统一 runbook：`docs/LAUNCH-USER-ACTIONS.md`**（四任务「卡点/已就位/
+  一步式操作」）。
+- 证据：`docs/security-evidence/2026-10-05-u6-u8-prep/`。U5/U6/U8/U9 最终验收仍待用户资源
+  （真 CI / 真群消息 / 真域名 / 独立机），不用回环/rehearsal 冒充——runbook 一页式可执行。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash

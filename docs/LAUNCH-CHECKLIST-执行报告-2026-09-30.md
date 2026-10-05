@@ -372,3 +372,36 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
   只新增竞赛+报名，不动既有演示数据）。
 - TZ 缺陷未擅修（涉 8 服务重部署+全回归，属产品行为变更，待用户拍板）。
 
+## 第十一轮：B 环节收口（TZ 修复落位 / LLM 复测 / sandbox 复验）+ C 环节准备度拉满（2026-10-05 下午）
+
+> 用户指令：完成第十轮汇报 B（受阻）与 C（待用户）环节全部任务。原则：能修的真修 + 全回归，
+> 外部资源缺失的做到「prep 就绪 + 精确卡点」，不假绿。
+
+### A 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| B1-TZ | **TZ 时钟缺陷修复落位** | ✅ compose 为 8 个 app 服务加 `TZ: Asia/Shanghai` → `--profile app up -d` 滚动重建（不动基础设施、无需重编译）→ 容器 `date`/日志/生命周期调度全 CST（17:06:48 CST 与宿主一致）；旧 UTC 窗口演示赛被正确判「已结束」落 FINAL 快照（迁移语义符合预期） |
+| B1-回归 | TZ 修复全量回归 | ✅ E2E fixture 回切宿主本地时间发窗口（金丝雀）→ **5 passed (9.7s)**（T3 以 CST 窗口提交判题 AC = 修复端到端证实）；verify-p1-login **43/0**。证据 `docs/e2e-evidence/2026-10-05-tz-fix/` |
+| B2-LLM | LLM 上游 429 复测 | ✅ 17:08 实测 chat/completions + embeddings 双通道**仍 429**（产品设计内降级正常）→ 外部门配额问题，本地无处置项；日志摘录归档。结论维持：待配额恢复/换 Key 后人工核对真实 AI 文本 |
+| B3-sandbox | sandbox-init 规约复验 | ✅ 本日 E2E T3 判题 AC → `/cj-sandbox` 权限正常；规约（宿主重启后 `docker start codejudge-sandbox-init`）已入 CONTEXT/memory/HANDOFF |
+| C-U6-prep | 告警链路回环验证 | ✅ alertmanager 临时切 webhook 路由 → **真实告警**（Prometheus 评估的 JudgeDeadTasksPresent）+ 合成告警（API 注入，POST 200）均经 critical 路由投递本地 sink（HTTP 200 收包）→ **Prometheus→AM→webhook 全链实证**；验证后已恢复 null 路由。证据 `docs/security-evidence/2026-10-05-u6-u8-prep/alertmanager-webhook-sink.log` |
+| C-U8-prep | TLS 终结 rehearsal | ✅ `docker-compose.tls.yml` + `deploy/tls/nginx-tls.conf`（nginx:alpine，9443，`--profile tls` 隔离零影响）+ 自签证书（CN=codejudge.local，SAN=localhost/127.0.0.1，365d，gitignore 私钥）→ `curl -sk https://127.0.0.1:9443/problems/page` **200** 真实 JSON（WS 升级/SSE 透传已配）。**换真证书=两行配置+证书文件**，步骤落 `docs/LAUNCH-USER-ACTIONS.md` |
+| C-U5-prep | 推送前安全/体积审计 | ✅ 无敏感文件被跟踪（.env 未入库，无 key/pem/credential 泄露；命中项为审计文档/脚本本体）；无 >5MB 文件（.jtl 等原始压测数据未入库）→ 仓库 push-ready。`gh` CLI 未安装，代建仓库不可行 → 卡点维持用户建仓 |
+| C-文档 | 统一 runbook | ✅ `docs/LAUNCH-USER-ACTIONS.md`：U5/U6/U8/U9 各自「卡点 / 已就位 / 资源到位后一步式操作」 |
+
+### B 受阻（真外部依赖，prep 已就绪）
+
+1. **U5**：需用户创建 GitHub 仓库（本机无 gh CLI 无法代建）→ 见 runbook 第 1 步，其余可代做。
+2. **U6**：需 webhook/SMTP 凭据（.env 占位已就绪，email 通道零中间件最省事）→ 投递链路已验证，
+   凭据到位=改 .env+recreate+注入测试告警三步。
+3. **U8**：需真实域名+CA 证书 → TLS 终结配置已 rehearsal 通过，到位=换证书两行。
+4. **U9**：需第二台独立压测机（同宿主 VM 不算）→ soak.jmx/基线/runbook 就绪。
+5. **B2 残留**：LLM 429 为上游配额问题，复测仍 429（本轮证据），非本地可解。
+
+### C 待用户 / D 不做
+
+- C：同上 B1-B4 卡点，全部已可「资源到位即执行」（runbook 一页式）。
+- D：不做假绿——U5/U6/U8/U9 的**最终验收**（真 CI 绿 / 真群收到消息 / 真域名 HTTPS / 独立机对标）
+  一律等真实资源，不用本地回环/rehearsal 冒充；本轮 prep 结果均如实标注为 rehearsal/回环验证。
+
