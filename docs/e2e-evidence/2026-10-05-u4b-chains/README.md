@@ -47,3 +47,12 @@ $env:E2E_CONTEST_ID=<脚本输出>; npm run test:e2e
 - 代码提交：见 git log（smoke.spec.js 扩展 3 链路 + setup-contest.mjs 新增）
 - 上一批冒烟：`docs/e2e-evidence/2026-10-04-smoke/`
 - HANDOFF：U4b 结案；U5/U6/U8/U9 待用户资源（见执行报告第十轮）
+
+## 2026-10-05 下午追记（第十一轮 B 环节收口）
+
+- **发现 2（TZ）已修复**：8 个 Java 服务容器加 `TZ: Asia/Shanghai` 重部署，`date`/日志时间戳/生命周期调度
+  全部 CST；fixture 改回宿主本地时间发窗口（金丝雀），回归 **5/5（9.7s）** + verify-p1-login **43/0**。
+  证据 → `docs/e2e-evidence/2026-10-05-tz-fix/`。
+- **发现 3（LLM 429）复核仍 429**：17:08 实测 chat/completions 与 embeddings 双通道 429（产品设计内降级
+  正常工作），外部门配额问题，本地无处置项。日志摘录 → `judge-ai-429-recheck-2026-10-05.log`。
+- **发现 1（sandbox-init）当日复验有效**：本日 E2E T3 提交判题 AC，`/cj-sandbox` 权限正常。

@@ -255,6 +255,9 @@ services:
     env_file:
       - .env
     environment:
+      # TZ 修复（2026-10-05，执行报告第十一轮 B1）：此前仅 mysql/pg 有 TZ，8 个 Java 服务
+      # 容器跑 UTC → JVM LocalDateTime.now() 比 CST 慢 8h，UI 建的竞赛开赛被推迟 8 小时
+      TZ: Asia/Shanghai
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -279,6 +282,9 @@ services:
     env_file:
       - .env
     environment:
+      # TZ 修复（2026-10-05，执行报告第十一轮 B1）：此前仅 mysql/pg 有 TZ，8 个 Java 服务
+      # 容器跑 UTC → JVM LocalDateTime.now() 比 CST 慢 8h，UI 建的竞赛开赛被推迟 8 小时
+      TZ: Asia/Shanghai
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -303,6 +309,9 @@ services:
     env_file:
       - .env
     environment:
+      # TZ 修复（2026-10-05，执行报告第十一轮 B1）：此前仅 mysql/pg 有 TZ，8 个 Java 服务
+      # 容器跑 UTC → JVM LocalDateTime.now() 比 CST 慢 8h，UI 建的竞赛开赛被推迟 8 小时
+      TZ: Asia/Shanghai
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -324,6 +333,9 @@ services:
     env_file:
       - .env
     environment:
+      # TZ 修复（2026-10-05，执行报告第十一轮 B1）：此前仅 mysql/pg 有 TZ，8 个 Java 服务
+      # 容器跑 UTC → JVM LocalDateTime.now() 比 CST 慢 8h，UI 建的竞赛开赛被推迟 8 小时
+      TZ: Asia/Shanghai
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -356,6 +368,9 @@ services:
     env_file:
       - .env
     environment:
+      # TZ 修复（2026-10-05，执行报告第十一轮 B1）：此前仅 mysql/pg 有 TZ，8 个 Java 服务
+      # 容器跑 UTC → JVM LocalDateTime.now() 比 CST 慢 8h，UI 建的竞赛开赛被推迟 8 小时
+      TZ: Asia/Shanghai
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -404,6 +419,9 @@ services:
     env_file:
       - .env
     environment:
+      # TZ 修复（2026-10-05，执行报告第十一轮 B1）：此前仅 mysql/pg 有 TZ，8 个 Java 服务
+      # 容器跑 UTC → JVM LocalDateTime.now() 比 CST 慢 8h，UI 建的竞赛开赛被推迟 8 小时
+      TZ: Asia/Shanghai
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -432,6 +450,9 @@ services:
     env_file:
       - .env
     environment:
+      # TZ 修复（2026-10-05，执行报告第十一轮 B1）：此前仅 mysql/pg 有 TZ，8 个 Java 服务
+      # 容器跑 UTC → JVM LocalDateTime.now() 比 CST 慢 8h，UI 建的竞赛开赛被推迟 8 小时
+      TZ: Asia/Shanghai
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -460,6 +481,8 @@ services:
     env_file:
       - .env
     environment:
+      # TZ 同上：gateway 虽无 MySQL，但 ActuatorGuardFilter / 限流窗口等时间逻辑同样需要 CST
+      TZ: Asia/Shanghai
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       ROCKETMQ_NAME_SERVER: rocketmq-namesrv:9876

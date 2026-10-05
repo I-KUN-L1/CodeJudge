@@ -21,17 +21,17 @@ const PASSWORD = '123456';
 const PROBLEM_ID = 4001; // A + B Problem（题库种子，样例含 int 溢出用例）
 
 /**
- * ⚠️ 时间基准必须用 **UTC 墙钟**（不带 Z 的 ISO 本地时间字段）：
- * compose 只给 mysql/pg 配了 TZ=Asia/Shanghai，8 个 Java 服务容器默认 UTC，
- * judge-contest 用 LocalDateTime.now()（UTC）与窗口比较。若按宿主 CST 发时间，
- * 竞赛会被判"尚未开始"整整 8 小时（详见执行报告第十轮 TZ 时钟缺陷）。
- * 这里与服务端时钟对齐是测试基建的对齐，不是对缺陷的掩盖。
+ * 时间基准：**宿主本地墙钟（CST）**。
+ * 2026-10-05 TZ 修复（执行报告第十一轮 B1）后，8 个 Java 服务容器已加 TZ=Asia/Shanghai，
+ * JVM LocalDateTime.now() 与宿主一致 → fixture 直接发本地时间即可
+ * （修复前容器跑 UTC，CST 窗口会被判"尚未开始"8 小时，当时被迫用 UTC 墙钟绕过）。
+ * 本 fixture 同时是 TZ 修复的金丝雀：若服务端时钟回退，这里会以「竞赛尚未开始」失败。
  */
-function fmtUtcLocal(d) {
+function fmtLocal(d) {
   const p = (n) => String(n).padStart(2, '0');
   return (
-    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}` +
-    `T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
   );
 }
 
@@ -51,14 +51,14 @@ const teacher = await login(TEACHER_PHONE, PASSWORD);
 const student = await login(STUDENT_PHONE, PASSWORD);
 
 const now = new Date();
-const stamp = fmtUtcLocal(now).slice(0, 16).replace('T', ' ');
+const stamp = fmtLocal(now).slice(0, 16).replace('T', ' ');
 const body = {
   title: `【E2E】榜单联动赛 ${stamp}`,
   description:
     'Playwright E2E 专用演示赛（进行中）：用于「选题→提交→判题→实时榜联动」链路断言，可随时删除。',
   rule: 'ACM',
-  startTime: fmtUtcLocal(new Date(now.getTime() - 60_000)),
-  endTime: fmtUtcLocal(new Date(now.getTime() + 120 * 60_000)),
+  startTime: fmtLocal(new Date(now.getTime() - 60_000)),
+  endTime: fmtLocal(new Date(now.getTime() + 120 * 60_000)),
   freezeMinutes: 30,
   penaltyMinutes: 20,
   problems: [{ problemId: PROBLEM_ID, label: 'A', displayOrder: 0, fullScore: 100 }],
