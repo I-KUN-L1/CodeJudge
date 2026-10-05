@@ -426,6 +426,9 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
 | U6-落账 | 登记 + 证据 | ✅ 登记册 TC-U6-04 PASS（统计 **PASS 22/FAIL 0/BLOCKED 3**）；runbook U6 勾选；CONTEXT.md §5.27；证据 `docs/security-evidence/2026-10-05-u6-email-channel/`（含 535 排障摘录） |
 | U8-决策 | **用户决策：不设域名、仅限内网使用** | ⛔ **U8 范围取消**（非 BLOCKED）——真域名 HTTPS 终验对象消失；登记册 TC-U8-02 改判「关闭（范围取消）」（统计 BLOCKED 3→2）；TLS rehearsal 资产留库（9443 自签，`--profile tls`），日后内网 HTTPS 可走内网 CA 路线复用；CONTEXT.md §5.28 |
 | U9-决策 | **用户决策：无第二台电脑，选方案④（决策降级关闭）** | ⛔ **U9 关闭（带触发条件）**（非 BLOCKED）——理由：U9 目的=生产容量标定（非稳定性证据），同机下界（2466.6 req/s / 0 错误 / P95 8–12ms + 1h 四重稳定）距内网教学真实负载 ≥2 个数量级；登记册 TC-U9-01 关闭（统计 BLOCKED 2→1 + 决策关闭 2）；**重测触发条件四条**（形态变更 / 并发≥200 或 QPS≥200 / P95 劣化 10× / 独立机到位）见 CONTEXT §5.29；throughput.jmx/soak.jmx/账号池/对标口径就绪可随时执行 |
+| ENV-轮换 | 上线检查单 §四.8：`.env` 生产态约定执行 | ✅ **密钥全量轮换**：MySQL/PG 容器内 ALTER、Grafana CLI 重置、admin 走 first-change API 真实改密（bootstrap 凭据首次消费即删除）、Redis/MinIO/JWT/actuator token 换新（全部只存 gitignored .env）；CJ_USER_DEFAULT_PASSWORD 不轮换（种子/E2E/压测同源，决策记录在案） |
+| ENV-开关 | 两个生产开关 + Prometheus 同步 | ✅ `CJ_DOC_WHITELIST_ENABLED=false`（网关 docs/doc.html 实测 **404**）+ `GF_AUTH_ANONYMOUS_ENABLED=false`（Grafana 匿名实测 **401**）+ prometheus.yml 凭据同步新 actuator token（**8/8 targets up** 严格模式实证） |
+| ENV-回归 | 轮换后全量回归 | ✅ 8/8 healthy + sandbox-init Exited(0) + verify-p1-login **43/0** + E2E **5/5**（15.0s，判题链=新凭据下沙箱/MQ/worker 实证）+ `/problems/page` 200；排障两条（CRLF 卡 `=true$` 正则→改 `.*$` 并打印真实值验证；env_file 变化不触发重建→显式 force-recreate 服务清单）；证据 `docs/security-evidence/2026-10-05-env-prod-hardening/`（登记册 TC-ENV-01/02，统计 **PASS 24/FAIL 0/BLOCKED 1 + 关闭 2**） |
 
 ### B 受阻 / C 待用户 / D 不做
 
