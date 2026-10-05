@@ -1,0 +1,407 @@
+﻿
+===== judge-gateway (:9080) =====
+python.exe : #0 building with "desktop-linux" instance using docker driver
+At line:15 char:1946
++ ... P\pycache"; & 'C:\Users\20670\AppData\Local\Programs\Python\Python311 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (#0 building wit...g docker driver:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 596B 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre
+#2 DONE 0.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 625B done
+#3 DONE 0.0s
+
+#4 [1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b
+96c1982
+#4 resolve docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c
+1982 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 61.19MB 3.1s done
+#5 DONE 3.1s
+
+#6 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#7 [3/5] RUN useradd --system --uid 1001 --shell /usr/sbin/nologin judge     && mkdir -p /app && chown judge:judge /app
+#7 CACHED
+
+#8 [4/5] WORKDIR /app
+#8 CACHED
+
+#9 [5/5] COPY judge-gateway/target/judge-gateway.jar /app/app.jar
+#9 DONE 0.2s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 2.3s done
+#10 exporting manifest sha256:e9230f225110ae8ae9d7bb4072302e56c3cc912d374bdf236e3b59665266d22a 0.0s done
+#10 exporting config sha256:687cc3235906f5bd2aec8ec13cdf87f140cb6dfddfa1d63fb8cd129fb3de106c 0.0s done
+#10 exporting attestation manifest sha256:8b6ec11851735a94cb8ea954aac9747ca652a7544b24624b7c55b094167ef138 0.0s done
+#10 exporting manifest list sha256:2fb8f7d0846e20631b011bc1cc035ca696ae75a0c47312464411e7cb50ff5341 0.0s done
+#10 naming to docker.io/codejudge/judge-gateway:latest done
+#10 unpacking to docker.io/codejudge/judge-gateway:latest
+#10 unpacking to docker.io/codejudge/judge-gateway:latest 0.9s done
+#10 DONE 3.4s
+[OK] judge-gateway
+
+===== judge-auth (:9081) =====
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 590B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 625B done
+#3 DONE 0.0s
+
+#4 [1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b
+96c1982
+#4 resolve docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c
+1982 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 96.54MB 4.5s done
+#5 DONE 4.5s
+
+#6 [3/5] RUN useradd --system --uid 1001 --shell /usr/sbin/nologin judge     && mkdir -p /app && chown judge:judge /app
+#6 CACHED
+
+#7 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [4/5] WORKDIR /app
+#8 CACHED
+
+#9 [5/5] COPY judge-auth/target/judge-auth.jar /app/app.jar
+#9 DONE 0.4s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 2.8s done
+#10 exporting manifest sha256:8f185a0871a4f86a8209cfdf401159003808fb669a7cf0b93927b893973b83a0 0.0s done
+#10 exporting config sha256:aa542471467d91c0380b6039dd8848ec9969476bcb16421fc6120847a36c33ef 0.0s done
+#10 exporting attestation manifest sha256:e7abc1d874ec60e42b4bfee25addd33b7f53ca4309839510396c62a53afcf216 0.0s done
+#10 exporting manifest list sha256:c2101b2bb7ee6564b7a0572e9618680eeb2c9027796648cad4826662c9f1c32a 0.0s done
+#10 naming to docker.io/codejudge/judge-auth:latest done
+#10 unpacking to docker.io/codejudge/judge-auth:latest
+#10 unpacking to docker.io/codejudge/judge-auth:latest 0.8s done
+#10 DONE 3.8s
+[OK] judge-auth
+
+===== judge-user (:9082) =====
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 590B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 625B done
+#3 DONE 0.0s
+
+#4 [1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b
+96c1982
+#4 resolve docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c
+1982 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 95.88MB 4.7s done
+#5 DONE 4.7s
+
+#6 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#7 [3/5] RUN useradd --system --uid 1001 --shell /usr/sbin/nologin judge     && mkdir -p /app && chown judge:judge /app
+#7 CACHED
+
+#8 [4/5] WORKDIR /app
+#8 CACHED
+
+#9 [5/5] COPY judge-user/target/judge-user.jar /app/app.jar
+#9 DONE 0.4s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 2.5s done
+#10 exporting manifest sha256:9929a928168568674bf94a68fe29e3e28c7d39d44f60779134b4c70831ae7eeb 0.0s done
+#10 exporting config sha256:c58720ff79d5df376f72afae45f2ed1e8eb2e52b45312b9d136fb55bb4447013 0.0s done
+#10 exporting attestation manifest sha256:1448e70634bee3586ec71a0ad0386e791e2439c6001eb47175beca6c79372fd4 0.0s done
+#10 exporting manifest list sha256:afee8ab52deadec38dfbe1b820838fb19e22cca135798da7a4e7ba41793716d9 0.0s done
+#10 naming to docker.io/codejudge/judge-user:latest done
+#10 unpacking to docker.io/codejudge/judge-user:latest
+#10 unpacking to docker.io/codejudge/judge-user:latest 0.6s done
+#10 DONE 3.2s
+[OK] judge-user
+
+===== judge-problem (:9083) =====
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 596B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 625B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 ...
+
+#5 [1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b
+96c1982
+#5 resolve docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c
+1982 0.0s done
+#5 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 95.92MB 4.5s done
+#4 DONE 4.6s
+
+#6 [3/5] RUN useradd --system --uid 1001 --shell /usr/sbin/nologin judge     && mkdir -p /app && chown judge:judge /app
+#6 CACHED
+
+#7 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [4/5] WORKDIR /app
+#8 CACHED
+
+#9 [5/5] COPY judge-problem/target/judge-problem.jar /app/app.jar
+#9 DONE 0.3s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 2.6s done
+#10 exporting manifest sha256:63c6a965519baec8929ea127112908335b56301e58f487e8e02497be41e1f06d 0.0s done
+#10 exporting config sha256:731c688a5238d21c340573a49770a7dfbea28429d4ee3f714d9d159c02cbfbd4 0.0s done
+#10 exporting attestation manifest sha256:a0732550c56d688390aa2e73b63ba8a69e873c679659bdc6e6946a34d46bb7dd 0.0s done
+#10 exporting manifest list sha256:bcb3dff2bfce0a7ebea5b8e458a4af90c91645225f52253c648ca02c84d3d5f7 0.0s done
+#10 naming to docker.io/codejudge/judge-problem:latest done
+#10 unpacking to docker.io/codejudge/judge-problem:latest
+#10 unpacking to docker.io/codejudge/judge-problem:latest 0.5s done
+#10 DONE 3.3s
+[OK] judge-problem
+
+===== judge-submission (:9084) =====
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 602B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 625B done
+#3 DONE 0.0s
+
+#4 [1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b
+96c1982
+#4 resolve docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c
+1982 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 96.99MB 4.6s done
+#5 DONE 4.6s
+
+#6 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#7 [3/5] RUN useradd --system --uid 1001 --shell /usr/sbin/nologin judge     && mkdir -p /app && chown judge:judge /app
+#7 CACHED
+
+#8 [4/5] WORKDIR /app
+#8 CACHED
+
+#9 [5/5] COPY judge-submission/target/judge-submission.jar /app/app.jar
+#9 DONE 0.3s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 2.9s done
+#10 exporting manifest sha256:53df5f4543069866d5af1cc2dfff4242c2dbbc8891014e73605df91037c44be7 0.0s done
+#10 exporting config sha256:52947258ca09308a7d40de086e7258c5272965d6e55c54e0768ce4cf433677d9 0.0s done
+#10 exporting attestation manifest sha256:ea537931b1619bb173de7c9301608383d2d54041e7bc80dbb13e94ea76ca0361 0.0s done
+#10 exporting manifest list sha256:2240db8f5e79c7c0111c73079714b3adb470636dd7a44679326bbb86fe91c215 0.0s done
+#10 naming to docker.io/codejudge/judge-submission:latest done
+#10 unpacking to docker.io/codejudge/judge-submission:latest
+#10 unpacking to docker.io/codejudge/judge-submission:latest 0.5s done
+#10 DONE 3.5s
+[OK] judge-submission
+
+===== judge-worker (:9085) +docker-cli =====
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 604B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 625B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 ...
+
+#5 [1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b
+96c1982
+#5 resolve docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c
+1982 0.0s done
+#5 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 94.74MB 4.4s done
+#4 DONE 4.4s
+
+#6 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends curl docker.io     && rm -rf /var/lib/apt
+/lists/*
+#6 CACHED
+
+#7 [3/5] RUN useradd --system --uid 1001 --shell /usr/sbin/nologin judge     && mkdir -p /app && chown judge:judge /app
+#7 CACHED
+
+#8 [4/5] WORKDIR /app
+#8 CACHED
+
+#9 [5/5] COPY judge-worker/target/judge-worker.jar /app/app.jar
+#9 DONE 0.2s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 2.9s done
+#10 exporting manifest sha256:e17b6ae50f7e7e294119d3973c7cd19e4ef5610901413ccb4bb3711da66ee689 0.0s done
+#10 exporting config sha256:71bee8e31daf028c51f7665ef7943c04776c6d27b149e7262ab6f8735a51b0aa 0.0s done
+#10 exporting attestation manifest sha256:024c0c48a8c5252a824b04c415b55587ebfea63e1a7ecfaea38d523d632dfa0c 0.0s done
+#10 exporting manifest list sha256:63d0f814c0fc6095e9f853246b965d7fe7d5fd05ca417e9c5a9ccc32da8eea7b 0.0s done
+#10 naming to docker.io/codejudge/judge-worker:latest done
+#10 unpacking to docker.io/codejudge/judge-worker:latest
+#10 unpacking to docker.io/codejudge/judge-worker:latest 0.4s done
+#10 DONE 3.3s
+[OK] judge-worker
+
+===== judge-contest (:9086) =====
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 596B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 625B done
+#3 DONE 0.0s
+
+#4 [1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b
+96c1982
+#4 resolve docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c
+1982 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 97.01MB 4.7s done
+#5 DONE 4.7s
+
+#6 [3/5] RUN useradd --system --uid 1001 --shell /usr/sbin/nologin judge     && mkdir -p /app && chown judge:judge /app
+#6 CACHED
+
+#7 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [4/5] WORKDIR /app
+#8 CACHED
+
+#9 [5/5] COPY judge-contest/target/judge-contest.jar /app/app.jar
+#9 DONE 0.2s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 2.7s done
+#10 exporting manifest sha256:9a0934b643fdc4675cfac29f1eb8c10bf975105150665703aa6a9f781370776b 0.0s done
+#10 exporting config sha256:15310b6a23df357233c46cf813cecb9e1903334f2819d1ee5bb1c7ee1a4e063c 0.0s done
+#10 exporting attestation manifest sha256:d7ea1a6053f363827e594f4214fb337b3fc745a5f91f06a8b9f263a750268b65 0.0s done
+#10 exporting manifest list sha256:da5ed7f3fd26dcca741ca60fb314bde41dc45c97bacfbfabfce4d26e4bb4023e 0.0s done
+#10 naming to docker.io/codejudge/judge-contest:latest done
+#10 unpacking to docker.io/codejudge/judge-contest:latest
+#10 unpacking to docker.io/codejudge/judge-contest:latest 0.4s done
+#10 DONE 3.2s
+[OK] judge-contest
+
+===== judge-ai (:9087) =====
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 586B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 625B done
+#3 DONE 0.0s
+
+#4 [1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b
+96c1982
+#4 resolve docker.io/library/eclipse-temurin:21-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c
+1982 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 87.18MB 3.7s done
+#5 DONE 3.7s
+
+#6 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#7 [3/5] RUN useradd --system --uid 1001 --shell /usr/sbin/nologin judge     && mkdir -p /app && chown judge:judge /app
+#7 CACHED
+
+#8 [4/5] WORKDIR /app
+#8 CACHED
+
+#9 [5/5] COPY judge-ai/target/judge-ai.jar /app/app.jar
+#9 DONE 0.2s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 2.1s done
+#10 exporting manifest sha256:9a70ee90bd86dfe4fd84d5e75bd2e9578947c025524238ef87886a82c0e9fe1f 0.0s done
+#10 exporting config sha256:f1a442899863538e14d9ccec6617f19b96b97b2210f3d4e717cbf3ecb406d330 0.0s done
+#10 exporting attestation manifest sha256:f148332566931a6dafb5151e6fa69668158218238ebb3636b529d8d13e1d72ab 0.0s done
+#10 exporting manifest list sha256:b1433cf012aa3c6effdf05b179d4fec1d5d6c411817a0a57a3d311f44e71c0e4 0.0s done
+#10 naming to docker.io/codejudge/judge-ai:latest done
+#10 unpacking to docker.io/codejudge/judge-ai:latest
+#10 unpacking to docker.io/codejudge/judge-ai:latest 0.3s done
+#10 DONE 2.6s
+[OK] judge-ai
+
+全部运行时镜像构建完成

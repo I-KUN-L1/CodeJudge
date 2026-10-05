@@ -1,0 +1,55 @@
+﻿网关：http://localhost:9080    认证：http://localhost:9081
+==================================================================
+[1] 学员登录（直连 judge-auth，P1 项③：双 Token 下发）
+  [PASS] HTTP 状态码                                               200
+  [PASS] body.code                                              200
+  [PASS] data.userId                                            2001
+  [PASS] accessToken 为三段式 JWT (segments=3)                      True
+  [PASS] accessToken 非空 (len=287)                               True
+  [PASS] refreshToken 不随 body 下发 (len=0)                        True
+  [PASS] data.expireTime（秒）                                     1800
+  [PASS] accessToken 的 userId claim                             2001
+  [PASS] accessToken 的 roleId claim（学员=2）                       2
+  [PASS] Set-Cookie 下发 refresh cookie (judge-refresh-token)     True
+  [PASS] refresh cookie 为 HttpOnly (HttpOnly)                   True
+  [PASS] refresh cookie 带 SameSite (SameSite)                   True
+  [PASS] refresh cookie 不进入响应体（仅 Cookie）                        True
+[2] 登录负例（凭据校验与账号类型隔离）
+  [PASS] 错误密码被拒                                                 401
+  [PASS] 不存在的手机号被拒                                              401
+  [PASS] 空密码被拒（400 参数校验）                                        400
+  [PASS] 学员走管理端登录被拒（非管理员账号）                                     401
+[3] 管理员登录（管理端）
+  [PASS] 管理员登录 body.code                                        200
+  [PASS] 管理员 roleId claim（员工=1）                                 1
+  [PASS] 管理端 refresh cookie 独立命名 (judge-admin-refresh-token)    True
+[4] Token 刷新
+  [PASS] 携带 refresh cookie 可刷新                                  200
+  [PASS] 刷新后 accessToken 非空                                     True
+  [PASS] 刷新不返回 refreshToken（不轮换）                                None
+  [PASS] 无 refresh cookie 刷新被拒                                  401
+[5] 经网关端到端（AuthGlobalFilter 白名单 + 身份透传）
+  [PASS] 经网关登录（白名单命中）                                           200
+  [PASS] 携带 token 访问 /users/me                                  200
+  [PASS] 身份由网关注入（userId 一致）                                     2001
+  [PASS] 无 token 访问 /users/me                                   401
+  [PASS] 伪造 user-info 头被网关拒绝                                    401
+[6] 教师注册加固（P1 项①：/teachers/register 已移出白名单）
+  [PASS] 匿名注册教师被拒（网关白名单已移除）                                     401
+  [PASS] 学员 token 注册教师被拒（@RequireRole STAFF）                    403
+  [PASS] 学员匿名自助注册仍放行（回归保护）                                      200
+  [PASS] 管理员开通教师成功                                              200
+  [PASS] 新教师出现在教师列表                                             True
+  [PASS] 后端强制覆盖越权 type（仍为教师=3）                                  3
+  [PASS] 新开通教师可登录                                               200
+  [PASS] 新教师 roleId claim（教师=3）                                 3
+[7] 首次改密 fail-closed（只测失败路径，不触发凭据文件删除）
+  [PASS] 前置：存在待验证的凭据文件（非空样本） (D:\1\CodeJudge\.bootstrap-credentials) True
+  [PASS] 原密码错误被拒                                                400
+  [PASS] 校验失败时不删除初始凭据文件（fail-closed）                            True
+  [PASS] 校验失败时不改写凭据文件内容                                         True
+[8] 收尾清理（逻辑删除本脚本创建的临时账号）
+  [PASS] 已删除临时教师 id=2107028691639382017                         200
+  [PASS] 已删除临时学员 id=2107028682676154369                         200
+==================================================================
+通过 43 项，失败 0 项
