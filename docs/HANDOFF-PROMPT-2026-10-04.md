@@ -16,6 +16,9 @@ CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端�
 verify-p1-login 43/0。** 剩余工作全部为「渐进补测试 / 用户资源依赖 / 上线后动作」。
 **2026-10-05 更新：U4b 已收口（5/5，见执行报告第十轮）、tomcat 遗留跟进已结案（10.1.59）；
 剩余 U5/U6/U8/U9 全部卡用户资源。**
+**2026-10-05 下午再更新（执行报告第十一轮）：TZ 时钟缺陷已真修（8 服务加 TZ + 回归 5/5 + 43/0，
+fixture 回切本地时间）；LLM 429 复测仍 429（上游配额）；U6/U8 链路回环/rehearsal 验证通过、
+U5 推送审计通过、U9 runbook 就绪——四项一步式操作见 `docs/LAUNCH-USER-ACTIONS.md`。**
 
 ## 二、已完成进度（勿重做）
 
@@ -54,12 +57,17 @@ verify-p1-login 43/0。** 剩余工作全部为「渐进补测试 / 用户资源
 ### U6. F1 告警通道（需用户：提供凭据）
 - Slack/钉钉/邮件 webhook 凭据 → 配置进 Alertmanager（`deploy/monitoring/`）→
   配一条测试告警验证触达。
+- **10-05 prep**：Prometheus→AM→webhook 投递链路已回环实证（真实+合成告警均达本地 sink）；
+  凭据到位=改 .env + recreate + 注入测试告警三步，见 `docs/LAUNCH-USER-ACTIONS.md`。
 
 ### U8. HTTPS（需用户：域名 + 证书）
 - 网关 9080 前置 TLS 终结（或网关自身 SSL）；证书/域名到位前不硬凑。
+- **10-05 prep**：TLS 终结 rehearsal 通过（`docker-compose.tls.yml` + `deploy/tls/`，9443，
+  自签证书，`--profile tls` 隔离）；换真证书=两行配置，见 `docs/LAUNCH-USER-ACTIONS.md`。
 
 ### U9. 独立压测机（需用户：第二台机器）
 - 1h soak 目前与本机共宿主；独立压测机到位后复跑对标（soak.jmx 已含定时重登，可直接搬）。
+- 10-05 runbook：`docs/LAUNCH-USER-ACTIONS.md` U9 节（对标口径已写死）。
 
 ### U7. E4 生产告警重标（上线后动作）
 - 全部告警阈值仅适用本地基线；上线后按真实流量用 `scripts/recalibrate-alerts.py` 重标
