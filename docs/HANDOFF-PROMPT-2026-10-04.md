@@ -19,6 +19,8 @@ verify-p1-login 43/0。** 剩余工作全部为「渐进补测试 / 用户资源
 **2026-10-05 下午再更新（执行报告第十一轮）：TZ 时钟缺陷已真修（8 服务加 TZ + 回归 5/5 + 43/0，
 fixture 回切本地时间）；LLM 429 复测仍 429（上游配额）；U6/U8 链路回环/rehearsal 验证通过、
 U5 推送审计通过、U9 runbook 就绪——四项一步式操作见 `docs/LAUNCH-USER-ACTIONS.md`。**
+**2026-10-05 晚：新对话统一使用接替版 `docs/HANDOFF-PROMPT-2026-10-05.md`；本文件封存，
+仅 §七 测试数据登记册（第十~十一轮 23 用例）持续作为总结报告数据源维护。**
 
 ## 二、已完成进度（勿重做）
 
@@ -127,3 +129,44 @@ D 不做（附理由）。阻塞项标注 BLOCKED 不许假绿（**假绿比 FAI
 汇报按 A/B/C/D 分类（已做附证据 / 受阻附卡点 / 待用户 / 不做附理由），
 同步更新执行报告（新开「第十轮」）与 CONTEXT.md（追加 §5.23+），结束后给上线提醒总结。
 ```
+
+## 七、测试数据登记册（第十~十一轮，2026-10-05，供总结报告引用）
+
+> 结构化登记最近两轮全部测试执行：用例 ID / 时间 / 输入 / 预期 / 实际 / 状态 / 备注。
+> **测试环境基线（下表所有用例共享，除非行内特别标注）**：Windows 宿主（CST, Asia/Shanghai）；
+> Docker Desktop daemon 29.7.2（WSL2 后端）；16 运行容器（8 Java 服务全 healthy + web + 基础设施
+> mysql/redis/pg/rocketmq + 监控栈）；8 服务镜像 = tomcat 10.1.59（10-05 重建）；
+> **TZ=Asia/Shanghai（10-05 起，8 服务容器与宿主同钟）**；网关 9080 / 前端 5174；
+> E2E = Playwright serial + storageState 单次登录，`cd judge-web && npm run test:e2e`。
+> 状态口径：PASS（预期=实际）/ FAIL（不符）/ **BLOCKED（外部资源缺失，非代码缺陷）**。
+
+| 用例 ID | 时间(CST) | 输入参数 | 预期结果 | 实际结果 | 状态 | 备注 / 证据 |
+|---|---|---|---|---|---|---|
+| TC-U0-01 环境预检 | 10-05 午后 | —（探测 docker/mem/health） | daemon 可用、8 服务 healthy | daemon 29.7.2、8/8 healthy、宿主余 7GB | PASS | 依据：第十轮 U0 行 |
+| TC-U4B-T1 登录冒烟 | 10-05 午前 | 13900000001/123456 → web 5174 | 登录落地 /problems | 落地成功 997ms | PASS | playwright-u4b.log（E2E_CONTEST_ID=2107023093806194689） |
+| TC-U4B-T2 题库渲染 | 10-05 午前 | GET /problems | 列表有数据 | 渲染 781ms | PASS | 同上 |
+| TC-U4B-T3 提交判题链路 | 10-05 午前 | contestId=2107…4689 + problemId=4001 + Java long 版 A+B | 轮询到「通过」→详情用例≥2 行 | AC + 2 用例表 1.6s | PASS | WS 推送+REST 兜底，无固定 sleep |
+| TC-U4B-T4 AI 点评链路 | 10-05 午前 | 判题详情页 → 生成 AI 点评 | SSE 流式出正文+完成态 | 渲染完成 1.6s | PASS | **口径=链路可用**；上游 429 走设计内降级模板（见 TC-B2-01） |
+| TC-U4B-T5 榜单联动 | 10-05 午前 | /ws/contests/{id}/rank SNAPSHOT | 实时榜出现「演示学员一·过 1 题」 | 首行可见 689ms | PASS | AC 真实计入 Redis 榜 |
+| TC-TOM-01 Central 发布确认 | 10-05 午前 | GET maven-metadata tomcat-embed-core | 出现 10.1.58+ | 10.1.59（58 被官方跳过） | PASS | central-metadata-excerpt.txt |
+| TC-TOM-02 升版+产物核验 | 10-05 午前 | pom 10.1.55→10.1.59 + mvn install | BUILD SUCCESS，6 servlet 服务 embed-core=10.1.59 | 符合预期 | PASS | judge-ai/gateway 仅 embed-el（无 core，符合架构） |
+| TC-TOM-03 镜像重建重部署 | 10-05 午前 | build-app-images-prebuilt.py --worker-docker-cli + compose up | 8 镜像构建、8/8 healthy | 符合预期 | PASS | images-build.log |
+| TC-TOM-04 trivy 复扫 | 10-05 午前 | fs 扫 judge-user（挂 ~/.m2:ro） | tomcat CVE-2026-65182 清除 | tomcat 零命中 | PASS | 不挂 m2 会假干净（0 findings 假象） |
+| TC-TOM-05 p1 回归 | 10-05 午前 | verify-p1-login.py | 43/0 | 43 通过 0 失败 | PASS | verify-p1-login-43-0.txt |
+| TC-TOM-06 E2E 升版回归 | 10-05 午前 | E2E 全量（旧 fixture UTC 窗口） | 5/5 | 5 passed 21.4s | PASS | e2e-post-upgrade.log |
+| TC-TZ-01 容器时钟 | 10-05 17:06 | docker exec date ×3 服务 | 显示 CST 且与宿主一致 | 17:06:48 CST = 宿主 | PASS | 修复前为 UTC（差 8h） |
+| TC-TZ-02 生命周期调度 | 10-05 17:06 | judge-contest 日志 | 时间戳 CST、旧 UTC 赛正确终局 | 17:06:11 CST 判已结束+FINAL 快照 | PASS | 迁移语义：存库 UTC 墙钟按 CST 提前 8h 过期（可丢弃测试资产） |
+| TC-TZ-03 E2E CST 金丝雀 | 10-05 17:07 | fixture 改本地时间窗（contestId=2107034953829392385） | 5/5（T3 若时钟回退则报「尚未开始」） | 5 passed 9.7s | PASS | playwright-tz-fix-regression.log |
+| TC-TZ-04 p1 回归 | 10-05 17:09 | verify-p1-login.py | 43/0 | 43/0 | PASS | tz-fix 目录 |
+| TC-B2-01 LLM 上游复测 | 10-05 17:08 | chat/completions + embeddings（bigmodel） | 非 429（配额恢复） | 双通道仍 429 | **BLOCKED** | 上游配额问题，非本地缺陷；降级路径工作正常；judge-ai-429-recheck-2026-10-05.log |
+| TC-U6-01 告警回环（真实） | 10-05 17:18 | Prometheus 规则 JudgeDeadTasksPresent（8 死信） | 投递到 webhook sink | 17:18:36 sink HTTP 200 收 1745B | PASS | 全链=Prometheus→AM(critical 路由)→webhook |
+| TC-U6-02 告警回环（合成） | 10-05 17:21 | POST /api/v2/alerts U6PipelineTest（critical） | POST 200→~10s 后投递 | 200 + sink 收完整 AM JSON | PASS | 坑：PS5.1 utf8 带 BOM 被 AM 400，须 ASCII |
+| TC-U6-03 AM 路由还原 | 10-05 17:24 | 无 shell 覆盖 recreate | 默认 receiver=null | rendered yml `receiver: 'null'` | PASS | 验证后恢复零残留 |
+| TC-U8-01 TLS rehearsal | 10-05 17:20 | curl -sk https://127.0.0.1:9443/problems/page | 200 真实 JSON | 200（nginx/1.31.6 → 网关） | PASS | 自签证书 CN=codejudge.local；tls-handshake-check.txt |
+| TC-U8-02 真域名 HTTPS | — | 用户域名+CA 证书 | 终验 | 未执行 | **BLOCKED** | prep 已就绪：换证书=两行配置（LAUNCH-USER-ACTIONS.md U8） |
+| TC-U5-01 推送安全审计 | 10-05 午后 | git ls-files 全量 | 无 secrets 入库、无 >5MB | 符合预期 | PASS | .env 未跟踪；命中 3 项为审计文档/脚本本体 |
+| TC-U5-02 代建远程仓库 | — | gh repo create | 仓库创建+推送 | 未执行（gh 未安装） | **BLOCKED** | 需用户建仓给 URL；其余步骤可代做 |
+| TC-U9-01 独立压测对标 | — | 第二台机器 1h soak | 对标 §3.8.2 基线 | 未执行 | **BLOCKED** | soak.jmx 就绪（含定时重登）；对标口径已写入 runbook U9 |
+
+**登记册统计**：PASS 19 / FAIL 0 / BLOCKED 4（全部外部资源：上游 LLM 配额 ×1、用户资源 ×3）。
+历史轮次（1–9）测试数据已在各自证据目录 + 执行报告对应轮次表格中登记，不在此重复。
