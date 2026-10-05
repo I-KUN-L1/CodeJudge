@@ -9,7 +9,8 @@
 
 CodeJudge：Java 21 微服务（8 服务 + 网关）+ Vue3 前端的分布式 OJ，Docker Compose 全栈
 （16 运行容器）。**当前健康**：8 服务 healthy、TZ 已统一 CST、tomcat 10.1.59、E2E 5/5、
-verify-p1-login 43/0、trivy 真实 CRITICAL 清零。
+verify-p1-login 43/0、trivy 真实 CRITICAL 清零。**U5 已收口（10-05 晚）：remote=I-KUN-L1/CodeJudge
+（Private）+ 首推 + Actions 首跑绿**。
 
 ## 二、已收口（勿重做，证据齐备）
 
@@ -20,14 +21,15 @@ verify-p1-login 43/0、trivy 真实 CRITICAL 清零。
 | tomcat CVE-2026-65182 | 结案：10.1.55→10.1.59 全链回归 | security-evidence/2026-10-05-tomcat-1059（a69ca72） |
 | **TZ 时钟缺陷** | **已修复**：8 服务容器加 `TZ: Asia/Shanghai`，时钟/调度全 CST；fixture 以本地时间发窗口（兼作金丝雀） | e2e-evidence/2026-10-05-tz-fix（276fb53） |
 | **U6/U8/U5/U9 prep** | 告警链路回环实证（真实+合成告警达本地 sink）；TLS 终结 rehearsal 200（9443 自签，`--profile tls`）；推送安全审计通过；对标口径落档 | security-evidence/2026-10-05-u6-u8-prep（16f49e3） |
+| **U5 GitHub remote + CI** | **已收口（10-05 晚）**：凭据管理器存量凭据 + REST API 代建（解除无 gh 卡点）→ I-KUN-L1/CodeJudge（Private）→ push b3eef63（徽章 1 处+注释）→ **Actions 首跑 run#1 success** | security-evidence/2026-10-05-u5-github |
 | 测试数据登记册 | 第十~十一轮 23 用例：PASS 19 / FAIL 0 / BLOCKED 4（全外部） | **本文件前作（10-04 版）§七** |
 
 ## 三、剩余任务队列（全部卡用户资源，资源到位即执行）
 
 **统一 runbook：`docs/LAUNCH-USER-ACTIONS.md`**（每项「卡点/已就位/一步式操作」）：
 
-1. **U5**：用户建 GitHub 仓库给 URL → 代做 push + 徽章 5 处替换 + Actions 首跑确认
-   （本机无 gh CLI，无法代建仓）。
+1. ~~**U5**~~ **已收口（10-05 晚）**：REST API 代建（凭据管理器存量凭据通路，非 gh）→
+   I-KUN-L1/CodeJudge（Private）+ push + 徽章 + **CI 首跑绿**（run 37299478009）；登记册 TC-U5-02/03 PASS。
 2. **U6**：用户提供 webhook/SMTP 凭据 → 填 `.env`（email 通道零中间件）→ recreate AM →
    注入测试告验触达（投递链路已回环实证，payload 模板在证据目录）。
 3. **U8**：用户提供域名+CA 证书 → `deploy/tls/nginx-tls.conf` 换两行证书配置 → 生产端口切换 → HTTPS 复验。

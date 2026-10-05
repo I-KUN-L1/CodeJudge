@@ -848,6 +848,20 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
 - 证据：`docs/security-evidence/2026-10-05-u6-u8-prep/`。U5/U6/U8/U9 最终验收仍待用户资源
   （真 CI / 真群消息 / 真域名 / 独立机），不用回环/rehearsal 冒充——runbook 一页式可执行。
 
+### 5.26 2026-10-05 晚：U5 收口——GitHub 建仓 + 首推 + CI 首跑绿（真实终验，第十二轮）
+
+- **卡点解除路径**：原判「无 gh CLI 无法代建仓」重估不成立——Windows 凭据管理器存有
+  `git:https://github.com` 凭据（用户 **I-KUN-L1**）→ GitHub REST API 代建（token 仅存进程变量，
+  未落盘未回显）。教训：卡点表述须写明全部前置假设，便于日后重估（gh 缺失 ≠ 无凭据通路）。
+- **执行链**：`POST /user/repos` 建 **I-KUN-L1/CodeJudge（Private）** → README CI 徽章
+  `YOUR_GITHUB_ORG`→`I-KUN-L1` + 删过期注释（commit **b3eef63**；实测仅 1 处仓库链接徽章，
+  runbook 记「5 处」系把 shields.io 静态徽章误计入）→ `push -u origin master`（workflows 文件
+  推送未被拒，token 具 workflow scope）→ **Actions 首跑 run#1 success**（run 37299478009，
+  ≈3m35s：Frontend 55s + Backend 3m32s 双棘轮全绿）。
+- 落账：登记册 TC-U5-02 BLOCKED→PASS + TC-U5-03 新增 PASS（PASS 21/FAIL 0/BLOCKED 3）；
+  runbook U5 勾选；证据 `docs/security-evidence/2026-10-05-u5-github/`。
+  剩余队列：U6 凭据、U8 域名证书、U9 独立压测机、B2 LLM 配额（全部外部资源）。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash

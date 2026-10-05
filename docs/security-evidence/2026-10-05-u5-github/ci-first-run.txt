@@ -1,0 +1,28 @@
+GitHub Actions 首跑原始摘录（GET /repos/I-KUN-L1/CodeJudge/actions/runs + /jobs，2026-10-05 18:57 CST）
+
+轮询录（60s 级采样，20s 间隔）：
+18:54:47 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:55:07 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:55:28 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:55:48 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:56:09 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:56:29 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:56:50 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:57:10 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:57:31 run#1 status=in_progress conclusion= event=push head=b3eef63
+18:57:51 run#1 status=completed conclusion=success event=push head=b3eef63
+
+run 详情：
+id=37299478009 run_url=https://github.com/I-KUN-L1/CodeJudge/actions/runs/37299478009
+created=2026-10-05T10:53:55Z updated=2026-10-05T10:57:30Z
+job=Frontend (Node 22 / Vite) status=completed conclusion=success steps=10 started=2026-10-05T10:53:59Z completed=2026-10-05T10:54:54Z
+job=Backend (Java 21 / Maven) status=completed conclusion=success steps=11 started=2026-10-05T10:53:57Z completed=2026-10-05T10:57:29Z
+
+push 记录：
+[master b3eef63] docs: README CI 徽章指向 I-KUN-L1/CodeJudge（U5 建仓后点亮）
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+ * [new branch]      master -> master（origin=https://github.com/I-KUN-L1/CodeJudge.git，-u 已设 tracking）
+
+建仓记录（REST POST /user/repos 返回摘录）：
+login=I-KUN-L1
+created=I-KUN-L1/CodeJudge private=True url=https://github.com/I-KUN-L1/CodeJudge

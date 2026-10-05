@@ -7,6 +7,11 @@
 
 ## U5. GitHub remote 仓库 + 徽章 + 首次 CI
 
+> **✅ 已完成（2026-10-05 晚，真实终验）**：凭据管理器存量凭据 + REST API 代建（解除「无 gh CLI」卡点）
+> → `I-KUN-L1/CodeJudge`（Private）建成 → push master（b3eef63，徽章替换 1 处 CI 徽章+注释；
+> 其余 4 徽章系 shields.io 静态徽章无需替换）→ **Actions 首跑 run#1 success**（Frontend 55s +
+> Backend 3m32s）。证据：`docs/security-evidence/2026-10-05-u5-github/`。
+
 **卡点**：本机未安装 `gh` CLI，无法代建仓库；需要一个用户创建的远程仓库 URL。
 
 **已就位（2026-10-05 审计）**：
