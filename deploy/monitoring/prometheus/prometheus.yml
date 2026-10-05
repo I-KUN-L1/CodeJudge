@@ -1,18 +1,18 @@
 # ============================================================
-# CodeJudge 监控 —— Prometheus 抓取配置
+# CodeJudge ?? ?? Prometheus ????
 #
-# 抓取目标：8 个 judge-* 服务（9080–9087）的 /actuator/prometheus。
+# ?????8 ? judge-* ???9080?9087?? /actuator/prometheus?
 #
-# 关键点：judge-* 服务**跑在宿主机上**（由 scripts/dev-start-backend.py 启动），
-#   不在 Docker 网络里。因此 Prometheus 容器必须用 host.docker.internal 访问，
-#   写 localhost:9080 会指向容器自身 → 全部 target 显示 down（且报 connection refused）。
-#   Linux 宿主需配合 docker-compose 里的 extra_hosts: host-gateway（已配）。
+# ????judge-* ??**??????**?? scripts/dev-start-backend.py ????
+#   ?? Docker ?????? Prometheus ????? host.docker.internal ???
+#   ? localhost:9080 ??????? ? ?? target ?? down??? connection refused??
+#   Linux ????? docker-compose ?? extra_hosts: host-gateway?????
 #
-# 服务不从网关抓：网关只代理业务路由，/actuator/** 未被暴露到网关路由表。
-#   直连各服务端口才是唯一可达路径，也因此**不需要 JWT**。
-#   注意（QA-F01）：网关自身的 /actuator/** 已启用严格模式令牌（.env 的
-#   CJ_ACTUATOR_TOKEN），下方 codejudge job 统一携带 Bearer 凭据 —— 其余服务
-#   未接防护，多余认证头会被忽略，无副作用。换令牌时两处必须同步。
+# ??????????????????/actuator/** ???????????
+#   ???????????????????**??? JWT**?
+#   ???QA-F01??????? /actuator/** ??????????.env ?
+#   CJ_ACTUATOR_TOKEN???? codejudge job ???? Bearer ?? ?? ????
+#   ???????????????????????????????
 # ============================================================
 global:
   scrape_interval: 15s
@@ -31,53 +31,53 @@ alerting:
         - targets: ['alertmanager:9093']
 
 scrape_configs:
-  # ---------------- CodeJudge 业务服务（8 个） ----------------
-  # 用单个 job + 每 target 打 application 标签：这样 up{application="judge-ai"} 直接可读，
-  # 告警规则不必再引 instance（host:port）—— 端口一改规则就失效。
-  # tier 仅用于「核心链路 vs 边缘」分组展示，不参与告警判定。
+  # ---------------- CodeJudge ?????8 ?? ----------------
+  # ??? job + ? target ? application ????? up{application="judge-ai"} ?????
+  # ???????? instance?host:port??? ??????????
+  # tier ???????? vs ????????????????
   - job_name: 'codejudge'
     metrics_path: '/actuator/prometheus'
-    # QA-F01：网关自身 actuator 严格模式令牌（与 .env 的 CJ_ACTUATOR_TOKEN 同步维护）
+    # QA-F01????? actuator ???????? .env ? CJ_ACTUATOR_TOKEN ?????
     authorization:
       type: Bearer
-      credentials: 'cj-act-4fc68567c391f382ad85e631'
+      credentials: 'cj-act-2b2f119785e1b44ff1e03065'
     scrape_interval: 15s
     static_configs:
       - targets: ['host.docker.internal:9080']
         labels:
-          application: 'judge-gateway'      # 统一入口 / JWT 鉴权 / 路由
+          application: 'judge-gateway'      # ???? / JWT ?? / ??
           tier: 'edge'
       - targets: ['host.docker.internal:9081']
         labels:
-          application: 'judge-auth'         # 登录 / 发令牌 / JWKS
+          application: 'judge-auth'         # ?? / ??? / JWKS
           tier: 'core'
       - targets: ['host.docker.internal:9082']
         labels:
-          application: 'judge-user'         # 用户 / 班级 / RBAC
+          application: 'judge-user'         # ?? / ?? / RBAC
           tier: 'core'
       - targets: ['host.docker.internal:9083']
         labels:
-          application: 'judge-problem'      # 题目 / 测试用例 / 标签
+          application: 'judge-problem'      # ?? / ???? / ??
           tier: 'core'
       - targets: ['host.docker.internal:9084']
         labels:
-          application: 'judge-submission'   # 提交 / 判题队列 / WS 进度
+          application: 'judge-submission'   # ?? / ???? / WS ??
           tier: 'core'
       - targets: ['host.docker.internal:9085']
         labels:
-          application: 'judge-worker'       # 判题机（拉任务 / 跑沙箱 / 回结果）
+          application: 'judge-worker'       # ??????? / ??? / ????
           tier: 'core'
       - targets: ['host.docker.internal:9086']
         labels:
-          application: 'judge-contest'      # 竞赛 / 实时榜 / WS
+          application: 'judge-contest'      # ?? / ??? / WS
           tier: 'core'
       - targets: ['host.docker.internal:9087']
         labels:
-          application: 'judge-ai'           # AI 点评（WebFlux + SSE + RAG）
+          application: 'judge-ai'           # AI ???WebFlux + SSE + RAG?
           tier: 'ai'
 
-  # ---------------- 监控自身 ----------------
-  # 抓 Prometheus 自己的 /metrics，用于回答「是业务挂了还是监控挂了」。
+  # ---------------- ???? ----------------
+  # ? Prometheus ??? /metrics???????????????????
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']

@@ -12,7 +12,8 @@ CodeJudge：Java 21 微服务（8 服务 + 网关）+ Vue3 前端的分布式 OJ
 verify-p1-login 43/0、trivy 真实 CRITICAL 清零。**第十二轮（10-05 晚）：U5 已收口（remote=
 I-KUN-L1/CodeJudge + CI 首跑绿）、U6 已收口（email 告警通道真实终验，收件确认）、
 U8 已关闭（用户决策：内网部署不设域名，范围取消）、U9 已关闭（用户决策方案④：无第二台电脑，
-决策降级带触发条件）；上线前队列仅剩 B2。**
+决策降级带触发条件）；**`.env` 生产态约定已执行**（密钥全量轮换+开关落地，43/0 + E2E 5/5）；
+上线前队列仅剩 B2。**
 
 ## 二、已收口（勿重做，证据齐备）
 
@@ -62,6 +63,10 @@ U8 已关闭（用户决策：内网部署不设域名，范围取消）、U9 �
    先查 StarRail/浏览器占用，重负载动作最小化、逐个重建。
 8. **安全**：生产 `.env` 必须 `CJ_DOC_WHITELIST_ENABLED=false` + `CJ_ACTUATOR_TOKEN`（轮换同步
    Prometheus yml 两处）；`/problems/{id}` 永不入白名单；非管理员用户信息脱敏。
+   **✅ 已执行（10-05 晚，第十二轮）**：密钥全量轮换（MySQL/PG/Grafana/admin/JWT/Redis/MinIO/actuator）
+   + 两开关落地 + Prometheus 同步，回归 43/0 + E2E 5/5；证据 `2026-10-05-env-prod-hardening/`。
+   admin 密码=CJ_ADMIN_INIT_PASSWORD 当前值。另：改 .env 后须显式 force-recreate 服务清单
+   （env_file 内容变化不触发重建）；改行值正则用 `^KEY=.*$`（CRLF 卡 `=true$`）。
 9. **TLS/告警 prep 资产**：`docker-compose.tls.yml`（`--profile tls`，9443，与默认栈零冲突）；
    AM 注入测试告警模板 `docs/security-evidence/2026-10-05-u6-u8-prep/test-alert-payload.json`。
 

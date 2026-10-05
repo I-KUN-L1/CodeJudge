@@ -913,6 +913,30 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
   BLOCKED 1 + 决策关闭 2**）；runbook U9 节标注关闭；第十二轮报告 D 类第二项。
   **上线前队列：仅剩 B2（LLM 配额恢复/换 Key 人工核对）。**
 
+### 5.30 2026-10-05 晚：`.env` 生产态约定执行（上线检查单 §四.8，第十二轮）
+
+- **密钥全量轮换（只存 gitignored .env）**：MySQL root（容器内 `ALTER USER`，`%`+`localhost` 双条目）、
+  Postgres（`ALTER ROLE`）、Grafana admin（`grafana-cli reset-admin-password`）、
+  **admin 账号真实改密**——bootstrap 凭据从未被消费过（`.bootstrap-credentials` 仍在），
+  走 `POST /accounts/password/first-change` 真实改密（code=200 + 新密登录 200 +
+  mustChange=false），宿主机残留副本手动删除；Redis/MinIO/CJ_JWT_SECRET/actuator token 换新；
+  `CJ_ADMIN_INIT_PASSWORD` 同步为 admin 当前密码。**`CJ_USER_DEFAULT_PASSWORD` 不轮换**
+  （种子/E2E/verify-p1-login/压测账号池同源依赖，教学内网配合首登改密策略，决策记录在证据 README）。
+- **生产开关**：`CJ_DOC_WHITELIST_ENABLED=false`（网关 `/v3/api-docs`、`/doc.html` 实测 404）+
+  `GF_AUTH_ANONYMOUS_ENABLED=false`（Grafana 匿名 API 401）+ Prometheus yml 凭据同步新 token
+  （**8/8 targets up**——旧 token 即 401/404，严格模式现场实证）。
+- **回归全绿**：8/8 healthy、sandbox-init Exited(0) 自动重跑、verify-p1-login 43/0、
+  E2E 5/5（15.0s，含判题链=新凭据下沙箱/MQ/worker 实证）。
+- **两条坑（重要）**：① CRLF 行尾卡 `-replace '(?m)^KEY=true$'`（`.*$` 可行——`.*` 吃 `\r`），
+  且**验证开关必须打印真实值**，长度有歧义（true/false 同为 4 字符，曾误判已生效）；
+  ② **env_file 内容变化不触发 compose 重建**——`up -d --force-recreate` 只重建 compose 级 env
+  变化的基础设施，Java 服务原样未动（短暂「旧密码连新库」失联），必须**显式
+  `force-recreate <服务清单>`**。附：E2E 正确接线=先 `node e2e/setup-contest.mjs` 产出
+  `E2E_CONTEST_ID` 再跑 playwright；沙箱内 npm 需 `$env:npm_config_cache` 重定向。
+- 落账：登记册 TC-ENV-01/02 PASS（统计 **PASS 24 / FAIL 0 / BLOCKED 1 + 决策关闭 2**）；
+  证据 `docs/security-evidence/2026-10-05-env-prod-hardening/`。
+  **上线前工程项全部清空，仅剩 B2（LLM 配额，外部）。**
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash
