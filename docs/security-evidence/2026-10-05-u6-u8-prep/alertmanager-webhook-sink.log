@@ -1,0 +1,6 @@
+17:18:36 POST /am-hook len=1745
+{"receiver":"webhook","status":"firing","alerts":[{"status":"firing","labels":{"alertname":"JudgeDeadTasksPresent","application":"judge-submission","cluster":"codejudge-local","env":"dev","exported_application":"judge-submission","instance":"host.docker.internal:9084","job":"codejudge","severity":"critical","tier":"core"},"annotations":{"description":"用户侧表现：提交永远停在「判题中」，不返回结果。\n排查：judge_task 表 WHERE status='DEAD'，看 fail_reason。\n常见原因：沙箱镜像缺失、代码超长导致 OOM、Docker 守护进程异常。\n","summary":"存在 8 个死信判题任务（重试已耗尽）"},"startsAt":"2026-10-05T09:08:21.231Z","endsAt":"0001-01-01T00:00:00Z","generatorURL":"http://2
+---
+17:19:49 POST /am-hook len=779
+{"receiver":"webhook","status":"firing","alerts":[{"status":"firing","labels":{"alertname":"U6PipelineTest","application":"judge-e2e-test","severity":"critical"},"annotations":{"summary":"U6 loopback test: AM-to-webhook delivery"},"startsAt":"2026-10-05T09:18:00Z","endsAt":"0001-01-01T00:00:00Z","generatorURL":"","fingerprint":"51dfd24c776a3476"}],"groupLabels":{"alertname":"U6PipelineTest","application":"judge-e2e-test"},"commonLabels":{"alertname":"U6PipelineTest","application":"judge-e2e-test","severity":"critical"},"commonAnnotations":{"summary":"U6 loopback test: AM-to-webhook delivery"},
+---

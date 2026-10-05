@@ -1,0 +1,25 @@
+# TLS 终结 rehearsal（U8，2026-10-05）—— 用法见 deploy/tls/nginx-tls.conf 文件头。
+# 只在显式 --profile tls 时生效，对默认栈零影响；端口 9443，不占用 9080。
+#
+# 为什么复用 nginx:alpine 而不是在 judge-web 镜像上叠：本机 docker.io 拉取被墙，
+# nginx:alpine 是本地已有镜像（docker images 实证）；judge-web 的 nginx 配置经 entrypoint
+# 注入业务代理，硬改会混淆两个职责。
+#
+# host.docker.internal：容器回宿主 published 端口（9080 绑 127.0.0.1），Docker Desktop 原生支持；
+# extra_hosts 的 host-gateway 写法保证该文件将来在 Linux 宿主上也可用。
+
+services:
+  tls-terminator:
+    image: nginx:alpine
+    container_name: codejudge-tls-terminator
+    profiles: ["tls"]
+    restart: always
+    ports:
+      - "${BIND_IP:-127.0.0.1}:9443:443"
+    volumes:
+      - ./deploy/tls/nginx-tls.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/tls/certs:/etc/nginx/certs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # 不设 depends_on：judge-gateway 属 app profile，本文件在 tls profile 下独立启用；
+    # nginx 对上游按请求容错，网关短暂不在时 502 而非起不来。

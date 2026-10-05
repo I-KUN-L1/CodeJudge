@@ -1,0 +1,1 @@
+[{"labels":{"alertname":"U6PipelineTest","severity":"critical","application":"judge-e2e-test"},"annotations":{"summary":"U6 loopback test: AM-to-webhook delivery"},"startsAt":"2026-10-05T09:18:00Z","endsAt":"2026-10-05T10:00:00Z"}]
