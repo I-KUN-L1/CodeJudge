@@ -14,6 +14,8 @@ CodeJudge（分布式在线编程评测平台，8 后端微服务 + Vue 前端�
 （3 个真实 CRITICAL 依赖升级落位 + ZAP H0/M0/L0）、E2E 冒烟 2/2。
 **2026-10-04 晚现状：宿主已重启，全栈 20 容器 healthy，8 服务镜像已含升级后依赖重部署，
 verify-p1-login 43/0。** 剩余工作全部为「渐进补测试 / 用户资源依赖 / 上线后动作」。
+**2026-10-05 更新：U4b 已收口（5/5，见执行报告第十轮）、tomcat 遗留跟进已结案（10.1.59）；
+剩余 U5/U6/U8/U9 全部卡用户资源。**
 
 ## 二、已完成进度（勿重做）
 
@@ -25,10 +27,15 @@ verify-p1-login 43/0。** 剩余工作全部为「渐进补测试 / 用户资源
 | U3 trivy | 镜像 4 张 + fs 逐模块 9 模块；**tomcat 10.1.55 / netty 4.1.137.Final / bcprov 1.85** 钉版清零；fastjson 判误报；镜像重建重部署 8/8 healthy + verify-p1-login 43/0 | DEPLOYMENT.md §8.4.1；security-evidence/2026-10-04-{trivy,redeploy}/（dbb32e7） |
 | U3 ZAP | baseline H0/M0/L0（仅 1 条 Info 级缓存提示，不处置） | security-evidence/2026-10-04-zap/（dbb32e7） |
 | U4 第一批 | Playwright E2E 冒烟 2 条链路 2/2 通过（登录→落地；题库列表） | e2e-evidence/2026-10-04-smoke/（6c85b04） |
+| **U4b（10-05 ✅）** | E2E 剩余链路 **5/5**：提交判题 AC（轮询）/ 判题详情 / AI 点评链路（SSE）/ 榜单 WS 联动；新增 `e2e/setup-contest.mjs` fixture；3 项发现（TZ 缺陷 / sandbox-init 重启规约 / LLM 429 降级） | e2e-evidence/2026-10-05-u4b-chains/；执行报告第十轮；CONTEXT §5.23 |
+| **tomcat 跟进（10-05 ✅）** | CVE-2026-65182 **结案**：Central 实际发布 10.1.59（10.1.58 跳过）→ pom 10.1.55→10.1.59 → 8 镜像重建重部署 8/8 healthy → trivy 复扫零命中 → verify-p1-login 43/0 → E2E 回归 5/5 | security-evidence/2026-10-05-tomcat-1059/；DEPLOYMENT.md §8.4.1；CONTEXT §5.24 |
 
 ## 三、未完成任务队列（按优先级与解锁条件）
 
-### U4b. Playwright E2E 剩余链路（无外部依赖，可立即做）
+### U4b. Playwright E2E 剩余链路（✅ 2026-10-05 已收口，勿重做）
+- **结果**：5/5 通过（冒烟 2 + 提交判题/AI 点评/榜单联动 3）；新增 `judge-web/e2e/setup-contest.mjs`
+  前置 fixture。剩余链路维护见 `judge-web/e2e/smoke.spec.js` 与
+  `docs/e2e-evidence/2026-10-05-u4b-chains/README.md`（含 TZ 绕过说明）。
 - **目标**：补齐 选题 → 编辑 → 提交 → 看判题结果 → 查榜单 → AI 点评。
 - **做法**：扩展 `judge-web/e2e/smoke.spec.js`（或新增分文件）；沿用 serial 模式 +
   storageState 复用（登录限流 2 req/s burst 5，严禁循环反复登录）；提交用种子题目 +
@@ -58,12 +65,10 @@ verify-p1-login 43/0。** 剩余工作全部为「渐进补测试 / 用户资源
 - 全部告警阈值仅适用本地基线；上线后按真实流量用 `scripts/recalibrate-alerts.py` 重标
   （脚本已有两道守卫：样本稀疏不计入、无提交流量不改阈值）。
 
-### 遗留跟进：tomcat CVE-2026-65182（非阻塞，条件触发）
-- 现状：trivy DB 标记修复版 10.1.58，但 Central 尚未发布（mvn "was not found" 实证），按
-  「接受+跟进」登记（DEPLOYMENT.md §8.4.1）。
-- 触发条件：`https://repo1.maven.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/`
-  出现 10.1.58+ → 根 pom `<tomcat.version>` 升版 → `mvn install` → trivy 复扫 judge-api
-  → 8 镜像重建重部署 → verify-p1-login 回归。
+### 遗留跟进：tomcat CVE-2026-65182（✅ 2026-10-05 已结案，勿重做）
+- **结果**：Central 实际发布 10.1.59（10.1.58 被官方跳过）→ pom 升版 → 复扫零命中 →
+  8 镜像重部署 → verify-p1-login 43/0 → E2E 回归 5/5。证据
+  `docs/security-evidence/2026-10-05-tomcat-1059/`；登记见 DEPLOYMENT.md §8.4.1。
 
 ## 四、硬约束精选（都是踩过的坑，全量见旧版 HANDOFF「硬约束」节）
 

@@ -330,3 +330,45 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
   Central 实际发布（10.1.58 教训），钉版前先 `mvn` 实证；④`build-app-images-prebuilt.py`
   是 docker.io 被墙环境唯一可用镜像构建路径。
 
+## 第十轮：U4b E2E 剩余链路收口 + tomcat CVE-2026-65182 遗留跟进结案（2026-10-05）
+
+> 按 HANDOFF-PROMPT-2026-10-04 第六节执行：U0 预检 → U4b → 卡点输出 → tomcat 有网跟进。
+
+### A 已完成（附证据）
+
+| # | 事项 | 结果 |
+|---|---|---|
+| U0 | 环境预检 | ✅ Docker Desktop 手动拉起（daemon 29.7.2）→ 20 容器自启、8 服务 healthy；web 200 / 公共题库 API 真实数据；宿主内存余 7GB/15.2GB；zx-* 6 容器保持停止（restart=no） |
+| U4b | Playwright E2E 剩余链路 | ✅ **5/5 通过**（最终轮 12.5s）：冒烟 2 条保留 + 新增 3 条链路——①竞赛选题→编辑→提交→判题轮询 AC→判题详情（用例结果 ≥2 行）②AI 点评链路（生成→SSE 流式→正文）③竞赛榜单 WS 联动（SNAPSHOT→「演示学员一·过 1 题」）。serial + storageState 单次登录复用（未触发限流）；轮询断言（`expect().toPass()`）不 sleep；新增 `e2e/setup-contest.mjs` 前置脚本（教师建进行中竞赛 + 学员报名，输出 `E2E_CONTEST_ID`） |
+| U4b-证据 | 归档 | ✅ `docs/e2e-evidence/2026-10-05-u4b-chains/`（playwright-u4b.log 最终 5/5 运行录 + README：链路覆盖/复跑方式/3 项环境产品发现） |
+| tomcat 跟进 | CVE-2026-65182 结案 | ✅ Central metadata 复查：**10.1.58 被官方跳过、10.1.59 实际发布**（触发条件达成）→ 根 pom `tomcat.version=10.1.55→10.1.59` → `mvn install` 全绿 → 产物核验（6 个 servlet 服务 embed-core 10.1.59）→ `build-app-images-prebuilt.py --worker-docker-cli` 重建 8 镜像 → 重部署 8/8 healthy → **trivy 复扫 tomcat 零命中**（judge-user 61 findings 全为既有接受项，唯一 CRITICAL fastjson 系已知误报）→ verify-p1-login **43/0** → E2E 升版回归 **5/5**（21.4s） |
+| tomcat-证据 | 归档 | ✅ `docs/security-evidence/2026-10-05-tomcat-1059/`（README 处置链 + central-metadata-excerpt + trivy-fs-judge-user-m2 + images-build.log + verify-p1-login-43-0 + e2e-post-upgrade.log）；DEPLOYMENT.md §8.4.1 同步更新为结案登记 |
+| 落账 | 文档 | ✅ 本报告第十轮 + CONTEXT.md §5.23/§5.24 + HANDOFF 状态更新 |
+
+### B 受阻（本轮实测发现的 3 项，处置建议附后）
+
+1. **TZ 时钟缺陷（产品级）**：compose 仅给 mysql/pg 设 `TZ: Asia/Shanghai`，8 个 Java 服务
+   容器跑 UTC（JVM `LocalDateTime.now()`）→ 宿主 CST 的 UI 创建竞赛，开赛被推迟 8 小时
+   （E2E run-2「竞赛尚未开始」实锤，API 复现确认）。E2E fixture 以 UTC 对齐绕过。
+   修复需 8 服务加 TZ 环境变量 + 全量重部署 + 回归 → **待用户决策**（改产品行为，不擅动）。
+2. **LLM 上游 429**：AI 点评 E2E 期间 bigmodel.cn 返回 429，产品按设计降级为结构化模板
+   （链路本身真通：请求发出 → SSE 流式回包 → 前端渲染完成）。T4 断言口径=链路可用，
+   注释透明标注；待配额恢复或换 Key 后人工复核真实 LLM 输出。
+3. **运维规约（新增）**：宿主重启后一次性容器 `sandbox-work-init` 不随 daemon 自启重跑，
+   `/cj-sandbox` 被重建为 root 空目录 → 判题报 SE（worker 日志 `AccessDeniedException:
+   /cj-sandbox/judge-*`）。处置：`docker start codejudge-sandbox-init`（WRITE_OK 验证）后重跑。
+   **判题前必查**。
+
+### C 待用户（U5/U6/U8/U9 卡点，详见本轮汇报正文）
+
+- U5：建 remote 仓库（后接 git remote add + push + README 徽章 5 处替换 + 首次 Actions 确认）。
+- U6：Slack/钉钉/邮件 webhook 凭据（配 Alertmanager + 测试告警触达）。
+- U8：域名 + 证书（网关 9080 前置 TLS）。
+- U9：第二台独立压测机（复跑 soak 对标 §3.8.2 基线）。
+
+### D 不做
+
+- `reset-demo-data.py` 破坏性清洗未执行（安全策略拒绝 --yes；E2E 采用非破坏 fixture 方案：
+  只新增竞赛+报名，不动既有演示数据）。
+- TZ 缺陷未擅修（涉 8 服务重部署+全回归，属产品行为变更，待用户拍板）。
+
