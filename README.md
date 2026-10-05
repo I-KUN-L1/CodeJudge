@@ -1,8 +1,6 @@
 # CodeJudge
 
-<!-- B2 徽章：CI 徽章的仓库地址为占位符（本仓库暂未配置 remote），首次推送 GitHub 后
-     把 YOUR_GITHUB_ORG/CodeJudge 替换为真实 org/repo 即可点亮 -->
-[![CI](https://github.com/YOUR_GITHUB_ORG/CodeJudge/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+[![CI](https://github.com/I-KUN-L1/CodeJudge/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?logo=springboot)
 ![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2023.0.3-blue)
