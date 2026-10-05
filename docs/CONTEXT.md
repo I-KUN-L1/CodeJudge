@@ -878,6 +878,19 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
 - 落账：登记册 TC-U6-04 PASS（**PASS 22/FAIL 0/BLOCKED 3**）；runbook U6 勾选；
   证据 `docs/security-evidence/2026-10-05-u6-email-channel/`。剩余队列：U8/U9/B2。
 
+### 5.28 2026-10-05 晚：U8 关闭（用户决策：内网部署不设域名）
+
+- **决策**：用户明确「本系统不设置域名，仅限内网使用」→ 真域名 HTTPS 终验对象消失，
+  U8 从「待用户资源」改判**范围取消**（登记册 TC-U8-02「关闭」而非 BLOCKED，统计 BLOCKED 3→2）。
+- **资产处置**：TLS 终结 rehearsal 资产**留库**（`docker-compose.tls.yml` + `deploy/tls/nginx-tls.conf`，
+  9443 自签，`--profile tls` 隔离零影响）；日后若需内网 HTTPS（浏览器免告警），路线=内网 CA
+  （mkcert/AD CS）或自签含 SAN=内网地址 + 客户端导入信任，换两行证书配置即可复用。
+- **安全口径不变**：内网部署下既有多层防线继续生效（网关限流/JWT+登出吊销、actuator 严格模式、
+  非 admin 脱敏、`/problems/{id}` 不白名单、doc whitelist 开关）；`.env` 生产态约定
+  （`CJ_DOC_WHITELIST_ENABLED=false` + `CJ_ACTUATOR_TOKEN` 轮换）在上线检查单中保留。
+- 落账：登记册统计改为 PASS 22 / FAIL 0 / BLOCKED 2 + 决策关闭 1；runbook U8 节标注关闭；
+  第十二轮报告 D 类新增。**剩余队列：U9（独立压测机）、B2（LLM 配额）——仅此两项。**
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash

@@ -58,6 +58,12 @@
 
 ## U8. HTTPS（域名 + 证书）
 
+> **⛔ 已关闭（2026-10-05 晚，用户决策）**：本系统**不设域名、仅限内网使用**——真域名 HTTPS 终验
+> 对象消失，U8 范围取消（登记册 TC-U8-02 关闭，非 BLOCKED）。TLS 终结 rehearsal 资产
+> （`docker-compose.tls.yml` + `deploy/tls/nginx-tls.conf`，9443 自签，`--profile tls` 隔离）**留库**：
+> 若日后需要内网 HTTPS（浏览器免告警），路线=内网 CA（mkcert/AD CS）或自签含 SAN=内网地址 +
+> 客户端导入信任，换两行证书配置即可复用本套配置。
+
 **卡点**：无真实域名与 CA 证书。
 
 **已就位（2026-10-05 rehearsal PASS）**：
