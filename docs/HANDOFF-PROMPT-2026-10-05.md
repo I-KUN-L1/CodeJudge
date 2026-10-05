@@ -9,8 +9,9 @@
 
 CodeJudge：Java 21 微服务（8 服务 + 网关）+ Vue3 前端的分布式 OJ，Docker Compose 全栈
 （16 运行容器）。**当前健康**：8 服务 healthy、TZ 已统一 CST、tomcat 10.1.59、E2E 5/5、
-verify-p1-login 43/0、trivy 真实 CRITICAL 清零。**U5 已收口（10-05 晚）：remote=I-KUN-L1/CodeJudge
-（Private）+ 首推 + Actions 首跑绿**。
+verify-p1-login 43/0、trivy 真实 CRITICAL 清零。**第十二轮（10-05 晚）：U5 已收口（remote=
+I-KUN-L1/CodeJudge + CI 首跑绿）、U6 已收口（email 告警通道真实终验，收件确认）、
+U8 已关闭（用户决策：内网部署不设域名，范围取消）；剩余仅 U9 + B2。**
 
 ## 二、已收口（勿重做，证据齐备）
 
@@ -30,9 +31,11 @@ verify-p1-login 43/0、trivy 真实 CRITICAL 清零。**U5 已收口（10-05 晚
 
 1. ~~**U5**~~ **已收口（10-05 晚）**：REST API 代建（凭据管理器存量凭据通路，非 gh）→
    I-KUN-L1/CodeJudge（Private）+ push + 徽章 + **CI 首跑绿**（run 37299478009）；登记册 TC-U5-02/03 PASS。
-2. **U6**：用户提供 webhook/SMTP 凭据 → 填 `.env`（email 通道零中间件）→ recreate AM →
-   注入测试告验触达（投递链路已回环实证，payload 模板在证据目录）。
-3. **U8**：用户提供域名+CA 证书 → `deploy/tls/nginx-tls.conf` 换两行证书配置 → 生产端口切换 → HTTPS 复验。
+2. ~~**U6**~~ **已收口（10-05 晚）**：email 通道（smtp.qq.com:587 STARTTLS，零中间件）→
+   测试+真实告警投递成功（`notifications_total{email}=1`）→ 收件人确认收到；AM 保持 email 双路由生产位；
+   535 排障根因=授权码与发件账号不同号。证据 `security-evidence/2026-10-05-u6-email-channel/`。
+3. ~~**U8**~~ **已关闭（10-05 晚，用户决策）**：系统内网部署**不设域名** → 真域名 HTTPS 范围取消
+   （登记册 TC-U8-02「关闭」非 BLOCKED）；TLS rehearsal 资产留库，日后内网 HTTPS 走内网 CA 路线复用。
 4. **U9**：用户提供第二台独立压测机 → 搬 soak.jmx 跑 1h 对标 PERF.md §3.8.2 基线
    （对标口径已写入 runbook；同宿主 VM 不算独立）。
 5. **B2 复核**：LLM（bigmodel）429 复测仍 429（上游配额）；配额恢复/换 Key 后人工核对真实 AI 文本。
