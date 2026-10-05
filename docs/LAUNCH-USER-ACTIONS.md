@@ -30,6 +30,12 @@
 
 ## U6. 告警通道（Alertmanager）
 
+> **✅ 已完成（2026-10-05 晚，真实终验）**：email 通道（smtp.qq.com:587 STARTTLS，零中间件）接入 →
+> 注入测试告警 + 真实告警 `JudgeDeadTasksPresent` 经 critical 路由成功投递
+> （`notifications_total{email}=1` 成功计数、零错误行）→ **收件人确认收到**。
+> 教训：QQ 授权码与发件账号必须同号（首次误填 10086 致持续 535）。
+> 证据：`docs/security-evidence/2026-10-05-u6-email-channel/`。AM 保持 email 双路由生产位。
+
 **卡点**：真实通道凭据为空——`.env` 中 `ALERTMANAGER_WECOM_WEBHOOK` / `ALERTMANAGER_SMTP_*` /
 `ALERTMANAGER_EMAIL_TO` 全部未填（三选一即可；企业微信/钉钉原生 webhook 与 AM 格式不兼容，
 需转换层，详见 `deploy/monitoring/alertmanager/README.md`；**不想搭中间层就选 email，零中间件**）。
