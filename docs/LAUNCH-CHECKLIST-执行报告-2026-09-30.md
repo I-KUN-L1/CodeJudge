@@ -425,12 +425,14 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
 | U6-终验 | 真邮箱收信（真实终验） | ✅ 测试告警 POST 200 + 真实告警 `JudgeDeadTasksPresent`（critical）10s group_wait 触发 → 80s 观察窗**零错误行** → `alertmanager_notifications_total{integration="email"} = 1`（成功计数）→ **收件人确认收到**（`[FIRING] CodeJudge JudgeDeadTasksPresent (2)`）。AM 保持 email 双路由生产位 |
 | U6-落账 | 登记 + 证据 | ✅ 登记册 TC-U6-04 PASS（统计 **PASS 22/FAIL 0/BLOCKED 3**）；runbook U6 勾选；CONTEXT.md §5.27；证据 `docs/security-evidence/2026-10-05-u6-email-channel/`（含 535 排障摘录） |
 | U8-决策 | **用户决策：不设域名、仅限内网使用** | ⛔ **U8 范围取消**（非 BLOCKED）——真域名 HTTPS 终验对象消失；登记册 TC-U8-02 改判「关闭（范围取消）」（统计 BLOCKED 3→2）；TLS rehearsal 资产留库（9443 自签，`--profile tls`），日后内网 HTTPS 可走内网 CA 路线复用；CONTEXT.md §5.28 |
+| U9-决策 | **用户决策：无第二台电脑，选方案④（决策降级关闭）** | ⛔ **U9 关闭（带触发条件）**（非 BLOCKED）——理由：U9 目的=生产容量标定（非稳定性证据），同机下界（2466.6 req/s / 0 错误 / P95 8–12ms + 1h 四重稳定）距内网教学真实负载 ≥2 个数量级；登记册 TC-U9-01 关闭（统计 BLOCKED 2→1 + 决策关闭 2）；**重测触发条件四条**（形态变更 / 并发≥200 或 QPS≥200 / P95 劣化 10× / 独立机到位）见 CONTEXT §5.29；throughput.jmx/soak.jmx/账号池/对标口径就绪可随时执行 |
 
 ### B 受阻 / C 待用户 / D 不做
 
-- 无新增。剩余队列：U9（第二台独立压测机）、B2 复核（LLM 上游配额恢复/换 Key）。U7 上线后。
-- D 新增：**U8 关闭（用户决策，2026-10-05 晚）**——系统内网部署不设域名，真域名 HTTPS 不在交付范围；
-  如日后需要内网 HTTPS，走内网 CA（mkcert/AD CS）+ SAN=内网地址，复用留库 TLS 资产。
+- **剩余队列仅 B2**（LLM 上游配额恢复/换 Key 后人工核对真实 AI 文本）。U7 上线后。
+- D 关闭两项（均用户决策，2026-10-05 晚）：**U8**（内网部署不设域名，真域名 HTTPS 范围取消；
+  日后内网 HTTPS 走内网 CA + SAN=内网地址，复用留库 TLS 资产）；**U9**（无第二台电脑，
+  决策降级——生产容量标定推迟，带四条重测触发条件）。
 - 教训沉淀：①runbook 生成时的记载需实地复核——「5 处徽章」实为静态徽章误计；「无 gh 无法代建」
   卡点在凭据管理器已有存量凭据时不再成立，卡点表述应写明**全部**前置假设以便日后重估；
   ②QQ SMTP 授权码与发件账号**同号绑定**，AM email 通道排障先核对 FROM=AUTH_USERNAME；
