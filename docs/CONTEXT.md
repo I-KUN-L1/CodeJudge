@@ -790,6 +790,42 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
   U4 为 6c85b04。执行报告第九轮。
 - 剩余：U5（remote+徽章）/ U6（告警凭据）/ U8（HTTPS）/ U9（独立压测机）需用户资源；U7 上线后。
 
+### 5.23 2026-10-05：U4b E2E 剩余链路 5/5 收口（提交判题/AI 点评/榜单联动）
+
+- **链路覆盖**：冒烟 2 条保留 + 新增 3 条——①竞赛选题→`.editor__ta` 编辑→提交→
+  `.prog-line .verdict` 轮询到「通过」→判题详情 `/submissions/\d+`（用例结果 ≥2 行）；
+  ②AI 点评（生成→SSE 流式 `.ai__body`→「生成完成」正文渲染）；③竞赛榜单 WS 联动
+  （`/ws/contests/{id}/rank` SNAPSHOT→表格首行→「演示学员一」行含「过 1 题」）。
+- **实现**：`judge-web/e2e/smoke.spec.js`（serial 模式，`submissionPath` T3→T4 传递）+
+  新增 `e2e/setup-contest.mjs` 前置脚本（教师 13900000011 建进行中 ACM 赛挂题 4001 +
+  学员 13900000001 报名，stdout 输出 `E2E_CONTEST_ID`）；storageState 单次登录复用未触发
+  限流；全部轮询断言（`expect().toPass()`），无固定 sleep。最终轮 12.5s 5/5。
+- **踩坑三连**（详见 `docs/e2e-evidence/2026-10-05-u4b-chains/README.md`）：
+  1. **TZ 时钟缺陷（产品级，待用户决策）**：compose 只给 mysql/pg 设 TZ，8 个 Java 容器
+     UTC → CST 宿主 UI 建的赛开赛推迟 8h（run-2「竞赛尚未开始」实锤）。fixture 改用
+     `fmtUtcLocal()` 以 UTC 发窗口绕过；正确修法=8 服务加 TZ + 重部署 + 全回归。
+  2. **sandbox-work-init 不随 daemon 自启**（宿主重启后 /cj-sandbox 重建为 root 空目录）→
+     判题 SE（worker `AccessDeniedException: /cj-sandbox/judge-*`）→
+     `docker start codejudge-sandbox-init` 修复。**运维规约：宿主重启后判题前必跑**。
+  3. **LLM 上游 429 降级**：T4 通过但实为 bigmodel.cn 429 降级模板（设计内行为），
+     断言口径=链路（SSE 流式+渲染），证据如实记录，待配额恢复人工复核真实输出。
+- 证据：`docs/e2e-evidence/2026-10-05-u4b-chains/`（playwright-u4b.log 5/5 + README）。
+  附带发现：E2E 资产竞赛 2107023093806194689（UTC 窗口）与 2107021475165560833（CST 误建，
+  夜间才生效，无害残留）；`reset-demo-data.py --yes` 被安全策略拒绝，未做破坏性清洗。
+
+### 5.24 2026-10-05：tomcat CVE-2026-65182 遗留跟进结案（10.1.55→10.1.59 全链回归）
+
+- **触发**：Central metadata 复查发现 **10.1.58 被官方跳过、10.1.59 实际发布**——HANDOFF
+  「遗留跟进」条件达成（此前 10-04 mvn 10.1.58 "was not found" 回退 10.1.55 记接受）。
+- **处置链**：根 pom `tomcat.version=10.1.59` → `mvn install` 全绿（产物核验：6 个 servlet
+  服务 embed-core 10.1.59；judge-ai/gateway 仅 embed-el 无 core）→
+  `build-app-images-prebuilt.py --worker-docker-cli` 重建 8 镜像 → compose 重部署 8/8
+  healthy → **trivy 复扫 tomcat 零命中**（judge-user 61 findings 全为既有接受项；唯一
+  CRITICAL fastjson 系已知误报；**必须挂 `~/.m2:ro` 否则 parent pom 解析失败产生假干净**）
+  → verify-p1-login **43/0** → E2E 升版回归 **5/5**（21.4s）。
+- 落账：DEPLOYMENT.md §8.4.1 改结案登记；证据 `docs/security-evidence/2026-10-05-tomcat-1059/`。
+  U3 唯一悬留 CVE 就此清零；剩余任务 U5/U6/U8/U9 全部卡用户资源，U7 上线后。
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash
