@@ -937,6 +937,30 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
   证据 `docs/security-evidence/2026-10-05-env-prod-hardening/`。
   **上线前工程项全部清空，仅剩 B2（LLM 配额，外部）。**
 
+### 5.31 2026-10-06：LLM 上游切换 DeepSeek-V4.1-Flash（B2 关闭，上线前队列清空）
+
+- **变更（只动 gitignored `.env` 三行，零镜像重建）**：`CJ_LLM_BASE_URL=https://api.deepseek.com`、
+  `CJ_LLM_MODEL=deepseek-flash`（官方 ID=DeepSeek-V4.1-Flash，2026-09-10 发布；`deepseek-v4-flash`
+  旧名仍路由）、`CJ_LLM_API_KEY` 换 DeepSeek key。**key 由用户亲手写入 .env**——安全策略禁止
+  凭据出现在工具参数/命令体/日志（曾尝试直连验证被策略两次拦截，改走应用级验证=更真实的终验口径）。
+  yml/Java 兜底默认仍指 bigmodel（.env 常置永不触发，清理属可选后续）。
+- **真实链路验证（B2 关闭证据）**：E2E 5/5（20.7s；T4 AI 点评 7.7s vs 模板降级 1.8s）；
+  judge-ai 日志零 chat 失败标记（`流式调用失败`/429/401 缺席）；**DB 落库决定性证据：
+  ai_review 最新记录 `model=deepseek-flash`、status=1、content 为真实题意分析**（“long 承接
+  输入规避 32 位溢出，4/4 用例”）。tokens_in/out 空值=流式未回传 usage（需
+  `stream_options.include_usage`，列为可选后续优化）。
+- **已知取舍**：RAG embedding 降级伪向量——DeepSeek 官方无 embeddings 端点（唯一声称有的
+  zh.deepseek-air.com.cn 为冒名站点已排除），judge-ai chat/embedding 共用单一 base-url，
+  embedding 404 → 既有容错路径按设计工作（日志 EmbeddingService WARN）。恢复 RAG 语义选项：
+  ① 代码加独立 embedding base-url（需重建 judge-ai 镜像）；② 本地 Ollama OpenAI 兼容 embedding。
+- **过程插曲**：Docker daemon 曾掉线（隔夜未运行）→ 拉起 Docker Desktop 恢复（引擎 29.7.2，
+  21 容器自启 8/8 healthy）→ 补跑 sandbox-init Exited(0)（daemon 重启硬约束）。另沉淀：
+  PS 5.1 原生命令内嵌双引号会被吞（`sh -c 'mysql ... -e "SQL"'` 报 1064）→ SQL 走
+  stdin 文件管道（`Get-Content q.sql | docker exec -i ... psql/mysql`）。
+- 落账：登记册 TC-LLM-01 PASS（统计 **PASS 25 / FAIL 0 / BLOCKED 0 + 决策关闭 2**）；
+  证据 `docs/security-evidence/2026-10-06-deepseek-llm-switch/`。
+  **上线前队列：空。仅余 U7（上线后动作）。**
+
 ### 5.5 P6 复现序列（可直接复制）
 
 ```bash

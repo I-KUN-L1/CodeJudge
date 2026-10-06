@@ -432,7 +432,11 @@ AI 先停 zx-learn 5 容器（18d 约束）→ 预检（daemon/8 端口/内存�
 
 ### B 受阻 / C 待用户 / D 不做
 
-- **剩余队列仅 B2**（LLM 上游配额恢复/换 Key 后人工核对真实 AI 文本）。U7 上线后。
+- **上线前工程队列全部清空**：B2 已于 10-06 关闭——LLM 上游切换 DeepSeek-V4.1-Flash
+  （`deepseek-flash`），真实 AI 正文核验通过（DB 落库 `model=deepseek-flash` status=1 +
+  E2E 5/5 + 日志零失败标记），登记册 TC-LLM-01 PASS（统计 **PASS 25/FAIL 0/BLOCKED 0 + 关闭 2**）；
+  已知取舍：RAG embedding 降级伪向量（DeepSeek 无 embeddings 端点，容错按设计，详见证据 README）。
+  U7 上线后。
 - D 关闭两项（均用户决策，2026-10-05 晚）：**U8**（内网部署不设域名，真域名 HTTPS 范围取消；
   日后内网 HTTPS 走内网 CA + SAN=内网地址，复用留库 TLS 资产）；**U9**（无第二台电脑，
   决策降级——生产容量标定推迟，带四条重测触发条件）。

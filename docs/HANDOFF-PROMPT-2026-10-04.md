@@ -171,6 +171,7 @@ D 不做（附理由）。阻塞项标注 BLOCKED 不许假绿（**假绿比 FAI
 | TC-U6-04 真实 email 通道终验 | 10-05 晚 | QQ SMTP 587/STARTTLS + 注入 U6PipelineTest | 真邮箱收到告警 | notifications_total{email}=**1**（成功计数）零错误 + 收件人确认收到 | PASS | 排障：12+ 重试持续 535 → 根因=授权码属 2067063203@qq.com 而发件账号误填 10086 → 切换后一次通过；证据 2026-10-05-u6-email-channel/ |
 | TC-ENV-01 密钥全量轮换 | 10-05 晚 | MySQL/PG 容器 ALTER + Grafana CLI + admin first-change API（bootstrap 首次消费）+ Redis/MinIO/JWT/actuator 换新 | 新凭据全链可用 | 8/8 healthy + Prometheus targets 8 UP（新 token 严格模式）+ verify-p1-login **43/0** + E2E **5/5** | PASS | admin 密码=CJ_ADMIN_INIT_PASSWORD（.env 内，未外发）；CJ_USER_DEFAULT_PASSWORD 不轮换（种子/E2E/压测同源，决策记录在证据 README）；证据 2026-10-05-env-prod-hardening/ |
 | TC-ENV-02 生产开关落地 | 10-05 晚 | `CJ_DOC_WHITELIST_ENABLED=false` + `GF_AUTH_ANONYMOUS_ENABLED=false` + Prometheus 凭据同步 | 文档匿名 404、Grafana 匿名 401 | docs/doc.html=**404**、grafana anon=**401**、`/problems/page` 200 | PASS | 坑两条：CRLF 卡 `=true$` 正则（改 `.*$`，验证要打印真实值非长度）；env_file 内容变化不触发重建（需显式 force-recreate 服务清单） |
+| TC-LLM-01 LLM 上游切换 DeepSeek（B2 关闭） | 10-06 | `.env` 三行：base-url=api.deepseek.com、model=deepseek-flash（=V4.1-Flash 官方 ID）、key 由用户亲手写入 .env（策略要求：凭据不经工具参数） | 真实 AI 正文非模板 | E2E **5/5**（T4 点评 7.7s 真实流式 vs 降级 1.8s）+ 日志零 chat 失败标记 + **DB 落库 `model=deepseek-flash` status=1 真实题意正文** | PASS | **B2（上游 429）就此关闭，上线前队列清空**；已知取舍：RAG embedding 降级伪向量（DeepSeek 无 embeddings 端点，容错路径按设计工作）；证据 2026-10-06-deepseek-llm-switch/ |
 
-**登记册统计**：PASS 24 / FAIL 0 / BLOCKED 1（上游 LLM 配额 ×1）+ **用户决策关闭 2**（TC-U8-02 内网不设域名；TC-U9-01 决策降级带触发条件，见 CONTEXT §5.29）。
+**登记册统计**：PASS 25 / FAIL 0 / **BLOCKED 0** + **用户决策关闭 2**（TC-U8-02 内网不设域名；TC-U9-01 决策降级带触发条件，见 CONTEXT §5.29）。**上线前工程队列清空。**
 历史轮次（1–9）测试数据已在各自证据目录 + 执行报告对应轮次表格中登记，不在此重复。
