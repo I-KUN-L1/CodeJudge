@@ -1,4 +1,0 @@
-﻿tls rehearsal=200
-HTTP/1.1 200 OK
-Server: nginx/1.31.6
-Date: Mon, 05 Oct 2026 09:20:40 GMT
