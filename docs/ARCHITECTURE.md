@@ -242,7 +242,7 @@ CodeJudge 整体换段：
 | `judge-common` **不引入** Redisson | P3/P4 的并发场景已由 MySQL 唯一索引 / MQ 消费组 / Redis ZSET 覆盖，不需要分布式锁。触发重引入的条件：出现跨服务的「先查后改」临界区 |
 | 判题走「Redis 队列 + MQ」双通道 | 队列给低延迟、MQ 给可靠性；代价是两条路径都要幂等，靠 `judge_task` 状态 CAS 收敛 |
 | 教师**不做**「申请—审核」流程 | 管理员已有 `POST /teachers/register` 与 `POST /users` 两条开号路径，无产品缺口 |
-| 取消匿名教师自助注册 | 保留 STAFF-only 收紧（行为变更，见 `P1-遗留项处置.md`） |
+| 取消匿名教师自助注册 | 保留 STAFF-only 收紧（行为变更，2026-09 阶段决策） |
 | SSE 错误走事件不走状态码 | 订阅建立后 HTTP 头已发出，无法再改状态码；客户端必须处理 `ERROR` 事件 |
 | PG 表插入用 `INSERT ... RETURNING id` | PG 驱动在 `RETURN_GENERATED_KEYS` 下返回整行，`KeyHolder.getKey()` 抛异常 → 静默数据损坏（P5 实测缺陷） |
 

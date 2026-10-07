@@ -4,8 +4,8 @@
 > 依据：`scripts/verify-p6.py`（PASS=98 / FAIL=0）、`scripts/preflight-check.py` 终版读数、
 > 2026-09-22 的 promtool / amtool / 零硬编码复验。
 > **2026-10-01 增量同步**：并入 2026-09-30 第九轮（LAUNCH-CHECKLIST A–L）与第三轮（T9/T10/T11）
-> 的放行视角变化，详见 §H；权威进度仍以 `docs/CONTEXT.md` §5.13/§5.14 与
-> `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md` 为准。
+> 的放行视角变化，详见 §H；权威进度仍以 `docs/CONTEXT.md` §5.13/§5.14 为准
+>（原执行报告为过程文档，已随上线收尾清理）。
 
 ---
 
@@ -157,7 +157,7 @@ CJ_MQ_CONSUME_THREADS=4 python scripts/dev-start-backend.py --extra judge-worker
 
 ## H. 2026-09-30/10-01 增量同步（第九轮 A–L + 第三轮 T9/T10/T11）
 
-> 放行视角的增量；逐项证据见 `docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`「第二轮/第三轮」表。
+> 放行视角的增量；逐项证据随执行报告清理，结论已并入本文件各表。
 
 ### H.1 已收敛的放行项
 

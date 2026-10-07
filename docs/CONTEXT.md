@@ -18,21 +18,15 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 | 顺序 | 文件 | 读它解决什么 |
 |---|---|---|
 | 1️⃣ | **本文件** | 当前进度、硬约束、下一步 |
-| 2️⃣ | `docs/PROMPT-ARCHIVE.md` | **总提示词的需求条款**（含原文缺失声明，别去别处找原文） |
-| 3️⃣ | `docs/PLAN.md` | 规划书 v1.0：目录结构、端口、6 库表设计、MQ/Redis 键、接口清单、沙箱 12 项隔离、复用清单（逐类名）、风险 TODO |
-| 4️⃣ | `docs/P1-REPORT.md` | P1 交付与验收实证、复用映射、有意偏离、踩坑 |
-| 5️⃣ | `docs/P1-改造说明.md` | **目录结构、包名/端口变更点、底座类清单**（结构层速查） |
-| 6️⃣ | `docs/P2-REPORT.md` | **P2 交付：用户域+题目域关联关系、5 表字段语义、逐接口 curl、20 项验收实证、本轮修的 4 个缺陷** |
-| 7️⃣ | `docs/P3-REPORT.md` | **P3 交付：判题链路、沙箱 12 项隔离、六种 verdict、故障转移** |
-| 8️⃣ | `docs/P4-REPORT.md` | **P4 交付：WS 推送、竞赛/封榜、ZSet 三段编码、60 项验收实证、本轮修的 8 个缺陷**（含 ZSet 编码相对 PLAN 的修正说明） |
-| 9️⃣ | `docs/P5-REPORT.md` | **P5 交付：judge-ai 响应式栈取舍、SSE 事件契约、pgvector 双路召回、底座复用映射、46 项端到端验收实证、捕获的 PG 主键回填缺陷（§7.6）** |
-| 🔟 | `docs/P5-前端SSE接入说明.md` | **前端如何接流式点评**（为何不用 EventSource、两类错误的分流、增量渲染策略、Last-Event-ID 重连） |
-| 1️⃣1️⃣ | `docs/P1-遗留项处置.md` | **P1 三项待拍板项的处置结论 + 实测证据**（教师注册/Redisson/登录实测） |
-| 1️⃣2️⃣ | `README.md` | 快速启动、curl 验证、FAQ |
-| 1️⃣3️⃣ | `docs/LAUNCH-READINESS.md` | **上线放行单**（阻断项/建议项/已完成/命令清单/已知限制/回滚点）—— 若当前任务是「能不能上线」，优先读这份 |
-| 1️⃣4️⃣ | `docs/ADR-001-服务发现选型.md` | **为什么禁用 Nacos**（实测证据 / 适用场景 / 五维分析 / 推翻条件 / 技术债）—— 凡涉及服务发现、网关路由、横向扩容，先读这份 |
+| 2️⃣ | `docs/PLAN.md` | 规划书 v1.0：目录结构、端口、6 库表设计、MQ/Redis 键、接口清单、沙箱 12 项隔离、复用清单（逐类名）、风险 TODO |
+| 3️⃣ | `docs/P5-前端SSE接入说明.md` | **前端如何接流式点评**（为何不用 EventSource、两类错误的分流、增量渲染策略、Last-Event-ID 重连） |
+| 4️⃣ | `README.md` | 快速启动、curl 验证、FAQ |
+| 5️⃣ | `docs/LAUNCH-READINESS.md` | **上线放行单**（阻断项/建议项/已完成/命令清单/已知限制/回滚点）—— 若当前任务是「能不能上线」，优先读这份 |
+| 6️⃣ | `docs/ADR-001-服务发现选型.md` | **为什么禁用 Nacos**（实测证据 / 适用场景 / 五维分析 / 推翻条件 / 技术债）—— 凡涉及服务发现、网关路由、横向扩容，先读这份 |
 
-> ⚠️ **总提示词原文并未落盘**（任何检索都无法复原）—— 请以本文档为唯一权威来源，不要在别处寻找原文。
+> ℹ️ 2026-10-07 清理：P1–P6 各阶段验收报告、P1-改造说明/遗留项处置、PROMPT-ARCHIVE、HANDOFF-PROMPT×3、
+> LAUNCH-CHECKLIST 执行报告等**过程性文档已删除**（结论已并入 ARCHITECTURE / PERF / LAUNCH-READINESS / 本文件；
+> 全部记录可从 git 历史 `git log --diff-filter=D -- docs/` 找回）。
 
 ---
 
@@ -65,7 +59,7 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
     MySQL 驱动只返回主键列，故**从 MySQL 项目照搬的代码必然踩中**。
     后果是「**INSERT 成功却拿不到 id**」：记录写进表但永远停在 `status=0`、事件不带 `reviewId`、
     非流式接口返回空 body —— **不抛错、只丢数据**，编译与静态审视都发现不了。
-    （P5 端到端验收实测捕获，详见 `docs/P5-REPORT.md` §7.6。）
+    （P5 端到端验收实测捕获；原报告已清理，细节可从 git 历史找回。）
 16. **验收脚本里 `all(...)` / `not any(...)` 形式的断言，必须同时断言样本非空** ——
     `all()` 对空序列返回 `True`，零事件时恒真，会把「全链路失效」装饰成「全绿」（**假绿**比 FAIL 更危险）。
     P5 首次实跑即修掉 3 处这类假绿（`F1`/`F2`/`G1`/`G4`）。
@@ -110,16 +104,16 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 |---|---|---|
 | P1 | 底座复用（common/api/gateway/auth/user）+ 骨架 + 基础设施 | ✅ **已完成并验收通过**（2026-09-20） |
 | P2 | judge-problem(9083) 五表 CRUD + 隐藏用例隔离 + 种子 6 题；judge-user 分页补齐 | ✅ **已完成并验收通过**（2026-09-20，20 项断言） |
-| P3 | judge-submission(9084) + judge-worker(9085) + Docker 沙箱 + 判题全链路 | ✅ **已完成并验收通过**（2026-09-20，20 项断言 + 故障转移混沌测试，详见 `docs/P3-REPORT.md`） |
-| P4 | WebSocket + judge-contest(9086) + Redis 排行榜 | ✅ **已完成并验收通过**（2026-09-20，60 项断言 + 封榜一致性闭环，详见 `docs/P4-REPORT.md`） |
-| P5 | judge-ai(9087) + LLM 点评 + pgvector RAG + SSE | ✅ **已完成并验收通过**（2026-09-21，46 项断言 + 网关端到端；捕获并修复 1 个静默数据损坏缺陷，详见 `docs/P5-REPORT.md` §7.5/§7.6） |
-| P6 | judge-web(5174) + 可观测 + 压测 + 文档 | ✅ **已完成并验收通过**（2026-09-21，98 项断言 + 真实判题闭环 + 真实监控容器 + 真实压测；修复 1 个队列积压缺陷与 1 处全项目契约错误，详见 `docs/P6-REPORT.md`） |
+| P3 | judge-submission(9084) + judge-worker(9085) + Docker 沙箱 + 判题全链路 | ✅ **已完成并验收通过**（2026-09-20，20 项断言 + 故障转移混沌测试） |
+| P4 | WebSocket + judge-contest(9086) + Redis 排行榜 | ✅ **已完成并验收通过**（2026-09-20，60 项断言 + 封榜一致性闭环） |
+| P5 | judge-ai(9087) + LLM 点评 + pgvector RAG + SSE | ✅ **已完成并验收通过**（2026-09-21，46 项断言 + 网关端到端；捕获并修复 1 个静默数据损坏缺陷） |
+| P6 | judge-web(5174) + 可观测 + 压测 + 文档 | ✅ **已完成并验收通过**（2026-09-21，98 项断言 + 真实判题闭环 + 真实监控容器 + 真实压测；修复 1 个队列积压缺陷与 1 处全项目契约错误） |
 
 > 🎉 **六个阶段全部交付**：8 个可运行服务（9080–9087）+ 前端（5174）+ 监控栈（9090/9093/3001）
 > + 4 个沙箱镜像 + 压测体系 + 完整文档。上线前事项见 `docs/DEPLOYMENT.md` 生产检查清单
-> 与 `docs/P6-REPORT.md` §8。
+> 与 LAUNCH-READINESS 各表（原 P6 报告已清理，git 历史可查）。
 
-### P5 交付实证（详见 `docs/P5-REPORT.md`）
+### P5 交付实证（原报告已清理，git 历史可查）
 - `mvn -o clean install -DskipTests` → **11 模块全绿**（新增 judge-ai）
 - 制品核对：`spring-webflux` + `reactor-netty` 在、**`jakarta.servlet` 完全缺失**、无 tomcat-embed-core、无 mybatis/mysql → 响应式栈成立
 - **`python scripts/dev-start-backend.py judge-ai --wait` → `Netty started on port 9087`，5.9s 启动**，TCP 9087 LISTENING
@@ -129,7 +123,7 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 - 新增密钥事实：**P5 起实际可运行服务 = 8 个**（9080–9087）；`judge-ai` 是唯一响应式服务
 - ⚠️ **`scripts/verify-p5.py`（A–M 段）尚未执行** —— Docker 起不来（`npipe:////./pipe/docker_engine` 连接失败，沙箱拦截 GUI/服务启动），MySQL/Redis/PG/MQ 全未运行。环境恢复后需补跑
 
-### P4 验收实证（可复现，详见 `docs/P4-REPORT.md`）
+### P4 验收实证（可复现；原报告已清理，git 历史可查）
 - `mvn clean install -DskipTests` → **10 模块全绿**（1m05s）
 - 7 个服务 9080–9086 全部 `/actuator/health` **UP**（**注意：P4 起实际是 7 个可运行服务**，多出 judge-contest:9086）
 - **`python scripts/verify-p4.py` → 60 项断言全 PASS / 0 FAIL / 0 SKIP**（耗时约 6 分钟，F 段需等短赛程竞赛自然结束）
@@ -138,7 +132,7 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 - MQ 订阅已收窄：contest `[RESULT]` / worker `[CREATED,RETRY]` / submission `[PROGRESS,RESULT]`，重启后 0 条丢弃告警
 - 起服务仍用：`python scripts/dev-start-backend.py --wait`（看护模式常驻；**P4 起含 judge-contest**）
 
-### P3 验收实证（可复现，详见 `docs/P3-REPORT.md`）
+### P3 验收实证（可复现；原报告已清理，git 历史可查）
 - `mvn clean install -DskipTests` → 8 模块全绿
 - 4 个沙箱镜像已构建：`codejudge/judge-{java21,python312,gcc13,go122}:latest`（`python scripts/build-sandbox-images.py`）
 - **`python scripts/verify-p3.py` → 20 项断言全 PASS**：六种 verdict 逐条复现（4001 AC/WA、4002 TLE、4003 MLE、4004 RE、4005 CE-Java）、提交幂等、隐藏用例摘要遮蔽、7 项安全用例拦截、/workers 集群视图（管理员凭据走环境变量 `CJ_P3_ADMIN_PHONE/CJ_P3_ADMIN_PASS`）
@@ -155,7 +149,7 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 - `/doc.html` 在 9081 / 9082 返回 200（网关不聚合文档，属正常）
 - **`python scripts/verify-p1-login.py` → 8 组 43 项断言全 PASS**（登录双 Token / 刷新 / 网关白名单 / 教师注册加固 / 改密 fail-closed；需 9080+9081+9082 已启动）
 
-### P1 遗留的 3 个待确认项 → ✅ **已全部闭环**（2026-09-20，详见 `docs/P1-遗留项处置.md`）
+### P1 遗留的 3 个待确认项 → ✅ **已全部闭环**（2026-09-20）
 1. **【行为变更】教师注册收紧为 STAFF-only —— 保留收紧，不回退。** 理由：教师是特权角色（可建题、可见隐藏用例），
    且管理员本就有两条开号路径（`POST /teachers/register`、`POST /users`），不存在产品缺口。
    "教师申请—审核"流程**不做**（无前端/审核台，属 P6 独立需求）。已端到端验证 7 项断言。
@@ -180,7 +174,7 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 3. **唯一键不含 `deleted` 导致逻辑删除锁死复用** —— `test_case`/`problem_tag`/`tag` 三表改走**物理删除**（否则"删了序号就再也加不回""取消标签后打不回去"）。
 4. 清理 2 处 zx-learn 业务注释残留（`OwnerAccessGuard` 的学情/答题记录举例）。
 
-### P2 遗留待确认（5 项，详见 `docs/P2-REPORT.md` §九）
+### P2 遗留待确认（5 项）
 1. **【破坏性接口变更】** `/students/page`、`/teachers/page`、`/staffs/page` 由 `R<List>` 改为 `R<PageDTO>`（原名 `/page` 却返回全量列表，属实现缺陷）。无前端，此刻改成本最低；需兼容可加 `/list`。
 2. 建题默认草稿 `status=0`（PLAN 未定，选了安全默认）。
 3. `tagIds` 的 `null`（不改动）与 `[]`（清空）语义不同，前端易忽略。
@@ -267,7 +261,7 @@ CodeJudge —— 分布式在线编程评测平台（判题 / 竞赛 / AI 代码
 `TxSupport.afterCommit(() -> eventPublisher.publishTaskCreated(submission.getId(), task.getId(), 0));`
 → 复验 `投递判题任务：ok=true`、worker `source=CREATED`、端到端 **3.4–4.5s**。
 滞留重发**保留**为兜底（覆盖 MQ 发送失败），主路径与兜底是并存关系。
-📄 勘误已写入 `docs/P3-REPORT.md` 顶部。
+📄 勘误已并入 PERF.md（原 P3 报告已清理）。
 
 #### P2-2 稳定性收口 —— ✅ **全部闭环**（2026-09-22 更新）
 
@@ -555,7 +549,7 @@ const contestId = computed(() => Number(route.params.id));   // 2102698982248611
 ### 5.13 2026-09-30 第九轮：上线检查清单 A–L 落地（本轮）
 
 **输入**：`docs/LAUNCH-CHECKLIST.md` 全量执行。**一键复验：`bash docs/launch-verify.sh` → PASS=42 / FAIL=0**。
-逐项证据、偏离决策与阻塞项清单见 **`docs/LAUNCH-CHECKLIST-执行报告-2026-09-30.md`**（本轮权威汇总）。
+逐项证据、偏离决策与阻塞项清单见 **`docs/LAUNCH-READINESS.md`** 各表（原执行报告已清理）。
 
 **交付摘要**：
 - **A**：9 Dockerfile（多阶段非 root）+ judge-web/nginx.conf（SPA//api/WS/SSE）+ compose app profile
@@ -1091,7 +1085,7 @@ pgvector 双路召回（题目知识 + 历史点评）、断线重连（`Last-Ev
 | **换机器 / 重新 clone 仓库** | ❌ **不记得** | `.workbuddy/` 在 `.gitignore` 里（见 §7），不随 git 走 |
 | 细节条款（沙箱 12 项、8 条验收标准、ZSet score 公式） | ⚠️ **可能丢** | `MEMORY.md` 有 3000 字符/会话上限，只注入蒸馏版 |
 
-**因此**：`docs/` 目录下的文档（本文件、PLAN.md、PROMPT-ARCHIVE.md、P1-REPORT.md）**才是真正的持久化载体** —— 它们入 git、跟仓库走、不受字符上限约束。`.workbuddy/memory/` 只是加速索引。
+**因此**：`docs/` 目录下的文档（本文件、PLAN.md、ARCHITECTURE.md 等）**才是真正的持久化载体** —— 它们入 git、跟仓库走、不受字符上限约束。`.workbuddy/memory/` 只是加速索引。
 
 > 想做到"完全换台机器也不丢"：把 `docs/` 提交到 git 即可（已实现）。如果连本地测试凭据/复盘也要跨机器同步，再把 `.gitignore` 第 82–83 行的 `.workbuddy/` 移除 —— 但**那会把本地环境信息一起带进仓库，需你确认后再做**。
 

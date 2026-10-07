@@ -90,7 +90,7 @@ codejudge/
 ├── scripts/            start-all.py（一键启动）+ dev-start-backend.py
 │                       + verify-p{1..6}.py + verify-authz.py + build-sandbox-images.py
 ├── docs/               PLAN / CONTEXT / ARCHITECTURE / API-REFERENCE / DEPLOYMENT
-│                       PERF / P1~P6-REPORT.md
+│                       PERF / SLO / ROADMAP
 └── docker-compose.yml
 ```
 
@@ -440,7 +440,6 @@ judge-* 服务跑在**宿主机**上，不在监控栈的 Docker 网络内。抓
 | [docs/API-REFERENCE.md](docs/API-REFERENCE.md) | 全量接口清单、请求/响应契约、SSE 事件协议 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 依赖、配置细节、启动流程、环境陷阱、生产检查清单 |
 | [docs/PERF.md](docs/PERF.md) | 压测实测数据与瓶颈分析 |
-| [docs/P1-REPORT.md](docs/P1-REPORT.md) ~ [P6-REPORT.md](docs/P6-REPORT.md) | 各阶段验收报告 |
 
 ## License
 
