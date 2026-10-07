@@ -110,3 +110,11 @@ cj:
     #   留空时由 AdminBootstrapService 生成一次性随机强口令并写入 credential-file，
     #   形态与"配置了 CJ_ADMIN_INIT_PASSWORD"完全区分得开（见启动日志）。
     init-password: ${CJ_ADMIN_INIT_PASSWORD:}
+  demo-bootstrap:
+    # 系统功能演示专用账号（与 sql/seed.sql 种子一致），信息追加写入同一份凭据文件；
+    # 任一 tracked 账号（管理员/演示学生/演示教师）改密成功后整份文件自动删除。
+    # 口令刻意不进本文件/Java 默认值 —— 与其余测试账号同规，见 sql/seed.sql 头注。
+    student-phone: ${CJ_DEMO_STUDENT_PHONE:13900000098}
+    student-username: ${CJ_DEMO_STUDENT_USERNAME:studentdemo}
+    teacher-phone: ${CJ_DEMO_TEACHER_PHONE:13900000099}
+    teacher-username: ${CJ_DEMO_TEACHER_USERNAME:teacherdemo}

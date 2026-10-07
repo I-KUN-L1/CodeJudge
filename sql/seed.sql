@@ -374,3 +374,272 @@ INSERT IGNORE INTO `problem_tag`
 (4322, 4011, 3001, NOW(), NOW(), 0),
 (4323, 4012, 3010, NOW(), NOW(), 0),
 (4324, 4012, 3001, NOW(), NOW(), 0);
+
+-- ===================== 2026-10-07 扩充：系统功能演示专用账户 =====================
+--
+-- 用途：系统演示（非联调压测）。两个账户的数据形态刻意与普通测试账户不同：
+--   · 演示学生（2999）—— 题库中所有**已发布**题目都有一份"标准答案已填好但尚未提交"
+--     的代码草稿（judge_submission.code_draft），演示时打开题目点"提交"即走完整
+--     真实判题链路（MQ → worker → 逐用例判题）。刻意不预插 submission 行：
+--     那样会进入判题状态机并被 uk_submission_idempotent 幂等去重挡住，反而提交不了。
+--   · 演示教师（2110）—— 拥有已编辑完成（题面/用例/模板齐全）但 status=0 草稿的题目
+--     （4021/4022），演示"发布"功能；另有一场 status=0 未开始的竞赛（5003）。
+--     注意：竞赛表没有独立的"草稿/发布"状态（只有 0未开始/1进行中/2已结束，
+--     且状态由时间自动推进），"未开始"即最接近"未发布"的形态。
+--
+-- 凭据展示：两个演示账号与首个管理员共用 .bootstrap-credentials 凭据文件
+-- （见 judge-auth AdminBootstrapService）；任一 tracked 账号（管理员/演示学生/演示教师）
+-- 修改密码成功后该文件自动删除。初始密码与本文档其余测试账号一致（见文件头部说明）。
+--
+-- 固定 id 段位（延续上文约定，避免与雪花 id 冲突）：
+--   user              2999（演示学生）、2110（演示教师）
+--   user_detail       211001
+--   problem           4021–4022（演示教师草稿题）
+--   problem_version   4121–4122
+--   test_case         4241–4246
+--   problem_tag       4325–4328
+--   contest           5003；contest_problem 5121–5122
+--   code_draft        6001–6011（judge_submission 库）
+--
+-- 注意：演示学生**没有** 4006 的草稿 —— 4006 是草稿题（status=0），学员端不可见。
+
+USE `judge_user`;
+
+INSERT IGNORE INTO `user` (`id`, `cell_phone`, `username`, `password`, `name`, `type`, `status`, `create_time`, `update_time`, `deleted`) VALUES
+(2999, '13900000098', 'studentdemo', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示学生（标准答案待提交）', 2, 1, NOW(), NOW(), 0),
+(2110, '13900000099', 'teacherdemo', '$2a$10$OuwRvnFKhKxYDdlndTfjXOzhWRnUF6jTJ6xZEnFlQHkAwcud6rELG', '演示教师（内容待发布）', 3, 1, NOW(), NOW(), 0);
+
+INSERT IGNORE INTO `user_detail` (`id`, `user_id`, `job_title`, `intro`, `school`, `create_time`, `update_time`, `deleted`) VALUES
+(211001, 2110, '演示讲师', '系统功能演示专用教师账号：名下题库与竞赛均为"已编辑完成、待发布"状态。', 'CodeJudge 演示大学', NOW(), NOW(), 0);
+
+USE `judge_problem`;
+
+-- 演示教师的草稿题：题面 / 用例 / 模板**全部编辑完成**，仅 status=0 未发布 ——
+-- 演示"发布"= 在教师端把状态切为「已发布」；恢复 = scripts/restore-demo-state.py 拉回 0。
+INSERT IGNORE INTO `problem`
+(`id`, `title`, `difficulty`, `time_limit_ms`, `memory_limit_mb`, `status`, `owner_id`, `current_version_id`, `submit_count`, `accepted_count`, `create_time`, `update_time`, `deleted`) VALUES
+(4021, '【演示·待发布】字符串反转', 1, 1000, 256, 0, 2110, 4121, 0, 0, NOW(), NOW(), 0),
+(4022, '【演示·待发布】括号匹配', 2, 1000, 256, 0, 2110, 4122, 0, 0, NOW(), NOW(), 0);
+
+INSERT IGNORE INTO `problem_version`
+(`id`, `problem_id`, `version_no`, `statement`, `input_spec`, `output_spec`, `hint`, `template_code`, `created_by`, `create_time`, `update_time`, `deleted`) VALUES
+(4121, 4021, 1,
+ '给定一个字符串 s，输出它的反转。字符串仅含可见 ASCII 字符，不含空白。',
+ '一行，一个非空字符串 s（1 ≤ |s| ≤ 1000）。',
+ '一行，s 的反转。',
+ '使用 StringBuilder 的 reverse()，或双指针首尾交换。',
+ '{"java":"import java.util.*;\\npublic class Main{\\n  public static void main(String[] args){\\n    Scanner sc = new Scanner(System.in);\\n    String s = sc.next();\\n    System.out.println(new StringBuilder(s).reverse().toString());\\n  }\\n}","python":"s = input().strip()\\nprint(s[::-1])","cpp":"#include <bits/stdc++.h>\\nusing namespace std;\\nint main(){ string s; cin >> s; reverse(s.begin(), s.end()); cout << s << endl; return 0; }"}',
+ 2110, NOW(), NOW(), 0),
+
+(4122, 4022, 1,
+ '给定一个只包含 ( ) [ ] { } 六种字符的字符串 s，判断括号是否全部正确闭合匹配。正确闭合指：同类型括号正确闭合，且嵌套顺序正确。',
+ '一行，一个字符串 s（1 ≤ |s| ≤ 10^5，保证只含括号字符）。',
+ '一行：匹配输出 YES，否则输出 NO。',
+ '使用栈：左括号入栈；遇到右括号时检查栈顶是否为对应的左括号。结束时栈必须为空。',
+ '{"java":"import java.util.*;\\npublic class Main{\\n  public static void main(String[] args){\\n    Scanner sc = new Scanner(System.in);\\n    String s = sc.next();\\n    Deque<Character> st = new ArrayDeque<>();\\n    String open = \\"([{\\", close = \\")]}\\";\\n    boolean ok = true;\\n    for (char c : s.toCharArray()){\\n      if (open.indexOf(c) >= 0){ st.push(c); }\\n      else {\\n        if (st.isEmpty() || open.indexOf(st.pop()) != close.indexOf(c)){ ok = false; break; }\\n      }\\n    }\\n    System.out.println(ok && st.isEmpty() ? \\"YES\\" : \\"NO\\");\\n  }\\n}","python":"s = input().strip()\\npair = {\\")\\": \\"(\\", \\"]\\": \\"[\\", \\"}\\": \\"{\\"}\\nst = []\\nok = True\\nfor c in s:\\n    if c in \\"([{\\":\\n        st.append(c)\\n    elif not st or st.pop() != pair[c]:\\n        ok = False\\n        break\\nprint(\\"YES\\" if ok and not st else \\"NO\\")","cpp":"#include <bits/stdc++.h>\\nusing namespace std;\\nint main(){ string s; cin >> s; string open = \\"([{\\", close = \\")]}\\"; vector<char> st; bool ok = true;\\n  for (char c : s){ if (open.find(c) != string::npos) st.push_back(c);\\n    else { if (st.empty() || open.find(st.back()) != close.find(c)){ ok = false; break; } st.pop_back(); } }\\n  cout << ((ok && st.empty()) ? \\"YES\\" : \\"NO\\") << endl; return 0; }"}',
+ 2110, NOW(), NOW(), 0);
+
+INSERT IGNORE INTO `test_case`
+(`id`, `problem_id`, `seq`, `stdin`, `expected_stdout`, `is_hidden`, `score`, `time_limit_ms`, `judge_mode`, `create_time`, `update_time`, `deleted`) VALUES
+-- 4021 字符串反转
+(4241, 4021, 1, 'abc', 'cba', 0, 50, NULL, 0, NOW(), NOW(), 0),
+(4242, 4021, 2, 'CodeJudge', 'egduJedoC', 0, 20, NULL, 0, NOW(), NOW(), 0),
+(4243, 4021, 3, 'a', 'a', 1, 30, NULL, 0, NOW(), NOW(), 0),
+-- 4022 括号匹配
+(4244, 4022, 1, '()', 'YES', 0, 30, NULL, 0, NOW(), NOW(), 0),
+(4245, 4022, 2, '([)]', 'NO', 0, 30, NULL, 0, NOW(), NOW(), 0),
+(4246, 4022, 3, '{[()]}', 'YES', 1, 40, NULL, 0, NOW(), NOW(), 0);
+
+INSERT IGNORE INTO `problem_tag`
+(`id`, `problem_id`, `tag_id`, `create_time`, `update_time`, `deleted`) VALUES
+(4325, 4021, 3002, NOW(), NOW(), 0),
+(4326, 4021, 3010, NOW(), NOW(), 0),
+(4327, 4022, 3008, NOW(), NOW(), 0),
+(4328, 4022, 3010, NOW(), NOW(), 0);
+
+USE `judge_contest`;
+
+-- 演示竞赛：status=0 未开始（时间在未来）。竞赛没有独立"发布"状态（见上注），
+-- "未开始"即演示形态；发布演示 = 教师端把草稿题发布后即可编排进竞赛/报名/开赛。
+INSERT IGNORE INTO `contest`
+(`id`, `title`, `description`, `rule`, `start_time`, `end_time`, `freeze_minutes`, `freeze_at`,
+ `penalty_minutes`, `status`, `owner_id`, `create_time`, `update_time`, `deleted`) VALUES
+(5003, '【演示】教学赛（未开始）',
+ '演示教师专用：已编排完成、尚未开始的竞赛。用于演示教师端的竞赛管理与开赛流程。',
+ 'ACM', DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(DATE_ADD(NOW(), INTERVAL 1 DAY), INTERVAL 120 MINUTE),
+ 0, NULL, 20, 0, 2110, NOW(), NOW(), 0);
+
+INSERT IGNORE INTO `contest_problem`
+(`id`, `contest_id`, `problem_id`, `label`, `display_order`, `full_score`,
+ `submit_count`, `accepted_count`, `create_time`, `update_time`, `deleted`) VALUES
+(5121, 5003, 4001, 'A', 0, 100, 0, 0, NOW(), NOW(), 0),
+(5122, 5003, 4002, 'B', 1, 100, 0, 0, NOW(), NOW(), 0);
+
+USE `judge_submission`;
+
+-- 演示学生的待提交标准答案：每道**已发布**题目一份 JAVA 草稿（共 11 题：
+-- 4001–4005、4007–4012）。代码即各题 template_code 的 AC 解法；
+-- 4005 的模板只有 TODO，这里预填完整的堆优化 Dijkstra。
+-- 演示时打开题目 → 编辑器自动载入草稿 → 点"提交"走完整真实判题链路（预期全部 AC），
+-- 提交成功后前端会消费掉该题草稿（DELETE）；恢复初始状态用 scripts/restore-demo-state.py。
+INSERT IGNORE INTO `code_draft`
+(`id`, `user_id`, `problem_id`, `language`, `code`, `create_time`, `update_time`, `deleted`) VALUES
+(6001, 2999, 4001, 'JAVA',
+'import java.util.*;
+public class Main{
+  public static void main(String[] args){
+    Scanner sc = new Scanner(System.in);
+    long a = sc.nextLong(), b = sc.nextLong();
+    System.out.println(a + b);
+  }
+}', NOW(), NOW(), 0),
+(6002, 2999, 4002, 'JAVA',
+'import java.util.*;
+public class Main{
+  public static void main(String[] args){
+    long n = new Scanner(System.in).nextLong();
+    System.out.println(n * (n + 1) / 2);
+  }
+}', NOW(), NOW(), 0),
+(6003, 2999, 4003, 'JAVA',
+'import java.io.*;
+public class Main{
+  public static void main(String[] args) throws Exception{
+    StreamTokenizer in = new StreamTokenizer(new BufferedInputStream(System.in));
+    in.nextToken(); int n = (int) in.nval;
+    long sum = 0;
+    for (int i = 0; i < n; i++){ in.nextToken(); sum += (long) in.nval; }
+    System.out.println(sum);
+  }
+}', NOW(), NOW(), 0),
+(6004, 2999, 4004, 'JAVA',
+'import java.util.*;
+public class Main{
+  public static void main(String[] args){
+    Scanner sc = new Scanner(System.in);
+    int n = sc.nextInt();
+    long min = Long.MAX_VALUE, max = Long.MIN_VALUE;
+    for (int i = 0; i < n; i++){ long v = sc.nextLong(); min = Math.min(min, v); max = Math.max(max, v); }
+    System.out.println(max - min);
+  }
+}', NOW(), NOW(), 0),
+(6005, 2999, 4005, 'JAVA',
+'import java.io.*;
+import java.util.*;
+
+public class Main{
+  static class Edge{ int to; long w; Edge(int to, long w){ this.to = to; this.w = w; } }
+  public static void main(String[] args) throws Exception{
+    StreamTokenizer in = new StreamTokenizer(new BufferedInputStream(System.in));
+    in.nextToken(); int n = (int) in.nval;
+    in.nextToken(); int m = (int) in.nval;
+    List<List<Edge>> g = new ArrayList<>();
+    for (int i = 0; i <= n; i++) g.add(new ArrayList<>());
+    for (int i = 0; i < m; i++){
+      in.nextToken(); int u = (int) in.nval;
+      in.nextToken(); int v = (int) in.nval;
+      in.nextToken(); long w = (long) in.nval;
+      g.get(u).add(new Edge(v, w));
+      g.get(v).add(new Edge(u, w));
+    }
+    long INF = Long.MAX_VALUE / 4;
+    long[] dist = new long[n + 1];
+    Arrays.fill(dist, INF);
+    dist[1] = 0;
+    PriorityQueue<long[]> pq = new PriorityQueue<>((a, b) -> Long.compare(a[1], b[1]));
+    pq.offer(new long[]{1, 0});
+    boolean[] done = new boolean[n + 1];
+    while (!pq.isEmpty()){
+      long[] cur = pq.poll();
+      int u = (int) cur[0];
+      if (done[u]) continue;
+      done[u] = true;
+      for (Edge e : g.get(u)){
+        if (dist[u] + e.w < dist[e.to]){
+          dist[e.to] = dist[u] + e.w;
+          pq.offer(new long[]{e.to, dist[e.to]});
+        }
+      }
+    }
+    System.out.println(dist[n] >= INF ? -1 : dist[n]);
+  }
+}', NOW(), NOW(), 0),
+(6006, 2999, 4007, 'JAVA',
+'import java.util.*;
+public class Main{
+  public static void main(String[] args){
+    Scanner sc = new Scanner(System.in);
+    String s = sc.next().trim();
+    StringBuilder r = new StringBuilder(s).reverse();
+    System.out.println(s.contentEquals(r) ? "YES" : "NO");
+  }
+}', NOW(), NOW(), 0),
+(6007, 2999, 4008, 'JAVA',
+'import java.io.*;
+public class Main{
+  public static void main(String[] args) throws Exception{
+    StreamTokenizer in = new StreamTokenizer(new BufferedInputStream(System.in));
+    in.nextToken(); int n = (int) in.nval; in.nextToken(); int q = (int) in.nval;
+    long[] a = new long[n];
+    for (int i = 0; i < n; i++){ in.nextToken(); a[i] = (long) in.nval; }
+    StringBuilder sb = new StringBuilder();
+    while (q-- > 0){ in.nextToken(); long x = (long) in.nval;
+      int lo = 0, hi = n;
+      while (lo < hi){ int m = (lo + hi) >>> 1; if (a[m] < x) lo = m + 1; else hi = m; }
+      sb.append(lo < n && a[lo] == x ? String.valueOf(lo) : "-1").append("\n");
+    }
+    System.out.print(sb);
+  }
+}', NOW(), NOW(), 0),
+(6008, 2999, 4009, 'JAVA',
+'import java.util.*;
+public class Main{
+  public static void main(String[] args){
+    long n = new Scanner(System.in).nextLong();
+    long a = 1, b = 2;
+    for (long i = 1; i < n; i++){ long t = a + b; a = b; b = t; }
+    System.out.println(a);
+  }
+}', NOW(), NOW(), 0),
+(6009, 2999, 4010, 'JAVA',
+'import java.util.*;
+public class Main{
+  public static void main(String[] args){
+    long m = new Scanner(System.in).nextLong();
+    int c = 0;
+    long[] d = {100, 50, 20, 10, 5, 1};
+    for (long v : d){ c += m / v; m %= v; }
+    System.out.println(c);
+  }
+}', NOW(), NOW(), 0),
+(6010, 2999, 4011, 'JAVA',
+'import java.util.*;
+public class Main{
+  public static void main(String[] args){
+    Scanner sc = new Scanner(System.in);
+    int n = sc.nextInt(), t = sc.nextInt();
+    int[] a = new int[n];
+    for (int i = 0; i < n; i++) a[i] = sc.nextInt();
+    Map<Integer, Integer> pos = new HashMap<>();
+    for (int i = 0; i < n; i++){
+      if (pos.containsKey(t - a[i])){ System.out.println(pos.get(t - a[i]) + " " + i); return; }
+      pos.put(a[i], i);
+    }
+  }
+}', NOW(), NOW(), 0),
+(6011, 2999, 4012, 'JAVA',
+'import java.util.*;
+public class Main{
+  public static void main(String[] args){
+    Scanner sc = new Scanner(System.in);
+    int n = sc.nextInt();
+    String[][] a = new String[n][n];
+    for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) a[i][j] = sc.next();
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < n; i++){
+      for (int j = 0; j < n; j++){ if (j > 0) sb.append(" "); sb.append(a[n-1-j][i]); }
+      sb.append("\n");
+    }
+    System.out.print(sb);
+  }
+}', NOW(), NOW(), 0);

@@ -32,6 +32,13 @@ import java.time.format.DateTimeFormatter;
  * 属"静默失效"：等于给每个漏配的部署都发了一个人尽皆知的管理员账号。现改为
  * fail-safe —— 宁可让运维去凭据文件里取一次口令，也不接受可预测的管理员口令。</p>
  * <p>登录后应立即通过 POST /accounts/password/first-change 修改密码（成功后凭据文件自动删除）。</p>
+ *
+ * <p><b>演示账号（system-demo）：</b>sql/seed.sql 会灌入两个演示专用账号
+ * （演示学生 13900000098/studentdemo、演示教师 13900000099/teacherdemo，初始口令与其余
+ * 测试账号一致，见 seed.sql 头注）。它们的信息**追加写入同一份凭据文件**，方便演示时
+ * 一次取齐；文件的生命周期也一并共享 —— 管理员、演示学生、演示教师<b>任一</b>账号
+ * 修改密码成功（管理员走 first-change，演示账号经 judge-user 普通改密端点回调
+ * {@link #consumeCredentialIfTracked(String)}），整份文件即自动删除。</p>
  */
 @Slf4j
 @Service
@@ -54,17 +61,30 @@ public class AdminBootstrapService {
     private final String adminUsername;
     /** 显式配置的初始口令；为空表示"由本服务随机生成" */
     private final String configuredInitPassword;
+    /** 演示账号（与 seed.sql 种子一致）；改密回调据此判断"这次改密是否消费凭据文件" */
+    private final String demoStudentPhone;
+    private final String demoStudentUsername;
+    private final String demoTeacherPhone;
+    private final String demoTeacherUsername;
 
     public AdminBootstrapService(UserClient userClient,
                                  @Value("${cj.admin-bootstrap.credential-file:.bootstrap-credentials}") String credentialFile,
                                  @Value("${cj.admin-bootstrap.admin-phone:13800000000}") String adminPhone,
                                  @Value("${cj.admin-bootstrap.admin-username:admin}") String adminUsername,
-                                 @Value("${cj.admin-bootstrap.init-password:}") String initPassword) {
+                                 @Value("${cj.admin-bootstrap.init-password:}") String initPassword,
+                                 @Value("${cj.demo-bootstrap.student-phone:13900000098}") String demoStudentPhone,
+                                 @Value("${cj.demo-bootstrap.student-username:studentdemo}") String demoStudentUsername,
+                                 @Value("${cj.demo-bootstrap.teacher-phone:13900000099}") String demoTeacherPhone,
+                                 @Value("${cj.demo-bootstrap.teacher-username:teacherdemo}") String demoTeacherUsername) {
         this.userClient = userClient;
         this.credentialFile = resolve(credentialFile);
         this.adminPhone = adminPhone;
         this.adminUsername = adminUsername;
         this.configuredInitPassword = initPassword == null ? "" : initPassword.trim();
+        this.demoStudentPhone = demoStudentPhone;
+        this.demoStudentUsername = demoStudentUsername;
+        this.demoTeacherPhone = demoTeacherPhone;
+        this.demoTeacherUsername = demoTeacherUsername;
     }
 
     /**
@@ -167,13 +187,39 @@ public class AdminBootstrapService {
         deleteCredentialFile();
     }
 
+    /**
+     * 演示账号改密回调：judge-user 的普通改密端点（PUT /students/password）成功后调用。
+     * <p>改密手机号属于 tracked 集合（管理员 / 演示学生 / 演示教师）时删除凭据文件 ——
+     * 三个账号共用一份文件，任一账号脱离初始口令即视为"引导态结束"。
+     * 其余账号的改密不影响文件。</p>
+     */
+    public void consumeCredentialIfTracked(String cellPhone) {
+        if (cellPhone == null || cellPhone.isBlank()) {
+            return;
+        }
+        boolean tracked = cellPhone.trim().equals(adminPhone)
+                || cellPhone.trim().equals(demoStudentPhone)
+                || cellPhone.trim().equals(demoTeacherPhone);
+        if (tracked && Files.exists(credentialFile)) {
+            log.info("tracked 账号（{}）修改密码成功，删除初始凭据文件 {}", cellPhone, credentialFile.toAbsolutePath());
+            deleteCredentialFile();
+        }
+    }
+
     private void writeCredentialFile(String rawPassword) {
         String content = String.join("\n",
                 "== CodeJudge 首个管理员初始凭据 ==",
                 "生成时间：" + LocalDateTime.now().format(FMT),
                 "说明：文件仅首次启动生成，登录后请立即修改密码，修改成功后该文件会被自动删除。",
                 "手机号/账号：" + adminPhone,
-                "初始密码：" + rawPassword + "\n");
+                "初始密码：" + rawPassword,
+                "",
+                "== CodeJudge 演示账号（系统功能演示用，与 sql/seed.sql 种子数据一致） ==",
+                "说明：演示账号与首个管理员共用本文件；任一账号修改密码成功后本文件自动删除。",
+                "演示学生（所有题目的标准答案已预填为待提交草稿）：" + demoStudentPhone + " / " + demoStudentUsername
+                        + "（初始密码与 sql/seed.sql 测试账号一致）",
+                "演示教师（含已编辑完成、待发布的题库与竞赛）：" + demoTeacherPhone + " / " + demoTeacherUsername
+                        + "（初始密码与 sql/seed.sql 测试账号一致）\n");
         try {
             Files.createDirectories(credentialFile.toAbsolutePath().getParent() == null ? Paths.get(".")
                     : credentialFile.toAbsolutePath().getParent());

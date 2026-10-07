@@ -51,6 +51,8 @@ import static org.mockito.Mockito.when;
 class AdminBootstrapServiceTest {
 
     private static final String PHONE = "13800000000";
+    private static final String DEMO_STUDENT_PHONE = "13900000098";
+    private static final String DEMO_TEACHER_PHONE = "13900000099";
     private static final String FILE_NAME = ".bootstrap-credentials";
 
     @Mock
@@ -68,7 +70,8 @@ class AdminBootstrapServiceTest {
 
     private AdminBootstrapService service(String configuredPassword) {
         return new AdminBootstrapService(userClient, credentialFile.toString(),
-                PHONE, "admin", configuredPassword);
+                PHONE, "admin", configuredPassword,
+                DEMO_STUDENT_PHONE, "studentdemo", DEMO_TEACHER_PHONE, "teacherdemo");
     }
 
     private String readCredentialFile() throws IOException {
@@ -124,7 +127,8 @@ class AdminBootstrapServiceTest {
         Path otherDir = tempDir.resolve("second");
         assertTrue(otherDir.toFile().mkdirs(), "临时子目录应可创建");
         new AdminBootstrapService(userClient, otherDir.resolve(FILE_NAME).toString(),
-                PHONE, "admin", "").bootstrapIfNeeded();
+                PHONE, "admin", "",
+                DEMO_STUDENT_PHONE, "studentdemo", DEMO_TEACHER_PHONE, "teacherdemo").bootstrapIfNeeded();
 
         ArgumentCaptor<BootstrapAdminDTO> captor = ArgumentCaptor.forClass(BootstrapAdminDTO.class);
         verify(userClient, times(2)).createBootstrapAdmin(captor.capture());
@@ -241,5 +245,76 @@ class AdminBootstrapServiceTest {
         AdminBootstrapService svc = service("Cj-something-long-enough");
         assertDoesNotThrow(() -> svc.changeBootstrapPassword(PHONE, "old", "new"));
         assertFalse(Files.exists(credentialFile));
+    }
+
+    /* ==================== 演示账号：信息入文件 + 改密回调删文件 ==================== */
+
+    @Test
+    void credentialFileContainsDemoAccounts() throws IOException {
+        when(userClient.adminExists()).thenReturn(false);
+        service("").bootstrapIfNeeded();
+
+        String content = readCredentialFile();
+        assertTrue(content.contains(DEMO_STUDENT_PHONE), "凭据文件应写明演示学生手机号");
+        assertTrue(content.contains("studentdemo"), "凭据文件应写明演示学生用户名");
+        assertTrue(content.contains(DEMO_TEACHER_PHONE), "凭据文件应写明演示教师手机号");
+        assertTrue(content.contains("teacherdemo"), "凭据文件应写明演示教师用户名");
+        assertTrue(content.contains("seed.sql"), "演示口令指向 seed.sql 约定，不在 Java/YAML 里硬编码");
+    }
+
+    @Test
+    void demoStudentPasswordChangeConsumesSharedCredentialFile() throws IOException {
+        // 演示学生走 judge-user 的普通改密端点，成功后回调 consumeCredentialIfTracked ——
+        // 三个 tracked 账号共用一份文件，任一改密即整份删除
+        Files.writeString(credentialFile, "== CodeJudge ==\n", StandardCharsets.UTF_8);
+        AdminBootstrapService svc = service("Cj-something-long-enough");
+        assertTrue(svc.isBootstrapPending());
+
+        svc.consumeCredentialIfTracked(DEMO_STUDENT_PHONE);
+
+        assertFalse(Files.exists(credentialFile), "演示学生改密成功后凭据文件必须删除");
+        assertFalse(svc.isBootstrapPending());
+    }
+
+    @Test
+    void demoTeacherPasswordChangeConsumesSharedCredentialFile() throws IOException {
+        Files.writeString(credentialFile, "== CodeJudge ==\n", StandardCharsets.UTF_8);
+        AdminBootstrapService svc = service("Cj-something-long-enough");
+
+        svc.consumeCredentialIfTracked(DEMO_TEACHER_PHONE);
+
+        assertFalse(Files.exists(credentialFile), "演示教师改密成功后凭据文件必须删除");
+    }
+
+    @Test
+    void adminPhoneViaCallbackAlsoConsumesFile() throws IOException {
+        // 管理员若走 judge-user 普通改密链路（而非 first-change），回调同样应删除文件
+        Files.writeString(credentialFile, "== CodeJudge ==\n", StandardCharsets.UTF_8);
+        service("Cj-something-long-enough").consumeCredentialIfTracked(PHONE);
+        assertFalse(Files.exists(credentialFile));
+    }
+
+    @Test
+    void untrackedPhoneChangeKeepsCredentialFile() throws IOException {
+        // 普通测试账号（如 student001）改密与引导态无关，不得误删文件
+        Files.writeString(credentialFile, "== CodeJudge ==\n", StandardCharsets.UTF_8);
+        AdminBootstrapService svc = service("Cj-something-long-enough");
+
+        svc.consumeCredentialIfTracked("13900000001");
+
+        assertTrue(Files.exists(credentialFile), "非 tracked 账号改密不应影响凭据文件");
+        assertTrue(svc.isBootstrapPending());
+    }
+
+    @Test
+    void blankPhoneCallbackIsHarmless() throws IOException {
+        // 判空防御：phone 缺失时不得抛异常、不得动文件
+        Files.writeString(credentialFile, "== CodeJudge ==\n", StandardCharsets.UTF_8);
+        AdminBootstrapService svc = service("Cj-something-long-enough");
+
+        svc.consumeCredentialIfTracked(null);
+        svc.consumeCredentialIfTracked("  ");
+
+        assertTrue(Files.exists(credentialFile), "空手机号回调不应删除凭据文件");
     }
 }

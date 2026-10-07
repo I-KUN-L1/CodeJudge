@@ -228,7 +228,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowLeft, Promotion, RefreshLeft } from '@element-plus/icons-vue';
@@ -300,7 +300,9 @@ async function loadProblem() {
   loading.value = true;
   try {
     problem.value = await problemApi.detail(route.params.id);
+    loadedProblemId.value = route.params.id;
     resetToTemplate();
+    loadDraft();
   } catch (e) {
     problem.value = null;
     ElMessage.error(e.message || '题目加载失败');
@@ -311,6 +313,33 @@ async function loadProblem() {
 
 function resetToTemplate() {
   code.value = templateFor(language.value);
+}
+
+/* ===================== 代码草稿 =====================
+ * 草稿 = 答案已填写完毕但尚未提交的代码，按（本人, 题目）一题一份存后端。
+ * 典型场景是演示账户：打开题目编辑器即见预填的标准答案，点"提交"走完整真实判题。
+ * 草稿在提交成功后被消费（删除）—— 它已经转化为一次正式提交，不再有"待提交"语义。
+ */
+const loadedProblemId = ref(null);
+
+async function loadDraft() {
+  try {
+    const d = await submissionApi.getDraft(route.params.id);
+    // 异步期间用户可能已切到另一题，草稿只作用于发起请求的那道题
+    if (!d || !d.code || String(route.params.id) !== String(loadedProblemId.value)) return;
+    applyingDraft = true;
+    try {
+      if (d.language && d.language !== language.value) language.value = d.language;
+      code.value = d.code;
+      // pre-watch 会在微任务里跑一次（见 language watch 的 applyingDraft 守卫），
+      // 等 flush 完再松开开关，避免弹"切换语言会替换内容"的确认框
+      await nextTick();
+    } finally {
+      applyingDraft = false;
+    }
+  } catch {
+    /* 无草稿 / 未登录 / 网络异常 → 维持题目模板，不打扰主流程 */
+  }
 }
 
 async function loadMySubmissions() {
@@ -340,6 +369,10 @@ async function onSubmit() {
     // 同一份代码 60 秒内重复提交会命中幂等，后端返回已有记录并带 idempotent=true
     const vo = await submissionApi.submit(body);
     currentSubmissionId.value = vo.id;
+
+    // 提交成功即消费草稿（幂等）：内容已转化为正式提交，"待提交"状态结束。
+    // 失败静默 —— 草稿残留最多让下次进入页面仍见到旧内容，不影响判题。
+    submissionApi.deleteDraft(route.params.id).catch(() => {});
 
     if (vo.idempotent) {
       ElMessage.info('检测到重复提交，已返回 60 秒内的那次记录（幂等）');
@@ -395,7 +428,10 @@ function openSubmission(id) {
 
 // 切换语言时若当前代码仍是"上一个语言的模板"（用户没改过），就跟着换模板；
 // 若用户已经写了代码，则询问后再覆盖 —— 静默清空用户代码是很恶劣的体验
+// applyingDraft：装载草稿时的程序化 language 赋值不算"用户切换"，直接放行
+let applyingDraft = false;
 watch(language, (nv, ov) => {
+  if (applyingDraft) return;
   const wasPristine = code.value === templateFor(ov);
   if (wasPristine) {
     resetToTemplate();

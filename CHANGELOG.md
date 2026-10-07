@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+### Added（系统功能演示账户 2026-10-07 轮）
+- 代码草稿：`judge_submission` 新增 `code_draft` 表（Flyway `V2__code-draft.sql`，
+  存量手工迁移 `sql/migrations/2026-10-07-code-draft.sql`）与
+  `GET/PUT/DELETE /submissions/drafts/{problemId}`（仅本人，物理删，提交成功后消费）；
+  前端题目详情页编辑器优先载入草稿，无草稿回退题目模板
+- 演示账户种子：`sql/seed.sql` 新增演示学生（2999，全部已发布题预填"待提交标准答案"草稿，
+  提交走完整真实判题链路）与演示教师（2110，已编辑完成待发布的题目 4021/4022 + 未开始的
+  竞赛 5003；竞赛无独立发布态，未开始即演示形态）
+- 凭据文件：演示账号信息追加写入 `.bootstrap-credentials`（与首个管理员共用一份）；
+  管理员/演示学生/演示教师任一改密成功后整份文件自动删除 —— 演示账号普通改密由
+  judge-user 经 `AuthClient` 回调 judge-auth 内部端点 `POST /internal/bootstrap/credential-consumed`
+  实现（fire-and-forget，judge-auth 不可达不影响改密主流程）
+- 运维脚本：`scripts/verify-demo-accounts.py`（端到端验证 + 自动恢复）、
+  `scripts/restore-demo-state.py`（演示数据一键恢复初始状态）、
+  `generate-bootstrap-credentials.py` 支持演示账号区段
+
 ### Added（上线检查清单 2026-09-30 轮）
 - 部署产物：8 后端 + 前端 Dockerfile、`judge-web/nginx.conf`（SPA/反代/WS/SSE）、
   compose `app` profile（9 服务，`stop_grace_period` 40s）、`startup.sh` / `startup.ps1`

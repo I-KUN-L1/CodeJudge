@@ -76,6 +76,12 @@ export const submissionApi = {
   page: (params) => http.get('/submissions/page', { params }),
   rejudge: (id) => http.post(`/submissions/${id}/rejudge`),
 
+  // 代码草稿：答案已填写但尚未提交的代码，按（本人, 题目）一题一份。
+  // getDraft 无草稿时返回 null（编辑器回退题目模板）；提交成功后应 deleteDraft 消费掉。
+  getDraft: (problemId) => http.get(`/submissions/drafts/${problemId}`),
+  saveDraft: (problemId, data) => http.put(`/submissions/drafts/${problemId}`, data),
+  deleteDraft: (problemId) => http.delete(`/submissions/drafts/${problemId}`),
+
   workers: () => http.get('/workers'),
   workerMetrics: () => http.get('/workers/metrics'),
 };

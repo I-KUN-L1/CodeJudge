@@ -3,6 +3,7 @@ package com.codejudge.user.service;
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.codejudge.api.client.auth.AuthClient;
 import com.codejudge.api.dto.user.LoginFormDTO;
 import com.codejudge.api.dto.user.UserDTO;
 import com.codejudge.common.constants.UserRole;
@@ -57,6 +58,7 @@ public class UserService {
             java.util.regex.Pattern.compile("^[\\u4e00-\\u9fa5A-Za-z0-9· ._\\-]{1,32}$");
 
     private final UserMapper userMapper;
+    private final AuthClient authClient;
     private final UserDetailMapper userDetailMapper;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
 
@@ -391,6 +393,24 @@ public class UserService {
         }
         user.setPassword(BCrypt.hashpw(newPassword));
         userMapper.updateById(user);
+        notifyBootstrapCredentialConsumed(user);
+    }
+
+    /**
+     * tracked 账号（管理员/演示学生/演示教师）脱离初始口令后，通知 judge-auth 删除
+     * .bootstrap-credentials 凭据文件（三个账号共用一份文件，生命周期见 AdminBootstrapService）。
+     *
+     * <p>刻意 fire-and-forget：judge-auth 不可达只代表凭据文件暂时残留，
+     * 绝不能让它把一次已经成功的改密拖成失败。管理员自身的首次改密
+     * （first-change 链路）不经过这里，由 judge-auth 直接删除。</p>
+     */
+    private void notifyBootstrapCredentialConsumed(User user) {
+        try {
+            authClient.consumeBootstrapCredential(user.getCellPhone());
+        } catch (Exception e) {
+            log.warn("改密成功但回调 judge-auth 删除初始凭据文件失败（phone={}）：" +
+                    "文件可能残留，可手工删除或忽略", user.getCellPhone(), e);
+        }
     }
 
     /**

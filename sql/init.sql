@@ -384,6 +384,21 @@ CREATE TABLE IF NOT EXISTS `compile_info` (
     UNIQUE KEY `uk_compile_info_submission` (`submission_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='编译信息表';
 
+CREATE TABLE IF NOT EXISTS `code_draft` (
+    `id` BIGINT NOT NULL,
+    `user_id` BIGINT NOT NULL COMMENT '归属用户（草稿只对本人可见）',
+    `problem_id` BIGINT NOT NULL COMMENT '题目id',
+    `language` VARCHAR(16) NOT NULL DEFAULT 'JAVA' COMMENT '语言:JAVA/PYTHON/CPP/GO',
+    `code` TEXT COMMENT '代码全文（≤32KB，与 submission.code 同限）',
+    `create_time` DATETIME,
+    `update_time` DATETIME,
+    `creater` BIGINT,
+    `updater` BIGINT,
+    `deleted` TINYINT DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_code_draft_user_problem` (`user_id`, `problem_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='代码草稿表（答案已填写但尚未提交，一题一份；非提交记录，不参与判题与幂等）';
+
 -- ============================================================
 -- 五、竞赛服务库 judge_contest
 -- ============================================================

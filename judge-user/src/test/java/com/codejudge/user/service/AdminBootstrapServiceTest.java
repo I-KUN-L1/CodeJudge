@@ -1,6 +1,7 @@
 package com.codejudge.user.service;
 
 import cn.hutool.crypto.digest.BCrypt;
+import com.codejudge.api.client.auth.AuthClient;
 import com.codejudge.api.dto.user.UserDTO;
 import com.codejudge.common.exceptions.BadRequestException;
 import com.codejudge.user.domain.po.User;
@@ -24,9 +25,14 @@ class AdminBootstrapServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private AuthClient authClient;
+
     private UserService buildService() {
-        // 第三个参数是禁用即时生效用的 StringRedisTemplate；本测试不触及，给空 mock 即可
-        return new UserService(userMapper, null, org.mockito.Mockito.mock(org.springframework.data.redis.core.StringRedisTemplate.class));
+        // 第三/四个参数是禁用即时生效用的 StringRedisTemplate 与改密回调用的 AuthClient；
+        // 本测试不触及回调语义，给空 mock 即可
+        return new UserService(userMapper, authClient, null,
+                org.mockito.Mockito.mock(org.springframework.data.redis.core.StringRedisTemplate.class));
     }
 
     @Test

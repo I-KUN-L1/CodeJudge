@@ -250,6 +250,9 @@ GET /accounts/me/capabilities    (Authorization: Bearer <accessToken>)
 | GET | `/submissions/{id}` | 登录+归属 | 提交详情（含逐用例结果） |
 | GET | `/submissions/page` | 登录 | 分页；学员强制只看自己的 |
 | POST | `/submissions/{id}/rejudge` | STAFF | 重判 |
+| GET | `/submissions/drafts/{problemId}` | 登录+归属 | 本人该题代码草稿（答案已填未提交；无则 `data=null`） |
+| PUT | `/submissions/drafts/{problemId}` | 登录+归属 | 保存/覆盖本人该题草稿（≤32KB，幂等） |
+| DELETE | `/submissions/drafts/{problemId}` | 登录+归属 | 删除本人该题草稿（物理删、幂等；提交成功后由前端消费） |
 | GET | `/workers` | 管理员 | 在线判题机列表 |
 | GET | `/workers/metrics` | 管理员 | `{queueBacklog, deadTasks}` |
 

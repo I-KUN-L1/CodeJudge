@@ -24,6 +24,7 @@ import com.codejudge.submission.domain.po.CompileInfo;
 import com.codejudge.submission.domain.po.JudgeResult;
 import com.codejudge.submission.domain.po.JudgeTask;
 import com.codejudge.submission.domain.po.Submission;
+import com.codejudge.submission.mapper.CodeDraftMapper;
 import com.codejudge.submission.domain.vo.CaseResultVO;
 import com.codejudge.submission.domain.vo.SubmissionDetailVO;
 import com.codejudge.submission.domain.vo.SubmissionVO;
@@ -101,6 +102,7 @@ public class SubmissionService {
     private final JudgeTaskMapper judgeTaskMapper;
     private final JudgeResultMapper judgeResultMapper;
     private final CompileInfoMapper compileInfoMapper;
+    private final CodeDraftMapper codeDraftMapper;
     private final ProblemClient problemClient;
     private final ContestClient contestClient;
     private final JudgeEventPublisher eventPublisher;
@@ -213,6 +215,14 @@ public class SubmissionService {
                 return existing;
             }
             throw e;
+        }
+
+        // 提交受理成功即消费草稿（与 submission 同事务）："答案已填好待提交"状态结束。
+        // 服务端兜底消费，避免只依赖前端 deleteDraft（脚本/API 直提场景会漏）；前端调用变幂等冗余。
+        // 必须用物理删除：@TableLogic 逻辑删会残留行占用唯一键，恢复脚本 INSERT IGNORE 会被静默跳过。
+        int removedDrafts = codeDraftMapper.physicalDelete(userId, problemId);
+        if (removedDrafts > 0) {
+            log.info("提交受理已消费草稿 user={} problem={} rows={}", userId, problemId, removedDrafts);
         }
 
         JudgeTask task = new JudgeTask();

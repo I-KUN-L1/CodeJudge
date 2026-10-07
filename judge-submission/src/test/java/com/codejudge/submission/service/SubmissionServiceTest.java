@@ -21,6 +21,7 @@ import com.codejudge.submission.domain.vo.CaseResultVO;
 import com.codejudge.submission.domain.vo.SubmissionDetailVO;
 import com.codejudge.submission.domain.vo.SubmissionVO;
 import com.codejudge.submission.mapper.CompileInfoMapper;
+import com.codejudge.submission.mapper.CodeDraftMapper;
 import com.codejudge.submission.mapper.JudgeResultMapper;
 import com.codejudge.submission.mapper.JudgeTaskMapper;
 import com.codejudge.submission.mapper.SubmissionMapper;
@@ -83,6 +84,7 @@ class SubmissionServiceTest {
     @Mock private JudgeTaskMapper judgeTaskMapper;
     @Mock private JudgeResultMapper judgeResultMapper;
     @Mock private CompileInfoMapper compileInfoMapper;
+    @Mock private CodeDraftMapper codeDraftMapper;
     @Mock private ProblemClient problemClient;
     @Mock private ContestClient contestClient;
     @Mock private JudgeEventPublisher eventPublisher;
@@ -118,7 +120,7 @@ class SubmissionServiceTest {
         when(redis.getExpire(anyString())).thenReturn(60L);
 
         service = new SubmissionService(submissionMapper, judgeTaskMapper, judgeResultMapper,
-                compileInfoMapper, problemClient, contestClient, eventPublisher, redis,
+                compileInfoMapper, codeDraftMapper, problemClient, contestClient, eventPublisher, redis,
                 judgeProperties, self);
     }
 
@@ -446,7 +448,7 @@ class SubmissionServiceTest {
                     .thenThrow(new DuplicateKeyException("uk_submission_idempotent"));
 
             SubmissionService realService = new SubmissionService(submissionMapper, judgeTaskMapper,
-                    judgeResultMapper, compileInfoMapper, problemClient, contestClient, eventPublisher,
+                    judgeResultMapper, compileInfoMapper, codeDraftMapper, problemClient, contestClient, eventPublisher,
                     redis, judgeProperties, self);
             SubmissionService selfDelegate = mock(SubmissionService.class);
             when(selfDelegate.createSubmissionWithTask(org.mockito.ArgumentMatchers.anyLong(),
@@ -491,7 +493,7 @@ class SubmissionServiceTest {
                 return 1;
             });
             SubmissionService realService = new SubmissionService(submissionMapper, judgeTaskMapper,
-                    judgeResultMapper, compileInfoMapper, problemClient, contestClient, eventPublisher,
+                    judgeResultMapper, compileInfoMapper, codeDraftMapper, problemClient, contestClient, eventPublisher,
                     redis, judgeProperties, self);
 
             Submission saved = realService.createSubmissionWithTask(USER, PROBLEM_ID, 0L,

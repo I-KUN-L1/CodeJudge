@@ -17,6 +17,11 @@
      引导逻辑会打印「已存在管理员账号，跳过管理员引导」直接返回；
   ② 想**演示/复测前端那条「初始凭据未消费」提示**，而文件此前已被消费（删除）。
 
+文件内容除首个管理员外还包含**系统功能演示账号**区段（演示学生 13900000098/studentdemo、
+演示教师 13900000099/teacherdemo，数据形态见 sql/seed.sql「系统功能演示专用账户」一节）；
+三个 tracked 账号（管理员/演示学生/演示教师）任一改密成功后整份文件自动删除
+（演示账号改密由 judge-user 回调 judge-auth 内部端点完成）。
+
 ────────────────────────────────────────────────────────────────────────────────
 两个必须知道的后果
 ────────────────────────────────────────────────────────────────────────────────
@@ -111,15 +116,53 @@ def login(phone, password, tries=8):
     return None, None
 
 
+def docker_cp_credentials(host_path):
+    """容器化部署时把凭据文件同步进运行中的 judge-auth 容器。
+
+    isBootstrapPending() 按进程工作目录解析路径，容器内即 /app/.bootstrap-credentials；
+    宿主机文件对它不可见。返回 True 表示已注入，False 表示栈未容器化运行（忽略即可）。
+    """
+    import subprocess
+    try:
+        running = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if running.returncode != 0 or "codejudge-judge-auth-1" not in running.stdout:
+            return False
+        cp = subprocess.run(
+            ["docker", "cp", host_path, "codejudge-judge-auth-1:/app/.bootstrap-credentials"],
+            capture_output=True, text=True, timeout=15,
+        )
+        return cp.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def build_content(phone, password):
-    """与 AdminBootstrapService.writeCredentialFile 逐字节一致（含末尾那个换行）。"""
+    """与 AdminBootstrapService.writeCredentialFile 逐字节一致（含末尾那个换行）。
+
+    演示账号区段与 Java 侧同构：口令刻意不在脚本/服务里硬编码，只指向 seed.sql 约定
+    （演示账号与其余测试账号同规，初始口令见 sql/seed.sql 头注）。
+    """
     fmt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    student_phone = env_value("CJ_DEMO_STUDENT_PHONE", "13900000098")
+    student_username = env_value("CJ_DEMO_STUDENT_USERNAME", "studentdemo")
+    teacher_phone = env_value("CJ_DEMO_TEACHER_PHONE", "13900000099")
+    teacher_username = env_value("CJ_DEMO_TEACHER_USERNAME", "teacherdemo")
     return "\n".join([
         "== CodeJudge 首个管理员初始凭据 ==",
         "生成时间：" + fmt,
         "说明：文件仅首次启动生成，登录后请立即修改密码，修改成功后该文件会被自动删除。",
         "手机号/账号：" + phone,
-        "初始密码：" + password + "\n",
+        "初始密码：" + password,
+        "",
+        "== CodeJudge 演示账号（系统功能演示用，与 sql/seed.sql 种子数据一致） ==",
+        "说明：演示账号与首个管理员共用本文件；任一账号修改密码成功后本文件自动删除。",
+        "演示学生（所有题目的标准答案已预填为待提交草稿）：" + student_phone + " / " + student_username
+            + "（初始密码与 sql/seed.sql 测试账号一致）",
+        "演示教师（含已编辑完成、待发布的题库与竞赛）：" + teacher_phone + " / " + teacher_username
+            + "（初始密码与 sql/seed.sql 测试账号一致）\n",
     ])
 
 
@@ -188,6 +231,11 @@ def main():
     if not args.yes:
         log("  · 预演：未写文件，跳过。")
     else:
+        # 容器化部署：isBootstrapPending() 读的是 judge-auth 容器内 WORKDIR（/app）下的文件，
+        # 宿主机这份对它不可见。容器在跑时同步 cp 进去（不能用单文件 bind mount：
+        # 挂载点在容器内删不掉，会破坏「改密后文件自动消失」语义）。
+        if docker_cp_credentials(cred_path):
+            log("  ✓ 已同步注入运行中的 judge-auth 容器（/app/.bootstrap-credentials）")
         time.sleep(1.0)
         body2, _ = login(phone, password)
         if not body2:
