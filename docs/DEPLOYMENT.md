@@ -12,7 +12,7 @@
 | JDK | **21**（Temurin 21.0.7 已验证） | 需 `JAVA_HOME` | 全部后端服务 |
 | Maven | **3.9.6** | `D:\1\apache-maven-3.9.6` | 构建。⚠ Git Bash 下必须用 `bin/mvn.cmd` |
 | Docker Desktop | 29.7.2（overlayfs / cgroup v2） | 已安装 | 基础设施 + 判题沙箱 |
-| Node.js | **22.x** | `C:\Users\20670\.workbuddy\binaries\node\versions\22.22.2-3` | 前端构建 |
+| Node.js | **22.x** | 官网安装包或 nvm-windows | 前端构建 |
 | JMeter | **5.6.3** | `D:\1\jmeter` | 压测（可选） |
 | Python | 3.11+ | 用于运行 `scripts/*.py` | 启动脚本 / 验收 / 压测 |
 
