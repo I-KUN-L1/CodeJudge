@@ -19,17 +19,15 @@ import com.codejudge.contest.domain.vo.RebuildReportVO;
 import com.codejudge.contest.mapper.ContestMapper;
 import com.codejudge.contest.mapper.ContestProblemMapper;
 import com.codejudge.contest.mapper.ContestRankSnapshotMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.connection.RedisConnection;
-import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -109,6 +107,7 @@ public class ContestRankService {
     private final ContestRankSnapshotMapper snapshotMapper;
     private final StringRedisTemplate redis;
     private final RedisScript<List> contestRankScript;
+    private final RedisScript<List> contestRankStatesScript;
     private final ObjectMapper objectMapper;
     private final ContestProperties properties;
     private final UserClient userClient;
@@ -725,7 +724,14 @@ public class ContestRankService {
     }
 
     /**
-     * 批量取用户状态（pipeline，N 次往返压到 1 次）。
+     * 批量取用户状态（N 次 HGETALL 压到 1 次 EVALSHA）。
+     *
+     * <p><b>为什么是 Lua 而不是 executePipelined</b>：Lettuce 的 pipeline 需要独占连接
+     * （不能与其他命令在共享原生连接上多路复用），高并发读榜时每个请求都回退新建一条
+     * 专用 Redis 连接 —— 实测 50 并发下 15 秒新建 2.8 万条连接，宿主临时端口耗尽后
+     * connect 报 EADDRNOTAVAIL，榜单查询大面积失败。EVALSHA 是普通命令，与
+     * ZREVRANGE 等一样走共享连接多路复用，从根上消除连接风暴，往返压缩收益不变。
+     * 详见 {@code lua/contest_rank_states_load.lua} 头注。
      *
      * @param frozen true=读封榜时刻的副本（对外冻结视图），false=读实时状态（内部视图与解封后）
      */
@@ -735,23 +741,28 @@ public class ContestRankService {
         if (userIds.isEmpty()) {
             return out;
         }
-        List<Object> raw = redis.executePipelined((RedisCallback<Object>) connection -> {
-            for (Long uid : userIds) {
-                String key = frozen ? frozenUserStatusKey(contestId, uid) : userStatusKey(contestId, uid);
-                connection.hashCommands().hGetAll(key.getBytes(StandardCharsets.UTF_8));
-            }
-            return null;
-        });
+        List<String> keys = new ArrayList<>(userIds.size());
+        for (Long uid : userIds) {
+            keys.add(frozen ? frozenUserStatusKey(contestId, uid) : userStatusKey(contestId, uid));
+        }
+        List<String> raw = redis.execute(contestRankStatesScript, keys);
+        if (raw == null) {
+            return out;
+        }
+        // 脚本保证返回与 keys 等长且逐位对齐（空 Hash 占位 '{}'），按下标映射即不串位
         for (int i = 0; i < userIds.size() && i < raw.size(); i++) {
-            Object item = raw.get(i);
-            if (!(item instanceof Map<?, ?> map) || map.isEmpty()) {
+            String json = raw.get(i);
+            if (json == null || json.isEmpty() || "{}".equals(json)) {
                 continue;
             }
-            Map<String, String> decoded = new HashMap<>(map.size());
-            for (Map.Entry<?, ?> e : ((Map<Object, Object>) map).entrySet()) {
-                decoded.put(utf8(e.getKey()), utf8(e.getValue()));
+            try {
+                Map<String, String> decoded = objectMapper.readValue(json, Map.class);
+                if (!decoded.isEmpty()) {
+                    out.put(userIds.get(i), decoded);
+                }
+            } catch (JsonProcessingException e) {
+                log.warn("用户状态 JSON 解码失败，该用户按无状态渲染：key={}", keys.get(i));
             }
-            out.put(userIds.get(i), decoded);
         }
         return out;
     }
@@ -796,13 +807,6 @@ public class ContestRankService {
             out.putIfAbsent(uid, String.valueOf(uid));
         }
         return out;
-    }
-
-    private String utf8(Object o) {
-        if (o instanceof byte[] bytes) {
-            return new String(bytes, StandardCharsets.UTF_8);
-        }
-        return o == null ? null : String.valueOf(o);
     }
 
     private Long parseLong(String s) {

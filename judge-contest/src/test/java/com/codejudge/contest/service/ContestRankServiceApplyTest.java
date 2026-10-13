@@ -78,6 +78,8 @@ class ContestRankServiceApplyTest {
     @Mock
     private RedisScript<List> script;
     @Mock
+    private RedisScript<List> statesScript;
+    @Mock
     private UserClient userClient;
     @Mock
     private SubmissionClient submissionClient;
@@ -97,7 +99,7 @@ class ContestRankServiceApplyTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         service = new ContestRankService(contestMapper, contestProblemMapper, snapshotMapper,
-                redis, script, objectMapper, properties, userClient, submissionClient, sequencer);
+                redis, script, statesScript, objectMapper, properties, userClient, submissionClient, sequencer);
         when(redis.opsForValue()).thenReturn(valueOps);
         when(redis.opsForZSet()).thenReturn(zsetOps);
         when(redis.opsForHash()).thenReturn(hashOps);
@@ -414,8 +416,8 @@ class ContestRankServiceApplyTest {
             when(sequencer.current("contest:6001:rank:public")).thenReturn(7L);
             when(zsetOps.reverseRangeWithScores(service.liveKey(CONTEST_ID), 0, 99L))
                     .thenReturn(Set.of(ZSetOperations.TypedTuple.of("1001", encoded(1, 1200, 300))));
-            when(redis.executePipelined(any(org.springframework.data.redis.core.RedisCallback.class)))
-                    .thenReturn(List.of(Map.of("2001", "ac:1200:2")));
+            when(redis.execute(any(org.springframework.data.redis.core.script.RedisScript.class), anyList()))
+                    .thenReturn(List.of("{\"2001\":\"ac:1200:2\"}"));
             UserDTO u = new UserDTO();
             u.setId(USER_ID);
             u.setName("张三");
@@ -453,7 +455,7 @@ class ContestRankServiceApplyTest {
             when(zsetOps.reverseRank(service.liveKey(CONTEST_ID), "1001")).thenReturn(3L);
             when(zsetOps.reverseRangeWithScores(service.liveKey(CONTEST_ID), 3L, 3L))
                     .thenReturn(Set.of(ZSetOperations.TypedTuple.of("1001", encoded(1, 60, 30))));
-            when(redis.executePipelined(any(org.springframework.data.redis.core.RedisCallback.class)))
+            when(redis.execute(any(org.springframework.data.redis.core.script.RedisScript.class), anyList()))
                     .thenReturn(List.of());
             when(userClient.queryUserByIds(List.of(USER_ID))).thenReturn(null);
 

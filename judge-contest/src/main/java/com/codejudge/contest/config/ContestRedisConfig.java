@@ -25,4 +25,17 @@ public class ContestRedisConfig {
         script.setResultType(List.class);
         return script;
     }
+
+    /**
+     * 批量读用户逐题状态（榜单渲染路径）。用 Lua 而不是 executePipelined 的原因见
+     * {@code lua/contest_rank_states_load.lua} 头注：Lettuce pipeline 高并发下
+     * 每请求回退新建专用连接，实测 50 并发 15s 打出 2.8 万条连接直到端口耗尽。
+     */
+    @Bean
+    public RedisScript<List> contestRankStatesScript() {
+        DefaultRedisScript<List> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource("lua/contest_rank_states_load.lua"));
+        script.setResultType(List.class);
+        return script;
+    }
 }

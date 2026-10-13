@@ -30,7 +30,7 @@ class ContestRankServiceContractTest {
     /** 依赖只被键位/主题方法之外的路径使用，传 null 即可实例化 */
     private ContestRankService service() {
         return new ContestRankService(null, null, null, null, null, null,
-                null, null, null, sequencer);
+                null, null, null, null, sequencer);
     }
 
     @Nested
