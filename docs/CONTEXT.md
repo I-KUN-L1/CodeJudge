@@ -860,9 +860,9 @@ E3/E4 行为变更待拍板、G4 E2E、worker 容器化沙箱路径核验、CI �
 
 - **接入**：用户提供 QQ SMTP 凭据 → `.env` 7 行（**凭据只存 .env 不入 git**）→ recreate AM →
   渲染配置全对（`smtp.qq.com:587` + `smtp_require_tls: true`、默认+critical 双路由 `email`、
-  收件人 2067063203@qq.com）。
+  收件人 <SMTP_TO>）。
 - **排障（535）**：首测 12+ 重试持续 `535 Login fail`（非瞬态）→ 临时回退 null 止血（防频控）
-  → **根因=授权码与发件账号不同号**（码属 2067063203@qq.com，FROM 误填 10086@qq.com）→
+  → **根因=授权码与发件账号不同号**（码属 <SMTP_AUTH_USERNAME>，FROM 误填了另一个邮箱地址）→
   切换发件账号后一次通过。**教训：QQ 授权码与发件账号同号绑定，AM email 排障先核对
   `SMTP_FROM == SMTP_AUTH_USERNAME`；凭据侧持续失败要及时止血。**
 - **终验（真实）**：注入测试告警 + 真实告警 `JudgeDeadTasksPresent`（critical，10s group_wait）
